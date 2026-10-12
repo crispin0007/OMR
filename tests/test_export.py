@@ -3,7 +3,8 @@ from pathlib import Path
 import pypdfium2
 from openpyxl import load_workbook
 
-from omr_core.export import grade, write_excel, write_scorecards
+from omr_core.export import grade, item_analysis, write_excel, write_scorecards
+from omr_core.grading import Section
 from omr_core.reader import PageResult
 from omr_core.store import Store
 
@@ -56,3 +57,24 @@ def test_merit_list_and_scorecards(tmp_path):
     assert len(pdf) == 4
     text = pdf[0].get_textpage().get_text_range()
     assert "Roll number 111" in text and "Rank 1 of 4" in text
+
+
+def test_sections_and_item_analysis(tmp_path):
+    t, pages, key = exam_with_pages(tmp_path)
+    sections = [Section("Part 1", 1, 4, 4, -1), Section("Part 2", 5, 100, 1, 0)]
+    graded = grade(t, pages, key, 4, -1, 0, sections=sections)
+    by_roll = {g.page.result.roll_number: g for g in graded}
+    assert by_roll["111"].sections == {"Part 1": 12, "Part 2": 96} and by_roll["111"].score == 108
+    assert by_roll["222"].sections == {"Part 1": 7, "Part 2": 96}  # Q1 wrong -1, Q2 right, Q3 bonus
+
+    rows = {r[0]: r for r in item_analysis(t, graded)}
+    assert rows["Q1"][1:6] == ["A", 50.0, 25.0, 25.0, "B (1)"]  # 111, 333 right; 222 chose B; 444 blank
+    assert rows["Q4"][1] == "dropped"
+    assert rows["Q5"][2] == 100.0 and rows["Q5"][6] == 0  # everyone right: separates nobody
+
+    write_excel(tmp_path / "merit.xlsx", "Mock 1", t, graded)
+    wb = load_workbook(tmp_path / "merit.xlsx")
+    assert [c.value for c in wb["Merit list"][2]][5:8] == ["Score", "Part 1", "Part 2"]
+    assert wb["Item analysis"].max_row == 101
+    write_scorecards(tmp_path / "cards.pdf", "Mock 1", t, graded)
+    assert "Part 1 12" in pypdfium2.PdfDocument(tmp_path / "cards.pdf")[0].get_textpage().get_text_range()

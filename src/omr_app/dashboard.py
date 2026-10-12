@@ -287,7 +287,7 @@ class ResultsPage(QWidget):
         c = self.check
         try:
             self.graded = grade(c.exam.template, c.sheets, c.key_edit.toPlainText(), c.correct.value(),
-                                c.wrong.value(), c.blank.value(), c.students) if c.exam else []
+                                c.wrong.value(), c.blank.value(), c.students, c.sections) if c.exam else []
         except ValueError:
             self.graded = []  # the key doesn't fit yet; Check sheets says why
         self.note.setText("Ranked by score; equal scores share a rank. Double-click a row to open the sheet."
@@ -295,18 +295,23 @@ class ResultsPage(QWidget):
         self.excel.setEnabled(bool(self.graded))
         self.pdf.setEnabled(bool(self.graded))
         self.table.setSortingEnabled(False)
+        names = [s.name for s in c.sections]
+        columns = self.COLUMNS[:5] + names + self.COLUMNS[5:]
+        self.table.setColumnCount(len(columns))
+        self.table.setHorizontalHeaderLabels(columns)
         self.table.setRowCount(len(self.graded))
         warn = QColor(tokens()["warn"])
         index = {p.id: i for i, p in enumerate(c.sheets)}
         for row, g in enumerate(self.graded):
             r = g.page.result
-            values = [g.rank, r.roll_number, g.student.name if g.student else "", r.set_code, g.score, g.right, g.wrong, g.blank, round(g.percentile, 1),
+            values = [g.rank, r.roll_number, g.student.name if g.student else "", r.set_code, g.score,
+                      *g.sections.values(), g.right, g.wrong, g.blank, round(g.percentile, 1),
                       "yes" if g.to_check else "", c.file_name(g.page), g.page.page]
             for col, v in enumerate(values):
                 item = QTableWidgetItem()
                 item.setData(Qt.DisplayRole, v)
                 item.setData(Qt.UserRole, index[g.page.id])
-                if g.to_check and col == 9:
+                if g.to_check and columns[col] == "To check":
                     item.setForeground(warn)
                 self.table.setItem(row, col, item)
         self.table.setSortingEnabled(True)

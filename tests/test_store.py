@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -6,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from omr_core.grading import Section
 from omr_core.reader import PageResult
 from omr_core.store import Store, to_review
 
@@ -37,6 +39,30 @@ def test_exam_scheme_and_pages_survive_reopening(tmp_path):
     assert s.exams() == [] and s.pages(exam) == []
 
 
+def test_sections_are_saved_and_checked(tmp_path):
+    s = Store(tmp_path / "omr.db")
+    exam = s.create_exam("Mock", TEMPLATE)
+    assert s.exam(exam).sections == []
+    s.save_sections(exam, [Section("Physics", 1, 50, 4, -1), Section("Maths", 51, 100, 3, -1, 0)])
+    assert [x.name for x in Store(tmp_path / "omr.db").exam(exam).sections] == ["Physics", "Maths"]
+    with pytest.raises(ValueError):
+        s.save_sections(exam, [Section("Physics", 1, 120, 4, -1)])  # the sheet has 100 questions
+
+
+def test_opens_a_database_from_before_sections(tmp_path):
+    db = tmp_path / "omr.db"
+    old = sqlite3.connect(db)
+    old.execute("CREATE TABLE exam (id INTEGER PRIMARY KEY, name TEXT NOT NULL, template TEXT NOT NULL, "
+                "answer_key TEXT NOT NULL DEFAULT '', correct REAL NOT NULL DEFAULT 1, wrong REAL NOT NULL DEFAULT 0, "
+                "blank REAL NOT NULL DEFAULT 0, created TEXT NOT NULL)")
+    old.execute("INSERT INTO exam (name, template, answer_key, created) VALUES ('Old', ?, 'ABCD', '2026-01-01')",
+                (TEMPLATE,))
+    old.commit()
+    old.close()
+    e = Store(db).exam(1)
+    assert (e.name, e.answer_key, e.sections) == ("Old", "ABCD", [])
+
+
 def test_refuses_bad_exams(tmp_path):
     s = Store(tmp_path / "omr.db")
     with pytest.raises(ValueError):
@@ -53,6 +79,7 @@ def test_a_page_is_kept_when_the_app_dies_right_after_reading_it(tmp_path):
     # Save one page, then end the process without closing anything.
     code = f"""
 import os
+from omr_core.grading import Section
 from omr_core.reader import PageResult
 from omr_core.store import Store, to_review
 Store({str(db)!r}).add_page({exam}, "b", "f.png", 1, PageResult("9", "A", {{1: "C"}}, []))

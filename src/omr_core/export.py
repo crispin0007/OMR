@@ -1,6 +1,10 @@
-"""Results for an exam: grade every page, and export a merit list (Excel) and scorecards (PDF) (US3)."""
+"""Results for an exam: grade every page, and export a merit list (Excel) and scorecards (PDF) (US3).
 
-from dataclasses import dataclass
+The Excel file also has an item analysis: how each question went across the class.
+"""
+
+from collections import Counter
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -10,7 +14,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
-from .grading import parse_key, rank, score, status
+from .grading import DROPPED, Section, marks_for, parse_key, rank, score, status
 from .store import StoredPage, to_review
 from .students import Student
 from .template import Template
@@ -28,6 +32,7 @@ class Graded:
     percentile: float = 0.0
     to_check: bool = False
     student: Student | None = None  # None when the exam has no student list or the roll number isn't on it
+    sections: dict[str, float] = field(default_factory=dict)  # score per section, in the exam's section order
 
 
 def questions(t: Template) -> list[int]:
@@ -35,7 +40,7 @@ def questions(t: Template) -> list[int]:
 
 
 def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float, wrong: float,
-          blank: float, students: dict[str, Student] | None = None) -> list[Graded]:
+          blank: float, students: dict[str, Student] | None = None, sections: list[Section] = ()) -> list[Graded]:
     """Every page that can be scored, best first, with rank and percentile.
 
     Pages that couldn't be read, or whose set has no key, are left out; they show in review instead.
@@ -44,6 +49,7 @@ def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float,
     qs = questions(t)
     options = "".join(sorted({o for g in t.grids if g.kind == "questions" for o in g.options}))
     keys = parse_key(answer_key, len(qs), options)
+    marks = marks_for(qs, correct, wrong, blank, sections)
     students = students or {}
     flagged = {i for i, _, _ in to_review(pages, students)}
     out = []
@@ -53,30 +59,66 @@ def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float,
             continue
         answers = [p.result.answers[q] for q in qs]
         counts = [status(a, k) for a, k in zip(answers, key)]
-        out.append(Graded(p, key, score(answers, key, correct, wrong, blank), counts.count("right"),
+        per_section = {}
+        for sec in sections:
+            part = [n for n, q in enumerate(qs) if sec.first <= q <= sec.last]
+            per_section[sec.name] = score([answers[n] for n in part], [key[n] for n in part],
+                                          marks=[marks[n] for n in part])
+        out.append(Graded(p, key, score(answers, key, marks=marks), counts.count("right"),
                           counts.count("wrong"), counts.count("blank"), to_check=i in flagged,
-                          student=students.get(p.result.roll_number)))
+                          student=students.get(p.result.roll_number), sections=per_section))
     out.sort(key=lambda g: -g.score)
     for g, (r, pct) in zip(out, rank([g.score for g in out])):
         g.rank, g.percentile = r, pct
     return out
 
 
+def item_analysis(t: Template, graded: list[Graded]) -> list[list]:
+    """One row per question: key, % right, % wrong, % blank, the most chosen wrong answer, and discrimination.
+
+    Discrimination is the share right in the top 27% of scores minus the share right in the bottom 27%:
+    near 0 or negative means the question doesn't separate strong from weak students, worth a second look.
+    """
+    qs = questions(t)
+    ordered = sorted(graded, key=lambda g: -g.score)
+    group = max(1, round(0.27 * len(ordered)))
+    top, bottom = ordered[:group], ordered[-group:]
+    rows = []
+    for n, q in enumerate(qs):
+        counted = [g for g in graded if g.key[n] != DROPPED]
+        keys = sorted({g.key[n] for g in graded})
+        key = keys[0] if len(keys) == 1 else "by set"
+        if not counted:
+            rows.append([f"Q{q}", "dropped", None, None, None, "", None])
+            continue
+        states = Counter(status(g.page.result.answers[q], g.key[n]) for g in counted)
+        wrong = Counter(g.page.result.answers[q] for g in counted if status(g.page.result.answers[q], g.key[n]) == "wrong")
+        pct = lambda k: round(100 * states[k] / len(counted), 1)
+        right_share = lambda gs: sum(status(g.page.result.answers[q], g.key[n]) == "right" for g in gs
+                                     if g.key[n] != DROPPED) / max(1, sum(g.key[n] != DROPPED for g in gs))
+        common = wrong.most_common(1)
+        rows.append([f"Q{q}", key, pct("right"), pct("wrong"), pct("blank"),
+                     f"{common[0][0]} ({common[0][1]})" if common else "", round(right_share(top) - right_share(bottom), 2)])
+    return rows
+
+
 def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Graded]):
-    """Merit list on the first sheet, every answer (green right, red wrong) on the second."""
+    """Merit list on the first sheet, every answer (green right, red wrong) on the second, item analysis on the third."""
     qs = questions(t)
     wb = Workbook()
     ws = wb.active
     ws.title = "Merit list"
     ws.append([exam_name])
     ws["A1"].font = Font(bold=True, size=14)
-    head = ["Rank", "Roll number", "Name", "Class", "Set", "Score", "Right", "Wrong", "Blank", "Percentile", "To check", "File",
-            "Page"]
+    section_names = list(graded[0].sections) if graded else []
+    head = ["Rank", "Roll number", "Name", "Class", "Set", "Score", *section_names, "Right", "Wrong", "Blank", "Percentile",
+            "To check", "File", "Page"]
     ws.append(head)
     for g in graded:
         r = g.page.result
         s = g.student
-        ws.append([g.rank, r.roll_number, s.name if s else "", s.class_name if s else "", r.set_code, g.score, g.right, g.wrong, g.blank, round(g.percentile, 1),
+        ws.append([g.rank, r.roll_number, s.name if s else "", s.class_name if s else "", r.set_code, g.score,
+                   *g.sections.values(), g.right, g.wrong, g.blank, round(g.percentile, 1),
                    "yes" if g.to_check else "", Path(g.page.file).name, g.page.page])
     answers = wb.create_sheet("Answers")
     answers.append(["Roll number", "Name", "Set", *(f"Q{q}" for q in qs)])
@@ -88,7 +130,11 @@ def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Grad
             fill = fills.get(status(r.answers[q], k))
             if fill:
                 answers.cell(answers.max_row, col).fill = fill
-    for sheet, header_row in ((ws, 2), (answers, 1)):
+    items = wb.create_sheet("Item analysis")
+    items.append(["Question", "Key", "% right", "% wrong", "% blank", "Most chosen wrong answer", "Discrimination"])
+    for row in item_analysis(t, graded):
+        items.append(row)
+    for sheet, header_row in ((ws, 2), (answers, 1), (items, 1)):
         for cell in sheet[header_row]:
             cell.font = Font(bold=True)
         sheet.freeze_panes = sheet.cell(header_row + 1, 1)
@@ -120,7 +166,8 @@ def write_scorecards(path: str | Path, exam_name: str, t: Template, graded: list
         c.drawString(18 * mm, h - 38 * mm, f"Score {g.score:g}    Rank {g.rank} of {len(graded)}    "
                                            f"Percentile {g.percentile:.1f}")
         c.setFont("Helvetica", 10)
-        c.drawString(18 * mm, h - 45 * mm, f"Right {g.right}    Wrong {g.wrong}    Blank {g.blank}")
+        c.drawString(18 * mm, h - 45 * mm, f"Right {g.right}    Wrong {g.wrong}    Blank {g.blank}    "
+                     + "    ".join(f"{name} {v:g}" for name, v in g.sections.items()))
         if g.to_check:
             c.setFillColor(colors.HexColor("#c27c00"))
             c.drawString(18 * mm, h - 51 * mm, "Some marks on this sheet were still being checked.")
