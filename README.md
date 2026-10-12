@@ -66,7 +66,9 @@ The sidebar opens Dashboard, Exams, Map printed sheet, Help and Settings. Until
 the first exam exists, Exams shows the steps below. **Help** (F1) repeats them
 with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
 
-1. On **Exams**, **New exam…** sets up the exam step by step: its name,
+1. On **Exams**, **New exam…** sets up the exam step by step. **Start from**
+   fills it in from a ready-made layout (JEE Main, NEET or CEE style, or a
+   50-question class test) to change as you like. The steps cover its name,
    class, date, time and duration; its subjects or sections and the
    question numbers each covers; options per question (2 to 8, or true or
    false), roll number digits and question paper sets; marks for right,
@@ -97,7 +99,9 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    one. Pick the set at the top for a key per set. **Import CSV…** and
    **Export CSV…** use the columns `set,question,answer` (`set` may be left
    out), and **Paste as text** takes one letter per question (`ABDCA…`), or
-   one line per set (`A: ABDC…`). Scores appear as you go. A key shorter than the sheet
+   one line per set (`A: ABDC…`). **Read from a filled sheet…** takes the key
+   from a master sheet filled with the right answers: its set code picks the
+   set, and any unclear or doubled mark is left for you to click. Scores appear as you go. A key shorter than the sheet
    counts only those questions. **Marks and sections** sets marks for
    correct, wrong (e.g. -0.25) and blank answers; **Sections…** gives ranges
    of questions their own name and marks (e.g. Physics 1 to 30, 4 right, -1

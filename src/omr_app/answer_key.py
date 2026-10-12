@@ -11,7 +11,9 @@ from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QMessageBox,
                                QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
-from omr_core.grading import BONUS, DROPPED, format_key, key_from_csv, key_to_csv, parse_key
+from omr_core.grading import BONUS, DROPPED, format_key, key_from_csv, key_from_sheet, key_to_csv, parse_key
+from omr_core.reader import read_or_reason
+from omr_core.sources import read_pages
 
 from .theme import tokens
 
@@ -81,6 +83,10 @@ class KeyTab(QWidget):
         self.sets = QComboBox()
         self.sets.currentIndexChanged.connect(self.refresh)
         self.count = QLabel(objectName="muted")
+        self.sheet_button = QPushButton("Read from a filled sheet…")
+        self.sheet_button.setToolTip("Fill one answer sheet with the right answers, scan or photograph it, and open it "
+                                     "here; its set code says which set's key it is")
+        self.sheet_button.clicked.connect(self.read_master)
         self.import_button = QPushButton("Import CSV…")
         self.import_button.clicked.connect(self.import_csv)
         self.export_button = QPushButton("Export CSV…")
@@ -92,6 +98,7 @@ class KeyTab(QWidget):
         top.addWidget(QLabel("Key for"))
         top.addWidget(self.sets)
         top.addWidget(self.count, 1)
+        top.addWidget(self.sheet_button)
         top.addWidget(self.import_button)
         top.addWidget(self.export_button)
         top.addWidget(self.paste_button)
@@ -179,7 +186,7 @@ class KeyTab(QWidget):
         if self.set_code() and self.set_code() not in keys and "" in keys:
             text = f"Set {self.set_code()} uses the key for all sets until you give it its own"
         self.count.setText(text if exam else "")
-        for w in (self.grid, self.import_button, self.paste_button, self.sets):
+        for w in (self.grid, self.sheet_button, self.import_button, self.paste_button, self.sets):
             w.setEnabled(exam is not None)
         self.export_button.setEnabled(bool(keys))
         if self.grid.currentRow() < 0 and questions:
@@ -221,6 +228,44 @@ class KeyTab(QWidget):
             QMessageBox.warning(self, "Can't import that key", f"{path}\n\n{e}")
             return
         self.key_edit.setPlainText(format_key(keys))
+
+    def read_master(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Answer key: the filled master sheet", "",
+                                              "Scans (*.pdf *.png *.jpg *.jpeg *.tif *.tiff *.bmp)")
+        if not path:
+            return
+        try:
+            page = next(read_pages(path))
+        except (OSError, ValueError, StopIteration) as e:
+            QMessageBox.warning(self, "Can't open that file", f"{path}\n\n{e or 'it has no pages'}")
+            return
+        result, problem = read_or_reason(page, self.check.exam.template)
+        if result is None:
+            QMessageBox.warning(self, "Can't read the master sheet", f"{problem.removeprefix('unreadable: ')}.\n\n"
+                                "Check that it is this exam's sheet with all four corner circles in the picture.")
+            return
+        has_sets = self.sets.count() > 1
+        set_code = result.set_code if has_sets and result.set_code not in ("", "?") else self.set_code()
+        keys = self.keys()
+        name = f"set {set_code}" if set_code else "all sets"
+        if keys.get(set_code) and QMessageBox.question(
+                self, "Replace the key", f"Replace the key for {name} with the one on this sheet?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        key, doubtful = key_from_sheet(result.answers, result.flags, self.check.questions)
+        keys[set_code] = key
+        self.key_edit.setPlainText(format_key(keys))
+        self.sets.setCurrentText(set_code or ALL_SETS)
+        given = sum(a != DROPPED for a in key)
+        lines = [f"Key for {name}: {given} of {len(key)} questions read from the sheet."]
+        if doubtful:
+            lines.append("Not taken, because the mark was unclear or doubled: "
+                         + ", ".join(f"Q{q}" for q in doubtful) + ". Click their answers in the grid.")
+        if has_sets and result.set_code in ("", "?"):
+            lines.append(f"The sheet's set code couldn't be read, so this is the key for {name}.")
+        if given + len(doubtful) < len(key):
+            lines.append("Questions left blank on the sheet are left out of the key.")
+        QMessageBox.information(self, "Key read", "\n\n".join(lines))
 
     def export_csv(self):
         exam = self.check.exam

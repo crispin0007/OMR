@@ -694,3 +694,20 @@ def test_written_marks_are_typed_and_added_on_results(app, tmp_path, monkeypatch
     monkeypatch.setattr(QMessageBox, "warning", lambda *a: warned.append(a[2]))
     tab.table.setItem(1, 2, QTableWidgetItem("25"))  # above the written part's 20
     assert warned and "0 to 20" in warned[0] and len(w.store.written(c.exam.id)) == 1
+
+
+def test_answer_key_is_read_from_a_filled_master_sheet(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    t = load(TEMPLATES / "test-100.json")
+    marks, answers, _, set_code = random_marks(t, 8)
+    path = tmp_path / "master.png"
+    cv2.imwrite(str(path), scan(draw(t, marks), seed=8))
+    w = window(tmp_path)
+    k = w.check.key_tab
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a: (str(path), ""))
+    shown = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: shown.append(a[2]))
+    k.read_master()
+    key = k.keys()[set_code]
+    assert key == [answers[q] or "-" for q in w.check.questions]
+    assert f"Key for set {set_code}" in shown[0] and k.set_code() == set_code
