@@ -17,8 +17,8 @@ from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QColorDialog, QComboBox,
                                QMessageBox, QPlainTextEdit, QPushButton, QRadioButton, QScrollArea, QSpinBox,
                                QStackedWidget, QTableWidget, QTableWidgetItem, QTimeEdit, QVBoxLayout, QWidget)
 
-from omr_core.sheet import (DEFAULT_HEADING, DEFAULT_INSTRUCTIONS, MAX_ROLL_DIGITS, SheetSection, SheetSpec, layout,
-                            logo_jpeg, render)
+from omr_core.sheet import (DEFAULT_HEADING, DEFAULT_INSTRUCTIONS, MAX_NUMBER_DIGITS, MAX_ROLL_DIGITS, SheetSection,
+                            SheetSpec, layout, logo_jpeg, render)
 from omr_core.store import Store
 from omr_core.template import load
 
@@ -37,6 +37,7 @@ SETS = ["No sets"] + [f"{n} sets (A to {'ABCDEFGH'[n - 1]})" for n in range(2, 9
 COLOURS = [("Pink", "#e4007c"), ("Red", "#d32f2f"), ("Orange", "#ef6c00"), ("Green", "#2e7d32"),
            ("Teal", "#00838f"), ("Blue", "#1565c0"), ("Purple", "#6a1b9a"), ("Black", "#000000")]
 OTHER_COLOUR = "Other colour…"
+ANSWERED_WITH = ["Options"] + [f"Number, up to {n} digit{'s' if n > 1 else ''}" for n in range(1, MAX_NUMBER_DIGITS + 1)]
 
 
 def _marks(value: float) -> QDoubleSpinBox:
@@ -146,14 +147,15 @@ class NewExamWizard(QDialog):
     def _sections(self, layout: QVBoxLayout):
         layout.addWidget(QLabel("Subjects and sections", objectName="title"))
         layout.addWidget(QLabel("Leave the list empty for one set of questions. Add a row for each subject or "
-                                "section; each starts its own column on the sheet and gets its own marks and score.",
-                                objectName="muted", wordWrap=True))
+                                "section; each starts its own column on the sheet and gets its own marks and score. "
+                                "Questions answered with a number (e.g. JEE numeric questions) get a box of digits "
+                                "each at the foot of the sheet.", objectName="muted", wordWrap=True))
         self.total = QSpinBox(minimum=1, maximum=300, value=100)
         total_row = QFormLayout()
         total_row.addRow("Number of questions", self.total)
         layout.addLayout(total_row)
-        self.sections = QTableWidget(0, 3)
-        self.sections.setHorizontalHeaderLabels(["Subject or section", "Questions", "Question numbers"])
+        self.sections = QTableWidget(0, 4)
+        self.sections.setHorizontalHeaderLabels(["Subject or section", "Questions", "Question numbers", "Answered with"])
         self.sections.verticalHeader().hide()
         self.sections.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.sections.itemChanged.connect(self._sections_changed)
@@ -329,6 +331,10 @@ class NewExamWizard(QDialog):
         self.sections.insertRow(n)
         self.sections.setItem(n, 0, QTableWidgetItem(f"Subject {n + 1}"))
         self.sections.setItem(n, 1, QTableWidgetItem(str(self.total.value()) if n == 0 else "25"))
+        answered = QComboBox()
+        answered.addItems(ANSWERED_WITH)
+        answered.currentIndexChanged.connect(self._sections_changed)
+        self.sections.setCellWidget(n, 3, answered)
         self.sections.blockSignals(False)
         self._sections_changed()
 
@@ -347,7 +353,7 @@ class NewExamWizard(QDialog):
                     raise ValueError
             except (AttributeError, ValueError):
                 raise ValueError(f"row {r + 1}: the number of questions must be a whole number above 0") from None
-            out.append(SheetSection(name, count))
+            out.append(SheetSection(name, count, digits=self.sections.cellWidget(r, 3).currentIndex()))
         return out
 
     def _sections_changed(self, *_):
@@ -408,7 +414,8 @@ class NewExamWizard(QDialog):
             self._fill_section_marks() if self.section_marks.rowCount() != len(rows) else None
             return [SheetSection(s.name, s.questions, self.section_marks.cellWidget(r, 1).value(),
                                  self.section_marks.cellWidget(r, 2).value(),
-                                 self.section_marks.item(r, 3).checkState() == Qt.Checked) for r, s in enumerate(rows)]
+                                 self.section_marks.item(r, 3).checkState() == Qt.Checked, s.digits)
+                    for r, s in enumerate(rows)]
         if self.partial.isChecked():  # partial marking needs a section to carry it
             return [SheetSection("All questions", self.total.value(), self.correct.value(), self.wrong.value(), True)]
         return []
@@ -450,7 +457,7 @@ class NewExamWizard(QDialog):
             self.made = None
             self.preview.clear()
             t = load(self.template_path)
-            questions = sum(g.rows for g in t.grids if g.kind == "questions")
+            questions = len(t.questions())
             lines += [f"Your printed sheet: {t.name}, {questions} questions",
                       f"Marks: {self.correct.value():g} right, {self.wrong.value():g} wrong, "
                       f"{self.blank.value():g} blank"]
@@ -460,8 +467,10 @@ class NewExamWizard(QDialog):
             kind = "true or false" if spec.true_false else f"{spec.options} options each"
             lines.append(f"{spec.questions} questions, {kind}")
             for s in spec.sections:
-                lines.append(f"&nbsp;&nbsp;{s.name}: {s.questions} questions, {s.correct:g} right, {s.wrong:g} wrong"
-                             + (", partial marking" if s.partial else ""))
+                lines.append(f"&nbsp;&nbsp;{s.name}: {s.questions} questions"
+                             + (f" answered with a number of up to {s.digits} digits" if s.digits else "")
+                             + f", {s.correct:g} right, {s.wrong:g} wrong"
+                             + (", partial marking" if s.partial and not s.digits else ""))
             if not spec.sections:
                 lines.append(f"Marks: {self.correct.value():g} right, {self.wrong.value():g} wrong, "
                              f"{self.blank.value():g} blank")

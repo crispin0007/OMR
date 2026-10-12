@@ -36,7 +36,7 @@ class Graded:
 
 
 def questions(t: Template) -> list[int]:
-    return sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows))
+    return t.questions()
 
 
 def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float, wrong: float,
@@ -47,8 +47,7 @@ def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float,
     Raises ValueError if the key doesn't fit the sheet.
     """
     qs = questions(t)
-    options = "".join(sorted({o for g in t.grids if g.kind == "questions" for o in g.options}))
-    keys = parse_key(answer_key, len(qs), options)
+    keys = parse_key(answer_key, len(qs), t.answer_options())
     marks = marks_for(qs, correct, wrong, blank, sections)
     students = students or {}
     flagged = {i for i, _, _ in to_review(pages, students)}

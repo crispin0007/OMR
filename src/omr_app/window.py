@@ -196,7 +196,7 @@ class CheckPage(QWidget):
         else:
             exam = self.store.exam(exam_id)
             t = exam.template
-            self.questions = sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows))
+            self.questions = t.questions()
             self.sheets = self.store.pages(exam_id)
             self.students = self.store.students(exam_id)
             self.sections = exam.sections
@@ -343,10 +343,8 @@ class CheckPage(QWidget):
             self.key_tab.refresh()
             self.fill_table()
             return
-        t = self.exam.template
-        options = "".join(sorted({o for g in t.grids if g.kind == "questions" for o in g.options}))
         try:
-            self.keys = parse_key(self.key_edit.toPlainText(), len(self.questions), options)
+            self.keys = parse_key(self.key_edit.toPlainText(), len(self.questions), self.exam.template.answer_options())
             text = (f"Key for {', '.join('set ' + s if s else 'all sets' for s in self.keys)}"
                     if self.keys else "Click the right answers below, or import a CSV, to see scores")
             counted = max((sum(k != "-" for k in key) for key in self.keys.values()), default=len(self.questions))

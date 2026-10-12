@@ -683,3 +683,84 @@ def test_answer_key_is_read_from_a_filled_master_sheet(app, tmp_path, monkeypatc
     key = k.keys()[set_code]
     assert key == [answers[q] or "-" for q in w.check.questions]
     assert f"Key for set {set_code}" in shown[0] and k.set_code() == set_code
+
+
+def test_numeric_questions_take_a_typed_key_and_a_typed_correction(app, tmp_path, monkeypatch):
+    import json
+
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QInputDialog
+
+    from omr_core.sheet import SheetSection, SheetSpec, layout, render
+    from sheets import fill
+    d = layout(SheetSpec("JEE", 6, roll_digits=3, sets=0,
+                         sections=[SheetSection("MCQ", 4), SheetSection("Numeric", 2, digits=3)]))
+    t = parse(d)
+    at = {g.kind if g.kind != "numeric" else g.first: i for i, g in enumerate(t.grids)}
+    marks = {(at["roll_number"], 1, c): "pen" for c in range(3)}
+    marks.update({(at["questions"], 0, 0): "pen",  # Q1 A
+                  (at[5], 4, 0): "pen", (at[5], 2, 1): "pen",  # Q5 42
+                  (at[6], 1, 0): "pen", (at[6], 7, 2): "pen"})  # Q6 1, a blank column, 7: for a person to read
+    path = tmp_path / "jee.png"
+    cv2.imwrite(str(path), scan(fill(render(d), t, marks)))
+    w = MainWindow(tmp_path / "omr.db")
+    w.open_exam(w.store.create_exam("JEE", json.dumps(d)))
+    c = w.check
+    c.read_files([str(path)])
+    k, g = c.key_tab, c.key_tab.grid
+    assert g.horizontalHeaderItem(2).text() == "A" and k.numeric == {4, 5}
+    QTest.keyClick(g, Qt.Key_A)
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **kw: (kw["text"] + "2", True))
+    g.setCurrentCell(4, 2)
+    QTest.keyClick(g, Qt.Key_4)  # a digit starts the number
+    assert c.key_edit.toPlainText() == "A, -, -, -, 42" and g.item(4, 2).text() == "42" and g.currentRow() == 5
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **kw: ("017", True))
+    g.cellClicked.emit(5, 3)
+    assert c.key_edit.toPlainText() == "A, -, -, -, 42, 17"
+    assert c.score_of(c.sheets[0]) == 2  # Q6 was read as 1?7
+
+    w.go("Review")
+    assert [item for _, item, _ in w.review.items] == ["Q6"] and "gap" in w.review.why.text()
+    edit, save = w.review.buttons.itemAt(0).widget(), w.review.buttons.itemAt(1).widget()
+    assert edit.text() == "17"
+    save.click()
+    assert w.review.items == [] and c.score_of(c.sheets[0]) == 3
+
+
+def test_new_exam_wizard_makes_numeric_sections(app, tmp_path):
+    from omr_app.new_exam import NewExamWizard
+    w = MainWindow(tmp_path / "omr.db")
+    z = NewExamWizard(w, w.store)
+    z.name.setText("JEE mock")
+    z.add_section()
+    z.add_section()
+    z.sections.item(0, 1).setText("20")
+    z.sections.item(1, 1).setText("5")
+    z.sections.cellWidget(1, 3).setCurrentIndex(3)  # a number of up to 3 digits
+    assert z.sections.item(1, 2).text() == "21 to 25" and z.total.value() == 25
+    z.update_preview()
+    assert [(g["first"], g["cols"]) for g in z.made["grids"] if g["kind"] == "numeric"] == [(q, 3) for q in range(21, 26)]
+    z.update_review()
+    assert "answered with a number of up to 3 digits" in z.summary.text()
+
+
+def test_designer_maps_numeric_answer_boxes(app, tmp_path):
+    from omr_core.sheet import SheetSection, SheetSpec, layout, render
+    d = layout(SheetSpec("JEE", 6, roll_digits=3, sets=0,
+                         sections=[SheetSection("MCQ", 4), SheetSection("Numeric", 2, digits=3)]))
+    t = parse(d)
+    path = tmp_path / "blank.png"
+    cv2.imwrite(str(path), scan(render(d)))
+    w = window(tmp_path)
+    w.go("Map printed sheet")
+    m = w.designer
+    m.load_scan(str(path))
+    s = m.gray.shape[1] / t.page[0]
+    for x, y in t.markers:
+        m.mark_clicked(x * s, y * s)
+    for g in t.grids:
+        (x0, y0), (x1, y1) = g.centre(0, 0), g.centre(g.rows - 1, g.cols - 1)
+        m.canvas.boxed.emit(QRectF((x0 - 4) * SCALE, (y0 - 4) * SCALE, (x1 - x0 + 8) * SCALE, (y1 - y0 + 8) * SCALE))
+    assert [(b["kind"], b.get("first")) for b in m.blocks] == [(g.kind, g.first if g.kind != "roll_number" else None)
+                                                              for g in t.grids]
+    assert parse(m.template_dict()).questions() == [1, 2, 3, 4, 5, 6]

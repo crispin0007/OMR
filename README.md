@@ -67,8 +67,10 @@ the first exam exists, Exams shows the steps below. **Help** (F1) repeats them
 with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
 
 1. On **Exams**, **New exam…** sets up the exam step by step: its name,
-   class, date, time and duration; its subjects or sections and the
-   question numbers each covers; options per question (2 to 8, or true or
+   class, date, time and duration; its subjects or sections, the question
+   numbers each covers and whether it is answered with options or with a
+   number (up to 6 digits, e.g. JEE numeric questions, which get a box of
+   digit bubbles each at the foot of the sheet); options per question (2 to 8, or true or
    false), roll number digits and question paper sets; marks for right,
    wrong (negative marking) and blank answers, per section, with partial
    marking for multi-correct questions; and the sheet's colour, heading,
@@ -97,7 +99,9 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    one. Pick the set at the top for a key per set. **Import CSV…** and
    **Export CSV…** use the columns `set,question,answer` (`set` may be left
    out), and **Paste as text** takes one letter per question (`ABDCA…`), or
-   one line per set (`A: ABDC…`). **Read from a filled sheet…** takes the key
+   one line per set (`A: ABDC…`). On a numeric question, type the number (or
+   click it); in pasted text a number's digits go together (`ABC42D`), and an
+   answer is right when it is the same number (042 is 42). **Read from a filled sheet…** takes the key
    from a master sheet filled with the right answers: its set code picks the
    set, and any unclear or doubled mark is left for you to click. Scores appear as you go. A key shorter than the sheet
    counts only those questions. **Marks and sections** sets marks for
@@ -107,7 +111,8 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
 5. **Review** lists everything the reader wasn't sure about, unreadable
    pages and repeated roll numbers. Each item shows that part of the sheet;
    click the right answer or press its key (Delete for blank, Space to keep
-   the reading). Scores update at once and every change is logged.
+   the reading). A numeric answer with a doubtful digit or a gap between
+   digits is typed in. Scores update at once and every change is logged.
    **Students** imports an Excel file with roll number, name and class
    columns; names then show everywhere, roll numbers not on the list go to
    Review, and rows that can't be used are listed, not imported.
@@ -134,7 +139,8 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    an existing sheet into a template. Open a flat scan of the whole page (blank or filled, 150 to 300
    DPI), click the four corner marks, then drag a box around each block of
    bubbles. It finds the bubbles, guesses roll number, set code or questions
-   and numbers them; fix anything on the right. **Test on this scan** reads
+   and numbers them; fix anything on the right (a second block of digit
+   columns is taken as a numeric answer). **Test on this scan** reads
    the scan with the new template, and **Save template…** puts it in
    `%LOCALAPPDATA%\OMR\templates`, where **Use my own printed sheet** looks
    first.
