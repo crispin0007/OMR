@@ -25,18 +25,30 @@ specs/          one folder per feature: spec, plan, tasks (spec-kit flow)
 
 ## Run it
 
-Python 3.11 or newer.
+Python 3.11, 3.12 or 3.13 (64-bit). On Windows, in Command Prompt:
 
 ```
-python -m venv .venv
-.venv\Scripts\activate          # Windows; on Linux or macOS: source .venv/bin/activate
+cd D:\OMR
+py -3.12 -m venv .venv
+.venv\Scripts\activate
 pip install -e ".[app,dev]"
-pytest                          # core tests
-omr                             # start the desktop app
+pytest
 ```
 
-The `app` extra pulls in PySide6, and pytwain on Windows for live scanning.
-`omr_core` installs and tests on any OS without it.
+On Linux or macOS use `python3 -m venv .venv` and `source .venv/bin/activate`.
+
+### Read sheets
+
+```
+omr-read TEMPLATE.json sheets.pdf more.png --csv results.csv
+```
+
+`omr-read` takes a template and any number of PDF, PNG, JPG or TIFF files,
+prints the roll number, set code and anything that needs review for each
+page, and with `--csv` saves every answer to a spreadsheet-ready file.
+Templates live in `templates/`.
+
+`omr` opens the desktop window, which is still a placeholder.
 
 ## Contributing
 
