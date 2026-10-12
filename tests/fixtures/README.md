@@ -14,7 +14,7 @@ tests/fixtures/<name>/
 
 ```json
 {
-  "template": "ambition-guru-200.json",
+  "template": "sample-200q.json",
   "sheets": {
     "scan-01.png": {"roll_number": "12345", "set_code": "A",
                     "answers": {"1": "A", "4": "B"}}
@@ -25,8 +25,7 @@ tests/fixtures/<name>/
 `template` names a file in the folder itself or in `templates/`. Questions missing from `answers` are
 expected blank.
 
-Folders named `private-*` are git-ignored: use them for sheets you can test
-with but not publish.
-
-Only add sheets you have the right to publish, with names, photos and
-signatures blurred (see CONTRIBUTING.md).
+Scans in this folder are git-ignored, so real sheets stay on your machine and
+are never published. Commit only `expected.json` files, and only when they
+name no real person or organisation; anything private goes in a folder named
+`private-*`, which is ignored entirely.
