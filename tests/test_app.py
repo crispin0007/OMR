@@ -764,3 +764,20 @@ def test_designer_maps_numeric_answer_boxes(app, tmp_path):
     assert [(b["kind"], b.get("first")) for b in m.blocks] == [(g.kind, g.first if g.kind != "roll_number" else None)
                                                               for g in t.grids]
     assert parse(m.template_dict()).questions() == [1, 2, 3, 4, 5, 6]
+
+
+def test_ready_made_layouts_fill_the_wizard_and_fit_the_sheet(app, tmp_path):
+    from omr_app import new_exam
+    from omr_core.store import Store
+    z = new_exam.NewExamWizard(None, Store(tmp_path / "omr.db"))
+    for name, (sections, total, options, right, wrong) in new_exam.READY.items():
+        z.ready.setCurrentText(name)
+        assert z.total.value() == (sum(s[1] for s in sections) or total) and z.options.value() == options
+        assert [(s.name, s.digits) for s in z.read_sections()] == [(s[0], (s[2:] or [0])[0]) for s in sections]
+        assert [(s.correct, s.wrong) for s in z.sheet_sections()] == [(right, wrong)] * len(sections)
+        z.update_preview()
+        assert z.made is not None, (name, z.layout_problem)  # fits one page
+    z.ready.setCurrentText(next(n for n in new_exam.READY if n.startswith("JEE")))
+    z.update_preview()
+    assert [g["first"] for g in z.made["grids"] if g["kind"] == "numeric"] == [*range(21, 26), *range(46, 51),
+                                                                               *range(71, 76)]
