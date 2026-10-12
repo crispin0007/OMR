@@ -23,7 +23,10 @@ from omr_core.store import Store
 from omr_core.template import load
 
 
-TEMPLATES = Path(__file__).resolve().parents[2] / "templates"  # the repo's templates, in a source checkout
+# The bundled templates: next to src/ in a source checkout, next to the packages in the installed app.
+TEMPLATES = next((p for p in (Path(__file__).resolve().parents[2] / "templates",
+                              Path(__file__).resolve().parents[1] / "templates") if p.is_dir()),
+                 Path(__file__).resolve().parents[2] / "templates")
 # Templates mapped in the sheet designer: %LOCALAPPDATA%\OMR\templates on Windows, next to the database.
 USER_TEMPLATES = Path(QStandardPaths.writableLocation(QStandardPaths.GenericDataLocation)) / "OMR" / "templates"
 

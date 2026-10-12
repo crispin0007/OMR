@@ -24,7 +24,12 @@ specs/          one folder per feature: spec, plan, tasks (spec-kit flow)
 .specify/       spec-kit memory, including the constitution
 ```
 
-## Run it
+## Install on Windows
+
+Run `OMR-Setup-<version>.exe` and open OMR from the Start menu; nothing else is needed. To make the
+installer from this repository, see [packaging/README.md](packaging/README.md).
+
+## Run it from source
 
 Python 3.11, 3.12 or 3.13 (64-bit). On Windows, in Command Prompt:
 
