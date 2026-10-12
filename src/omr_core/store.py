@@ -43,6 +43,15 @@ CREATE TABLE IF NOT EXISTS page (
     image BLOB                       -- aligned page as PNG, for review
 );
 CREATE INDEX IF NOT EXISTS page_exam ON page(exam_id);
+CREATE TABLE IF NOT EXISTS audit (
+    id INTEGER PRIMARY KEY,
+    page_id INTEGER NOT NULL REFERENCES page(id) ON DELETE CASCADE,
+    at TEXT NOT NULL,
+    user TEXT NOT NULL,
+    item TEXT NOT NULL,              -- "Q12", "roll number digit 3", "set code"
+    before TEXT NOT NULL,
+    after TEXT NOT NULL
+);
 """
 
 
@@ -132,9 +141,15 @@ class Store:
 
     def pages(self, exam_id: int) -> list[StoredPage]:
         """Every page of an exam in the order read, without images."""
+        return self._pages("exam_id = ?", exam_id)
+
+    def page(self, page_id: int) -> StoredPage:
+        return self._pages("id = ?", page_id)[0]
+
+    def _pages(self, where: str, arg: int) -> list[StoredPage]:
         rows = self.db.execute(
             "SELECT id, batch, file, page_no, read_at, roll_number, set_code, answers, flags, problem FROM page "
-            "WHERE exam_id = ? ORDER BY id", (exam_id,)).fetchall()
+            f"WHERE {where} ORDER BY id", (arg,)).fetchall()
         out = []
         for id_, batch, file, page_no, read_at, roll, set_code, answers, flags, problem in rows:
             result = None if roll is None else PageResult(
@@ -143,8 +158,85 @@ class Store:
             out.append(StoredPage(id_, batch, file, page_no, read_at, result, problem))
         return out
 
+    def correct(self, page_id: int, item: str, value: str, user: str) -> StoredPage:
+        """Set one answer, roll number digit or set code by hand, clear its flag, and log the change (FR-013).
+
+        `item` is a flag's "where": "Q12", "roll number digit 3" or "set code". Keeping a reading as it is
+        is a correction too: it clears the flag and is logged.
+        """
+        row = self.db.execute("SELECT p.exam_id, p.roll_number, p.set_code, p.answers, p.flags, e.template "
+                              "FROM page p JOIN exam e ON e.id = p.exam_id WHERE p.id = ?", (page_id,)).fetchone()
+        if row is None:
+            raise KeyError(page_id)
+        _, roll, set_code, answers, flags, template = row
+        if roll is None:
+            raise ValueError("this page couldn't be read; scan it again")
+        t, answers, value = parse(json.loads(template)), json.loads(answers), value.upper()
+        if item.startswith("Q") and item[1:].isdigit():
+            q = int(item[1:])
+            grid = next((g for g in t.grids if g.kind == "questions" and g.first <= q < g.first + g.rows), None)
+            if grid is None:
+                raise ValueError(f"the sheet has no question {q}")
+            if any(c not in grid.options for c in value) or len(set(value)) != len(value):
+                raise ValueError(f"{value!r} isn't an answer to {item} (options {grid.options})")
+            if len(value) > 1 and not grid.multi:
+                raise ValueError(f"{item} takes one answer")
+            value = "".join(sorted(value))
+            before, answers[str(q)] = answers[str(q)], value
+        elif item.startswith("roll number digit "):
+            n = int(item.rsplit(" ", 1)[1]) - 1
+            if not 0 <= n < len(roll) or len(value) != 1 or value not in "0123456789":
+                raise ValueError(f"{value!r} isn't a digit for {item}")
+            before, roll = roll[n], roll[:n] + value + roll[n + 1:]
+        elif item == "roll number":
+            if len(value) != len(roll) or not value.isdigit():
+                raise ValueError(f"the roll number needs {len(roll)} digits")
+            before, roll = roll, value
+        elif item == "set code":
+            options = next((g.options for g in t.grids if g.kind == "set_code"), "")
+            if len(value) != 1 or value not in options:
+                raise ValueError(f"{value!r} isn't a set code ({options})")
+            before, set_code = set_code, value
+        else:
+            raise ValueError(f"can't correct {item!r}")
+        flags = [f for f in json.loads(flags) if f[0] != item]
+        with self.db:
+            self.db.execute("UPDATE page SET roll_number = ?, set_code = ?, answers = ?, flags = ? WHERE id = ?",
+                            (roll, set_code, json.dumps(answers), json.dumps(flags), page_id))
+            self.db.execute("INSERT INTO audit (page_id, at, user, item, before, after) VALUES (?, ?, ?, ?, ?, ?)",
+                            (page_id, datetime.now().isoformat(timespec="seconds"), user, item, before, value))
+        return self.page(page_id)
+
+    def audit(self, exam_id: int) -> list[tuple[str, str, str, int, str, str, str]]:
+        """(at, user, file, page, item, before, after) for every change in an exam, oldest first."""
+        return self.db.execute(
+            "SELECT a.at, a.user, p.file, p.page_no, a.item, a.before, a.after FROM audit a "
+            "JOIN page p ON p.id = a.page_id WHERE p.exam_id = ? ORDER BY a.id", (exam_id,)).fetchall()
+
     def image(self, page_id: int) -> np.ndarray | None:
         row = self.db.execute("SELECT image FROM page WHERE id = ?", (page_id,)).fetchone()
         if not row or row[0] is None:
             return None
         return cv2.imdecode(np.frombuffer(row[0], np.uint8), cv2.IMREAD_GRAYSCALE)
+
+
+def to_review(pages: list[StoredPage]) -> list[tuple[int, str, str]]:
+    """(index in pages, item, why) for everything a person must check before results go out.
+
+    The reader's flags, pages that couldn't be read, and roll numbers that more than one page has.
+    """
+    rolls: dict[str, list[int]] = {}
+    for i, p in enumerate(pages):
+        if p.result and "?" not in p.result.roll_number:
+            rolls.setdefault(p.result.roll_number, []).append(i)
+    out = []
+    for i, p in enumerate(pages):
+        if p.result is None:
+            out.append((i, "page", p.problem))
+            continue
+        out.extend((i, where, why) for where, why in p.result.flags)
+        same = [j for j in rolls.get(p.result.roll_number, []) if j != i]
+        if same:
+            others = ", ".join(f"{Path(pages[j].file).name} page {pages[j].page}" for j in same)
+            out.append((i, "roll number", f"same roll number as {others}"))
+    return out

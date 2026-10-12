@@ -30,9 +30,10 @@ task before it.
 
 ## Phase 4: US2 Review flagged answers (P1)
 
-- [ ] T013 [US2] Correction function in `store.py` that re-grades and writes the audit log
-- [ ] T014 [US2] Review queue screen in `src/omr_app/review.py`, sheet image with overlay
-- [ ] T015 [US2] Duplicate roll number and unknown student flags
+- [x] T013 [US2] Correction function in `store.py` that re-grades and writes the audit log (user is the Windows login until T026 adds users)
+- [x] T014 [US2] Review queue screen in `src/omr_app/review.py`, sheet image with overlay
+- [x] T015 [US2] Duplicate roll number flags
+- [ ] T015b [US2] Unknown student flags (needs the student list, T026)
 
 ## Phase 5: US3 Publish results (P1)
 

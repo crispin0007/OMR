@@ -70,8 +70,10 @@ def test_dashboard_opens_the_sheets_behind_it(app, tmp_path):
     assert w.check.to_check() == [2]
     assert w.dashboard.to_check.value.text() == "1" and w.dashboard.batches.value.text() == "1"
     w.dashboard.to_check.mousePressEvent(None)
+    assert w.stack.currentWidget() is w.review
+    w.dashboard.open_clean()
     assert w.stack.currentWidget() is w.check
-    assert [w.check.table.isRowHidden(r) for r in range(3)] == [True, True, False]
+    assert [w.check.table.isRowHidden(r) for r in range(3)] == [False, False, True]
     w.check.show_sheets(None)
     assert not any(w.check.table.isRowHidden(r) for r in range(3))
 
@@ -116,3 +118,26 @@ def test_bad_saved_settings_fall_back_to_defaults(app):
         s.setValue(k, v)
     s.sync()
     assert theme.load_prefs() == theme.Prefs()
+
+
+def test_review_fixes_a_flagged_answer_and_logs_it(app, tmp_path):
+    t = load(TEMPLATES / "test-100.json")
+    marks, answers, roll, set_code = random_marks(t, 5)
+    q_grid = next(i for i, g in enumerate(t.grids) if g.kind == "questions")
+    for c in range(4):
+        marks.pop((q_grid, 0, c), None)
+    marks[q_grid, 0, 2] = "half"  # question 1 half filled: the reader flags it, never guesses
+    path = tmp_path / "half.png"
+    cv2.imwrite(str(path), scan(draw(t, marks)))
+    w = window(tmp_path)
+    c = w.check
+    c.read_files([str(path)])
+    c.key_edit.setPlainText("".join(["C"] + [answers[q] or "A" for q in c.questions[1:]]))
+    before = float(c.table.item(0, 5).text())
+    w.go("Review")
+    assert [item for _, item, _ in w.review.items] == ["Q1"]
+    assert w.review.picture.pixmap() is not None and not w.review.picture.pixmap().isNull()
+    w.review.fix("Q1", "C")
+    assert w.review.items == [] and float(c.table.item(0, 5).text()) == before + 1
+    assert w.store.audit(c.exam.id)[0][4:] == ("Q1", "", "C")
+    assert w.review.log.count() == 1

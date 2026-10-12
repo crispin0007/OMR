@@ -238,7 +238,7 @@ class DashboardPage(QWidget):
         self.update()
 
     def open_to_check(self):
-        self.check.show_sheets(self.check.to_check(), "to check")
+        self.check.review_wanted.emit()
 
     def open_clean(self):
         flagged = set(self.check.to_check())
