@@ -17,7 +17,7 @@ from .dashboard import card
 from .theme import tokens
 
 
-def region(t: Template, item: str) -> tuple[Grid, tuple[float, float, float, float], tuple[float, ...]] | None:
+def region(t: Template, item: str) -> tuple[Grid | None, tuple[float, float, float, float], tuple[float, ...]] | None:
     """The grid an item is on, the area to show around it and the part to highlight, in mm (x0, y0, x1, y1)."""
     bw, bh = t.bubble
 
@@ -34,6 +34,9 @@ def region(t: Template, item: str) -> tuple[Grid, tuple[float, float, float, flo
                 return g, around, box(g, r, 0, r, g.cols - 1, 1)
     kind = "set_code" if item == "set code" else "roll_number" if item.startswith("roll number") else None
     g = next((g for g in t.grids if g.kind == kind), None)
+    if g is None and item == "roll number" and t.barcode:
+        x, y, w, h = t.barcode
+        return None, (x - 6, y - 6, x + w + 6, y + h + 6), (x, y, x + w, y + h)
     if g is None:
         return None
     whole = box(g, 0, 0, g.rows - 1, g.cols - 1, 1)
@@ -158,7 +161,8 @@ class ReviewPage(QWidget):
         else:  # the whole roll number, e.g. a duplicate
             student = c.students.get(r.roll_number)
             self.read_as.setText(f"Read as: {r.roll_number}" + (f"  ({student.name})" if student else ""))
-            edit = QLineEdit(r.roll_number, maxLength=len(r.roll_number))
+            digits = next((g.cols for g in t.grids if g.kind == "roll_number"), None)
+            edit = QLineEdit(r.roll_number.replace("?", ""), maxLength=digits or 40)
             save = QPushButton("Save roll number", objectName="primary")
             save.clicked.connect(lambda: self.fix(item, edit.text()))
             edit.returnPressed.connect(save.click)

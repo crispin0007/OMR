@@ -22,7 +22,7 @@ task before it.
 - [x] T007 [US1] Prepare and align in `src/omr_core/reader.py`: dropout, registration marks, rotation, warp
 - [x] T008 [US1] Read and decide: bubble darkness, per-sheet levels, flags with reasons
 - [x] T009 [US1] Roll number and set code
-- [ ] T009b [US1] Barcode and QR (zxing-cpp)
+- [x] T009b [US1] Barcode and QR (zxing-cpp): the code is the roll number, or must match the roll number bubbles
 - [x] T010 [US1] PDF and image sources in `src/omr_core/sources.py` (pypdfium2, 200 DPI)
 - [x] T011 [US1] Reader tests on generated sheets: 100% accuracy, under 0.3 s per page; real-sheet fixture hook in `tests/test_fixtures.py`
 - [x] T012 [US1] App: type answer key and marking scheme, import PDF or images, show scores and review items, save CSV

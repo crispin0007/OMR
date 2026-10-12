@@ -132,14 +132,15 @@ class ExamsPage(QWidget):
             return
         exam = self.store.exam(exam_id)
         roll = next((g for g in exam.template.grids if g.kind == "roll_number"), None)
-        if roll is None:
-            QMessageBox.warning(self, "No roll number", "This exam's sheet has no roll number grid to match students by.")
+        if roll is None and exam.template.barcode is None:
+            QMessageBox.warning(self, "No roll number", "This exam's sheet has no roll number grid or barcode to match "
+                                "students by.")
             return
         path, _ = QFileDialog.getOpenFileName(self, "Import students", "", "Excel (*.xlsx *.xlsm)")
         if not path:
             return
         try:
-            students, problems = read_students(path, roll.cols)
+            students, problems = read_students(path, roll.cols if roll else None)
         except (OSError, ValueError) as e:
             QMessageBox.warning(self, "Can't import students", str(e))
             return

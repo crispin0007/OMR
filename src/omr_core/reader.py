@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
+import zxingcpp
 
 from .template import Grid, Template
 
@@ -35,7 +36,8 @@ class PageResult:
 
 def read_page(page: np.ndarray, template: Template) -> PageResult:
     gray = _prepare(page, template.dropout)
-    aligned = _flatten(_align(gray, template))
+    warped = _align(gray, template)
+    aligned = _flatten(warped)
     pixels = [_sample(aligned, g, template.bubble) for g in template.grids]
     empty, gap = _levels(np.concatenate([p.mean(-1).ravel() for p in pixels]))
     result = PageResult(aligned=aligned)
@@ -58,7 +60,27 @@ def read_page(page: np.ndarray, template: Template) -> PageResult:
                 for c in range(grid.cols))
         else:
             result.set_code = _single(result, filled[0], unclear[0], grid.options, "set code")
+    if template.barcode:
+        _identify(result, _barcode(warped, template.barcode), any(g.kind == "roll_number" for g in template.grids))
     return result
+
+
+def _barcode(page: np.ndarray, area: tuple[float, float, float, float]) -> str:
+    """The text of the barcode or QR code in an area of the aligned page, or "" if none can be read."""
+    x, y, w, h = (round(v * SCALE) for v in area)
+    found = zxingcpp.read_barcodes(np.ascontiguousarray(page[y:y + h, x:x + w]))
+    texts = {b.text.strip() for b in found if b.valid and b.text.strip()}
+    return texts.pop() if len(texts) == 1 else ""  # two different codes in one area is not a reading
+
+
+def _identify(result: PageResult, code: str, has_grid: bool):
+    """The barcode is the roll number; with a roll number grid too, the two must agree."""
+    if not has_grid:
+        result.roll_number = code or "?"
+        if not code:
+            result.flags.append(("roll number", "barcode not readable"))
+    elif code and code != result.roll_number and "?" not in result.roll_number:
+        result.flags.append(("roll number", f"barcode says {code}"))
 
 
 def _single(result: PageResult, filled, unclear, labels: str, where: str) -> str:

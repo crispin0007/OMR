@@ -18,11 +18,12 @@ class Student:
     class_name: str = ""
 
 
-def read_students(path: str | Path, digits: int) -> tuple[list[Student], list[str]]:
+def read_students(path: str | Path, digits: int | None) -> tuple[list[Student], list[str]]:
     """Students from the first sheet, and one line per skipped row saying why.
 
     `digits` is how many digits the sheet's roll number has; Excel drops leading
     zeros from numbers, so numeric roll numbers are padded back to that length.
+    None is for sheets identified by barcode: any roll number without spaces.
     Raises ValueError when the file can't be opened or has no roll and name columns.
     """
     try:
@@ -49,10 +50,12 @@ def read_students(path: str | Path, digits: int) -> tuple[list[Student], list[st
             continue  # empty row
         if isinstance(raw, float) and raw.is_integer():
             raw = int(raw)
-        number = str(raw).zfill(digits) if isinstance(raw, int) else str(raw or "").strip()
+        number = str(raw).zfill(digits or 0) if isinstance(raw, int) else str(raw or "").strip()
         if not number:
             problems.append(f"row {n}: no roll number")
-        elif not number.isdigit() or len(number) != digits:
+        elif digits is None and any(c.isspace() for c in number):
+            problems.append(f"row {n}: roll number {number!r} has spaces")
+        elif digits is not None and (not number.isdigit() or len(number) != digits):
             problems.append(f"row {n}: roll number {number!r} isn't {digits} digits")
         elif not who:
             problems.append(f"row {n}: no name for roll number {number}")

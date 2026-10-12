@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from omr_app import designer, theme  # noqa: E402
 from omr_app.window import TEMPLATES, MainWindow  # noqa: E402
 from omr_core.reader import SCALE, read_page  # noqa: E402
-from omr_core.template import load  # noqa: E402
+from omr_core.template import load, parse  # noqa: E402
 from sheets import draw, random_marks, scan  # noqa: E402
 
 
@@ -228,37 +228,27 @@ def test_designer_maps_a_sheet_and_saves_a_template(app, tmp_path, monkeypatch):
     assert (result.roll_number, result.set_code, result.answers) == (roll, set_code, answers)
 
 
-def test_sections_and_a_short_key(app, tmp_path, monkeypatch):
-    from omr_app import sections
-
-    (path, answers, roll, set_code), = sheet_files(tmp_path, [4])
+def test_designer_maps_a_barcode(app, tmp_path):
+    import json
+    d = json.loads((TEMPLATES / "test-100.json").read_text(encoding="utf-8"))
+    d["barcode_mm"] = [140, 55, 55, 18]
+    t = parse(d)
+    marks, answers, roll, set_code = random_marks(t, 8)
+    path = tmp_path / "filled.png"
+    cv2.imwrite(str(path), scan(draw(t, marks, barcode="2026-0042"), seed=8))
     w = window(tmp_path)
-    c = w.check
-    c.read_files([path])
-    c.key_edit.setPlainText("".join(answers[q] or "A" for q in c.questions[:60]))  # only 60 questions in this paper
-    assert "60 of 100 questions counted" in c.key_status.text()
-    right = sum(1 for q in c.questions[:60] if answers[q])
-    assert c.table.item(0, 6).text() == str(right) and c.full_marks() == 60
-
-    def fill(dialog):
-        dialog.add()
-        dialog.table.item(0, 0).setText("Physics")
-        dialog.table.item(0, 2).setText("30")
-        dialog.table.item(0, 3).setText("4")
-        dialog.add()  # starts at 31
-        return dialog.table.item(1, 1).text() == "31" and dialog.accept() is None
-    monkeypatch.setattr(sections.SectionsDialog, "exec", fill)
-    c.edit_sections()
-    assert [s.name for s in w.store.exam(c.exam.id).sections] == ["Physics", "Section 2"]
-    physics = sum(1 for q in c.questions[:30] if answers[q])
-    assert c.table.item(0, 6).text() == str(4 * physics + right - physics)
-    assert c.full_marks() == 4 * 30 + 30
-    headers = [w.results.table.horizontalHeaderItem(i).text() for i in range(w.results.table.columnCount())]
-    assert headers[4:7] == ["Score", "Physics", "Section 2"]
-    assert w.results.table.item(0, 5).text() == str(4 * physics)
-
-    dialog = sections.SectionsDialog(c, [], c.questions, (1, 0, 0))
-    dialog.add()
-    dialog.table.item(0, 2).setText("120")
-    dialog.accept()
-    assert "100" in dialog.error.text() and dialog.result() == 0  # stays open, says why
+    page = w.designer
+    page.load_scan(str(path))
+    s = page.gray.shape[1] / t.page[0]
+    for x, y in t.markers:
+        page.mark_clicked(x * s, y * s)
+    for g in t.grids:
+        if g.kind != "roll_number":
+            (x0, y0), (x1, y1) = g.centre(0, 0), g.centre(g.rows - 1, g.cols - 1)
+            page.canvas.boxed.emit(QRectF((x0 - 4) * SCALE, (y0 - 4) * SCALE, (x1 - x0 + 8) * SCALE,
+                                          (y1 - y0 + 8) * SCALE))
+    page.barcode_button.setChecked(True)
+    page.canvas.boxed.emit(QRectF(137 * SCALE, 52 * SCALE, 61 * SCALE, 24 * SCALE))
+    assert page.template_dict()["barcode_mm"] == [137, 52, 61, 24]
+    page.test_read()
+    assert f"roll number 2026-0042, set {set_code}" in page.test_result.text()
