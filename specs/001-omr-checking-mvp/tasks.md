@@ -8,7 +8,7 @@ task before it.
 ## Phase 1: Setup
 
 - [x] T001 Repo skeleton, CI on Windows and Linux, grading and ranking in `src/omr_core/grading.py`
-- [ ] T002 Add a CI step that imports `omr_core` without PySide6 installed (Constitution II)
+- [x] T002 Test that `omr_core` imports no UI or Windows-only modules (Constitution II), in `tests/test_boundaries.py`
 
 ## Phase 2: Foundations
 
