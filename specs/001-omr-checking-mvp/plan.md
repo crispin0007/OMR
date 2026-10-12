@@ -99,16 +99,17 @@ and designed sheets save the same format, versioned with a `version` key.
 
 1. **Prepare**: for a red dropout template keep the red channel, else
    convert to grayscale.
-2. **Align**: find the four registration marks (contours of the expected
-   size and squareness near each corner), detect a page rotated 180 degrees,
-   and warp the page to template coordinates. If timing marks exist, snap
-   each grid row to the nearest detected mark.
+2. **Align**: find the four registration marks (template matching for
+   square or ring-target marks near each corner), detect a page rotated 180
+   degrees with the orientation mark, and warp the page to template
+   coordinates. Divide out uneven lighting, then snap each bubble row to its
+   printed outlines (within 1.5 mm), which absorbs paper stretch and curl.
 3. **Identify**: read barcode or QR with zxing-cpp; read roll number and set
    code grids as single-answer columns.
 4. **Read bubbles**: mean darkness inside each bubble's inner circle.
-5. **Decide**: split that sheet's darkness values into empty and filled
-   levels (Otsu on the sheet's own values), then mark each bubble filled,
-   empty, or grey zone. Grey zone, more than one mark on a single-answer
+5. **Decide**: take that sheet's own empty level (the median bubble) and
+   filled level, then mark each bubble filled (dark enough and at least 75%
+   covered), empty, or grey zone. Grey zone, more than one mark on a single-answer
    question, or marks not found all become review flags with a reason.
 
 Output is a plain `PageResult` (roll number, set code, answers as strings,

@@ -12,18 +12,19 @@ task before it.
 
 ## Phase 2: Foundations
 
-- [ ] T003 Template JSON format and validation in `src/omr_core/template.py`, with a template for a 100 question test sheet
-- [ ] T004 [P] Generated test sheets in `tests/sheets.py` (fills, skew, noise, 180 degree rotation)
+- [x] T003 Template JSON format and validation in `src/omr_core/template.py`, with a template for a 100 question test sheet
+- [x] T004 [P] Generated test sheets in `tests/sheets.py` (fills, skew, noise, 180 degree rotation)
 - [ ] T005 SQLite schema and audit log in `src/omr_core/store.py`; one commit per graded page
 - [ ] T006 [P] Spike: pytwain page-by-page transfer on 2 to 3 real ADF scanners; record results in `specs/001-omr-checking-mvp/research.md`
 
 ## Phase 3: US1 Grade a stack of scanned sheets (P1) 🎯 MVP
 
-- [ ] T007 [US1] Prepare and align in `src/omr_core/reader.py`: dropout, registration marks, rotation, warp
-- [ ] T008 [US1] Read and decide: bubble darkness, per-sheet levels, flags with reasons
-- [ ] T009 [US1] Roll number, set code, barcode and QR
-- [ ] T010 [US1] PDF and image sources in `src/omr_core/sources.py` (pypdfium2, 200 DPI)
-- [ ] T011 [US1] Reader tests on generated sheets: 100% accuracy, under 0.3 s per page
+- [x] T007 [US1] Prepare and align in `src/omr_core/reader.py`: dropout, registration marks, rotation, warp
+- [x] T008 [US1] Read and decide: bubble darkness, per-sheet levels, flags with reasons
+- [x] T009 [US1] Roll number and set code
+- [ ] T009b [US1] Barcode and QR (zxing-cpp)
+- [x] T010 [US1] PDF and image sources in `src/omr_core/sources.py` (pypdfium2, 200 DPI)
+- [x] T011 [US1] Reader tests on generated sheets: 100% accuracy, under 0.3 s per page; real-sheet fixture hook in `tests/test_fixtures.py`
 - [ ] T012 [US1] App: create exam, type answer key and marking scheme, import PDF, show scores
 
 ## Phase 4: US2 Review flagged answers (P1)

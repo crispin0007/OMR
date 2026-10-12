@@ -1,0 +1,17 @@
+{
+  "name": "Test sheet, 100 questions",
+  "version": 1,
+  "page_mm": [210, 297],
+  "markers": {"shape": "square", "size_mm": 8,
+              "centres_mm": [[12, 12], [198, 12], [198, 285], [12, 285]]},
+  "orientation_mm": [30, 8, 40, 5],
+  "bubble_mm": [4.5, 3.2],
+  "grids": [
+    {"kind": "roll_number", "origin_mm": [30, 40], "pitch_mm": [7, 6], "rows": 10, "cols": 5},
+    {"kind": "set_code", "options": "ABCD", "origin_mm": [110, 40], "pitch_mm": [8, 0], "rows": 1, "cols": 4},
+    {"kind": "questions", "first": 1, "options": "ABCD", "origin_mm": [25, 110], "pitch_mm": [6, 6.5], "rows": 25, "cols": 4},
+    {"kind": "questions", "first": 26, "options": "ABCD", "origin_mm": [70, 110], "pitch_mm": [6, 6.5], "rows": 25, "cols": 4},
+    {"kind": "questions", "first": 51, "options": "ABCD", "origin_mm": [115, 110], "pitch_mm": [6, 6.5], "rows": 25, "cols": 4},
+    {"kind": "questions", "first": 76, "options": "ABCD", "origin_mm": [160, 110], "pitch_mm": [6, 6.5], "rows": 25, "cols": 4}
+  ]
+}
