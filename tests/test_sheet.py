@@ -32,6 +32,28 @@ def test_printed_sheet_reads_back_exactly(spec):
     assert (r.roll_number, r.set_code, r.answers, r.flags) == (roll, set_code, answers, [])
 
 
+CEE = [SheetSection("Zoology", 40), SheetSection("Botany", 40), SheetSection("Chemistry", 50),
+       SheetSection("Physics", 50), SheetSection("MAT", 20)]
+
+
+@pytest.mark.parametrize("options", [4, 5])
+def test_more_sections_than_columns_follow_one_another_down_the_columns(options):
+    d = layout(SheetSpec("CEE", 200, options=options, roll_digits=5, sets=0, sections=CEE))
+    t = parse(d)
+    questions = [g for g in t.grids if g.kind == "questions"]
+    assert sum(g.rows for g in questions) == 200 and len({round(g.origin[0]) for g in questions}) == 5
+    starts = {g.first for g in questions}
+    assert {1, 41, 81, 131, 181} <= starts  # every section starts its own grid, under its heading
+    marks, answers, roll, set_code = random_marks(t, 7)
+    r = read_page(scan(fill(render(d), t, marks), angle=0.5, seed=3), t)
+    assert (r.roll_number, r.answers, r.flags) == (roll, answers, [])
+
+
+def test_a_sheet_too_big_for_a_page_is_refused():
+    with pytest.raises(ValueError, match="don't fit"):
+        layout(SheetSpec("Huge", 300, options=8, sections=[SheetSection(f"S{i}", 60) for i in range(5)]))
+
+
 def test_true_false_and_partial_sections_reach_the_template():
     with pytest.raises(ValueError, match="2 options"):
         layout(SheetSpec("Bad", 10, options=4, true_false=True))
