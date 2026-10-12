@@ -1,6 +1,7 @@
 import pytest
 
-from omr_core.grading import Section, check_sections, full_marks, marks_for, parse_key, rank, score
+from omr_core.grading import (Section, check_sections, format_key, full_marks, key_from_csv, key_to_csv, marks_for,
+                               parse_key, rank, score)
 
 
 def test_score_plain_mcq():
@@ -77,3 +78,26 @@ def test_partial_marking_gives_part_marks_for_part_of_a_multi_correct_answer():
 def test_bad_sections_are_refused(sections):
     with pytest.raises(ValueError):
         check_sections(sections, [1, 2, 3, 4])
+
+
+def test_key_text_and_csv_round_trip():
+    keys = parse_key("A: ABCD\nB: A, AC, *, -, B", 6, "ABCD")
+    assert parse_key(format_key(keys), 6, "ABCD") == keys
+    assert key_from_csv(key_to_csv(keys, [1, 2, 3, 4, 5, 6]), [1, 2, 3, 4, 5, 6], "ABCD") == keys
+
+
+def test_key_from_csv_without_sets_and_with_spreadsheet_quirks():
+    text = "﻿Question,Answer\n1,b\n2,\"A;C\"\n\n4,*\n"
+    assert key_from_csv(text, [1, 2, 3, 4], "ABCD") == {"": ["B", "AC", "-", "*"]}
+
+
+@pytest.mark.parametrize("text,problem", [
+    ("q,a\n1,A\n", "name the columns"),
+    ("question,answer\none,A\n", "line 2: question “one” is not a number"),
+    ("question,answer\n9,A\n", "line 2: the sheet has no question 9"),
+    ("question,answer\n1,E\n", "line 2: E is not an option"),
+    ("", "empty"),
+])
+def test_key_from_csv_names_the_problem(text, problem):
+    with pytest.raises(ValueError, match=problem):
+        key_from_csv(text, [1, 2, 3, 4], "ABCD")

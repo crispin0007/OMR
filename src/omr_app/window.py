@@ -20,6 +20,7 @@ from omr_core.store import Exam, Store, StoredPage, to_review
 from omr_core.students import Student
 
 from . import theme
+from .answer_key import KeyTab
 from .dashboard import DashboardPage, ResultsPage
 from .designer import DesignerPage
 from .exam_page import ExamPage, ExamSettings, PrintSheet, StudentsTab
@@ -81,10 +82,7 @@ class CheckPage(QWidget):
             "A key shorter than the sheet counts only those questions.")
         self.key_edit.textChanged.connect(self.update_key)
         self.key_status = QLabel(objectName="muted", wordWrap=True)
-        self.key_tab = QWidget()
-        key_layout = QVBoxLayout(self.key_tab)
-        key_layout.addWidget(self.key_status)
-        key_layout.addWidget(self.key_edit, 1)
+        self.key_tab = KeyTab(self, self.key_edit, self.key_status)
 
         self.correct, self.wrong, self.blank = (self._marks(v) for v in (1, 0, 0))
         marks = QHBoxLayout()
@@ -285,6 +283,7 @@ class CheckPage(QWidget):
         if self.exam is None:
             self.keys = {}
             self.key_status.setText("")
+            self.key_tab.refresh()
             self.fill_table()
             return
         t = self.exam.template
@@ -292,7 +291,7 @@ class CheckPage(QWidget):
         try:
             self.keys = parse_key(self.key_edit.toPlainText(), len(self.questions), options)
             text = (f"Key for {', '.join('set ' + s if s else 'all sets' for s in self.keys)}"
-                    if self.keys else "Type the answer key to see scores")
+                    if self.keys else "Click the right answers below, or import a CSV, to see scores")
             counted = max((sum(k != "-" for k in key) for key in self.keys.values()), default=len(self.questions))
             if counted < len(self.questions):
                 text += f", {counted} of {len(self.questions)} questions counted"
@@ -303,6 +302,7 @@ class CheckPage(QWidget):
             self.key_status.setText(str(e))
             self.key_status.setObjectName("error")
         self.key_status.setStyleSheet("")  # re-apply the theme for the new object name
+        self.key_tab.refresh()
         self.scheme_changed()
 
     def score_of(self, sheet: StoredPage) -> float | None:

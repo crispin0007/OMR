@@ -402,6 +402,56 @@ def test_new_exam_wizard_true_false_and_layout_problems(app, tmp_path):
     assert json.loads(w.store.exam(z.exam_id).template_json)["print"]
 
 
+def test_answer_key_grid_keyboard_and_csv(app, tmp_path, monkeypatch):
+    from PySide6.QtTest import QTest
+    from omr_app import answer_key
+    w = window(tmp_path)
+    k = w.check.key_tab
+    g = k.grid
+    assert g.rowCount() == 100 and g.horizontalHeaderItem(2).text() == "A" and g.currentRow() == 0
+    QTest.keyClick(g, Qt.Key_B)
+    QTest.keyClick(g, Qt.Key_D)
+    assert g.currentRow() == 2 and w.check.key_edit.toPlainText() == "BD"
+    QTest.keyClick(g, Qt.Key_Up)
+    QTest.keyClick(g, Qt.Key_A, Qt.ShiftModifier)  # a second correct option for question 2
+    assert w.check.key_edit.toPlainText() == "B, AD" and g.currentRow() == 1
+    QTest.keyClick(g, Qt.Key_Down)
+    QTest.keyClick(g, Qt.Key_Asterisk)
+    QTest.keyClick(g, Qt.Key_Return)
+    QTest.keyClick(g, Qt.Key_C)
+    assert w.check.key_edit.toPlainText() == "B, AD, *, -, C" and "4 of 100" in k.count.text()
+    g.setCurrentCell(4, 2)
+    g.cellClicked.emit(4, 2)  # click A for question 5
+    assert w.check.key_edit.toPlainText() == "B, AD, *, -, A"
+    QTest.keyClick(g, Qt.Key_Space)  # the current row (question 5) is dropped again
+    g.setCurrentCell(0, 2)
+    QTest.keyClick(g, Qt.Key_Delete)
+    assert w.check.key_edit.toPlainText() == "-, AD, *"
+    assert w.store.exam(w.check.exam.id).answer_key == "-, AD, *"  # saved as it is set
+
+    k.sets.setCurrentText("B")
+    assert "uses the key for all sets" in k.count.text()
+    QTest.keyClick(g, Qt.Key_C)
+    assert w.check.key_edit.toPlainText() == "-, AD, *\nB: -C"
+
+    path = tmp_path / "key.csv"
+    monkeypatch.setattr(answer_key.QFileDialog, "getSaveFileName", lambda *a: (str(path), ""))
+    k.export_csv()
+    assert path.read_text().splitlines()[:3] == ["set,question,answer", ",1,", ",2,AD"]
+    w.check.key_edit.clear()
+    monkeypatch.setattr(answer_key.QFileDialog, "getOpenFileName", lambda *a: (str(path), ""))
+    k.import_csv()
+    assert w.check.key_edit.toPlainText() == "-, AD, *\nB: -C"
+    path.write_text("question,answer\n1,Z\n")
+    warned = []
+    monkeypatch.setattr(answer_key.QMessageBox, "warning", lambda *a: warned.append(a[2]))
+    k.import_csv()
+    assert "Z is not an option" in warned[0] and w.check.key_edit.toPlainText() == "-, AD, *\nB: -C"
+
+    k.paste_button.click()
+    assert g.isHidden() and not w.check.key_edit.isHidden()
+
+
 def test_sections_and_a_short_key(app, tmp_path, monkeypatch):
     from omr_app import sections
 
