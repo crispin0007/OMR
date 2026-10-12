@@ -141,3 +141,21 @@ def test_review_fixes_a_flagged_answer_and_logs_it(app, tmp_path):
     assert w.review.items == [] and float(c.table.item(0, 5).text()) == before + 1
     assert w.store.audit(c.exam.id)[0][4:] == ("Q1", "", "C")
     assert w.review.log.count() == 1
+
+
+def test_results_export_asks_while_marks_wait_for_review(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    files = sheet_files(tmp_path, [1, 2])
+    (tmp_path / "blank.png").write_bytes(cv2.imencode(".png", 255 + 0 * cv2.imread(files[0][0]))[1].tobytes())
+    w = window(tmp_path)
+    w.check.read_files([f[0] for f in files] + [str(tmp_path / "blank.png")])  # the blank page waits for review
+    w.check.key_edit.setPlainText("A" * 100)
+    assert w.results.table.rowCount() == 2
+    out = tmp_path / "merit.xlsx"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), ""))
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.No)
+    w.results.excel.click()
+    assert not out.exists()  # said no
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    w.results.excel.click()
+    assert out.exists()

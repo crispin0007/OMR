@@ -13,17 +13,17 @@ def score(answers: list[str], key: list[str], correct: float = 1.0, wrong: float
     """Total marks for one sheet. `wrong` is negative for negative marking, e.g. -1."""
     if len(answers) != len(key):
         raise ValueError(f"sheet has {len(answers)} answers but key has {len(key)}")
-    total = 0.0
-    for answer, right in zip(answers, key):
-        if right == DROPPED:
-            continue
-        if right == BONUS or set(answer) == set(right):
-            total += correct
-        elif answer:
-            total += wrong
-        else:
-            total += blank
-    return total
+    marks = {"right": correct, "wrong": wrong, "blank": blank, "dropped": 0.0}
+    return sum(marks[status(answer, right)] for answer, right in zip(answers, key))
+
+
+def status(answer: str, right: str) -> str:
+    """"right", "wrong", "blank" or "dropped" for one answer against its key."""
+    if right == DROPPED:
+        return "dropped"
+    if right == BONUS or set(answer) == set(right):
+        return "right"
+    return "wrong" if answer else "blank"
 
 
 def rank(scores: list[float]) -> list[tuple[int, float]]:
