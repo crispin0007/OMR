@@ -683,3 +683,22 @@ def test_answer_key_is_read_from_a_filled_master_sheet(app, tmp_path, monkeypatc
     key = k.keys()[set_code]
     assert key == [answers[q] or "-" for q in w.check.questions]
     assert f"Key for set {set_code}" in shown[0] and k.set_code() == set_code
+
+
+def test_topics_are_typed_once_and_reach_the_results(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+    w = window(tmp_path)
+    c = w.check
+    answers = iter([("1-50: Algebra\nGeometry", True), ("1-50: Algebra\n51-100: Geometry", True)])
+    monkeypatch.setattr(QInputDialog, "getMultiLineText", lambda *a: next(answers))
+    warned = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warned.append(a[2]))
+    c.edit_topics()  # a line without questions is refused, and the text comes back to fix
+    assert "line 2" in warned[0] and c.topics[51] == "Geometry"
+    assert w.store.topics(c.exam.id) == c.topics and c.topics_label.text().startswith("2 topics over 100 questions")
+    path, answers_given, _, _ = sheet_files(tmp_path, [3])[0]
+    c.read_files([path])
+    c.key_edit.setPlainText("".join(answers_given[q] or "A" for q in c.questions))
+    w.go("Results")
+    g = w.results.graded[0]
+    assert set(g.topics) == {"Algebra", "Geometry"} and sum(n for _, n in g.topics.values()) == 100

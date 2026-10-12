@@ -109,3 +109,20 @@ def test_key_from_a_master_sheet_leaves_out_doubtful_marks():
                                    [("Q4", "unclear mark"), ("Q5", "multiple marks"), ("roll number", "blank")],
                                    [1, 2, 3, 4, 5])
     assert key == ["A", "BD", "-", "-", "-"] and doubtful == [4, 5]
+
+
+def test_topics_are_given_to_ranges_of_questions():
+    from omr_core.grading import format_topics, parse_topics
+    topics = parse_topics("1-3: Kinematics\n\n4\tWork and energy\n5 to 6: Kinematics", list(range(1, 11)))
+    assert topics == {1: "Kinematics", 2: "Kinematics", 3: "Kinematics", 4: "Work and energy", 5: "Kinematics",
+                      6: "Kinematics"}
+    assert format_topics(topics) == "1-3: Kinematics\n4: Work and energy\n5-6: Kinematics"
+    assert parse_topics(format_topics(topics), list(range(1, 11))) == topics
+
+
+@pytest.mark.parametrize("text, problem", [("Kinematics", "start with the questions"), ("1-3", "give questions 1"),
+                                           ("1-30: Optics", "questions 1 to 10"), ("1-3: A\n3: B", "already has")])
+def test_bad_topics_say_why(text, problem):
+    from omr_core.grading import parse_topics
+    with pytest.raises(ValueError, match=problem):
+        parse_topics(text, list(range(1, 11)))

@@ -103,7 +103,10 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    counts only those questions. **Marks and sections** sets marks for
    correct, wrong (e.g. -0.25) and blank answers; **Sections…** gives ranges
    of questions their own name and marks (e.g. Physics 1 to 30, 4 right, -1
-   wrong), and results then show a score per section.
+   wrong), and results then show a score per section. **Topics…** gives questions a topic
+   each (`1-10: Kinematics`, one line per topic); every scorecard then shows
+   the student's share right per topic, and the merit list gets a Topics
+   sheet with a row per student and one for everyone.
 5. **Review** lists everything the reader wasn't sure about, unreadable
    pages and repeated roll numbers. Each item shows that part of the sheet;
    click the right answer or press its key (Delete for blank, Space to keep

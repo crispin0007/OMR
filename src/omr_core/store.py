@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS exam (
     blank REAL NOT NULL DEFAULT 0,
     created TEXT NOT NULL,
     sections TEXT NOT NULL DEFAULT '[]',  -- JSON [Section, ...]
-    details TEXT NOT NULL DEFAULT '{}'    -- JSON {"class", "date", "time", "minutes"}, from New exam
+    details TEXT NOT NULL DEFAULT '{}'    -- JSON {"class", "date", "time", "minutes"} from New exam, "topics"
 );
 CREATE TABLE IF NOT EXISTS page (
     id INTEGER PRIMARY KEY,
@@ -152,6 +152,15 @@ class Store:
         with self.db:
             self.db.execute("UPDATE exam SET sections = ? WHERE id = ?",
                             (json.dumps(sections_to_json(sections)), exam_id))
+
+    def set_topics(self, exam_id: int, topics: dict[int, str]):
+        """Give questions a topic each, for results by topic; questions left out have none."""
+        with self.db:
+            self.db.execute("UPDATE exam SET details = json_set(details, '$.topics', json(?)) WHERE id = ?",
+                            (json.dumps({str(q): t for q, t in sorted(topics.items())}), exam_id))
+
+    def topics(self, exam_id: int) -> dict[int, str]:
+        return {int(q): t for q, t in self.exam(exam_id).details.get("topics", {}).items()}
 
     def rename_exam(self, exam_id: int, name: str):
         name = name.strip()
