@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QRectF, QSettings  # noqa: E402
+from PySide6.QtCore import QRectF, QSettings, Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from omr_app import designer, scanner, theme  # noqa: E402
@@ -296,52 +296,110 @@ def test_scanning_from_a_folder(app, tmp_path, monkeypatch):
     assert not s.running
 
 
-def test_new_sheet_saves_a_template_and_a_pdf(app, tmp_path, monkeypatch):
+def test_new_exam_wizard_makes_the_exam_and_its_sheet(app, tmp_path, monkeypatch):
     import json
-    from omr_app import new_sheet
-    w = window(tmp_path)
-    n = w.new_sheet
-    n.name.setText("Weekly test")
-    n.questions.setValue(60)
-    n.options.setValue(5)
-    n.roll.setValue(4)
-    n.sets.setCurrentIndex(0)  # no sets
-    n.heading.setText("Weekly Test Answer Sheet")
-    n.colour.setCurrentIndex(n.colour.findText("Blue"))
-    n.instructions.setPlainText("Use a black pen.\nFill one bubble per question.")
+    from omr_app import exams, new_exam
+    w = MainWindow(tmp_path / "omr.db")
     logo = tmp_path / "logo.png"
     cv2.imwrite(str(logo), np.full((30, 90, 3), (0, 120, 0), np.uint8))
-    monkeypatch.setattr(new_sheet.QFileDialog, "getOpenFileName", lambda *a: (str(logo), ""))
-    n.choose_logo()
-    n.update_preview()
-    assert n.template and not n.error.text() and not n.preview.pixmap().isNull()
-    assert "60 questions" in n.summary.text()
+    monkeypatch.setattr(new_exam.QFileDialog, "getOpenFileName", lambda *a: (str(logo), ""))
 
-    n.add_section()
-    n.add_section()
-    n.sections.item(0, 0).setText("Part A")
-    n.sections.item(0, 1).setText("40")
-    n.sections.item(1, 2).setText("2")
-    n.update_preview()
-    assert n.questions.value() == 50 and not n.questions.isEnabled()  # 40 + the new section's 10
+    def fill(z):
+        assert z.next.text() == "Next" and not z.back.isEnabled()
+        z.forward()  # Start: make the sheet for me
+        z.forward()
+        assert z.error.text() == "Give the exam a name"
+        z.name.setText("Weekly test")
+        z.class_name.setText("Class 10")
+        z.minutes.setValue(60)
+        z.forward()
+        z.add_section()
+        z.add_section()
+        z.sections.item(0, 0).setText("Physics")
+        z.sections.item(0, 1).setText("20")
+        z.sections.item(1, 0).setText("Physics")
+        assert z.sections.item(1, 2).text() == "21 to 45" and z.total.value() == 45
+        z.forward()
+        assert "own name" in z.error.text()
+        z.sections.item(1, 0).setText("Chemistry")
+        z.forward()
+        z.options.setValue(5)
+        z.roll.setValue(4)
+        z.sets.setCurrentIndex(0)  # no sets
+        z.forward()
+        assert z.section_marks.rowCount() == 2
+        z.section_marks.cellWidget(0, 1).setValue(4)
+        z.section_marks.cellWidget(0, 2).setValue(-1)
+        z.section_marks.item(1, 3).setCheckState(Qt.Checked)
+        z.forward()
+        z.colour.setCurrentIndex(z.colour.findText("Blue"))
+        z.choose_logo()
+        z.forward()
+        assert z.next.text() == "Create exam" and "45 questions, 5 options each" in z.summary.text()
+        assert "Chemistry: 25 questions, 1 right, 0 wrong, partial marking" in z.summary.text()
+        z.forward()
+        return z.result()
 
-    monkeypatch.setattr(new_sheet, "USER_TEMPLATES", tmp_path / "templates")
-    monkeypatch.setattr(new_sheet.QMessageBox, "information", lambda *a: None)
-    monkeypatch.setattr(new_sheet.QFileDialog, "getSaveFileName", lambda *a: (str(tmp_path / "sheet.pdf"), ""))
-    n.save_template()
-    n.save_pdf()
-    saved = tmp_path / "templates" / "Weekly test.json"
-    assert (tmp_path / "sheet.pdf").read_bytes().startswith(b"%PDF")
-    exam = w.store.exam(w.store.create_exam("Week 1", saved.read_text(encoding="utf-8")))
-    assert [(s.name, s.first, s.last, s.correct) for s in exam.sections] == [("Part A", 1, 40, 1), ("Section 2", 41, 50, 2)]
-    assert json.loads(saved.read_text())["grids"][0]["kind"] == "roll_number"
-    look = json.loads(saved.read_text())["print"]
-    assert (look["heading"], look["colour"], look["instructions"][1]) == (
-        "Weekly Test Answer Sheet", "#1565c0", "Fill one bubble per question.") and look["logo_jpeg"]
+    monkeypatch.setattr(exams.NewExamWizard, "exec", fill)
+    w.exams.new_exam()
+    exam = w.check.exam
+    assert exam.name == "Weekly test" and w.showing() is w.print_sheet and w.print_sheet.save.isEnabled()
+    assert exam.details["class"] == "Class 10" and exam.details["minutes"] == 60
+    assert "Class 10" in w.exam_page.about.text() and "60 minutes" in w.exam_page.about.text()
+    assert [(s.name, s.first, s.last, s.correct, s.wrong, s.partial) for s in exam.sections] == [
+        ("Physics", 1, 20, 4, -1, False), ("Chemistry", 21, 45, 1, 0, True)]
+    t = json.loads(exam.template_json)
+    assert t["print"]["colour"] == "#1565c0" and t["print"]["logo_jpeg"]
+    assert [g.get("multi", False) for g in t["grids"] if g["kind"] == "questions"][-1]
 
-    n.sections.item(1, 1).setText("ten")
-    n.update_preview()
-    assert "whole number" in n.error.text() and n.template is None
+    def own(z):
+        z.own_sheet.setChecked(True)
+        z.template_path = ""
+        z.forward()
+        assert "template" in z.error.text()
+        z.template_path = str(TEMPLATES / "test-100.json")
+        z.forward()
+        z.name.setText("Printed one")
+        z.forward()
+        assert STEP(z) == "Marking" and z.section_marks.isHidden()
+        z.correct.setValue(2)
+        z.wrong.setValue(-0.5)
+        z.forward()
+        assert STEP(z) == "Review and create" and "Your printed sheet" in z.summary.text()
+        z.forward()
+        return z.result()
+
+    STEP = lambda z: new_exam.STEPS[z.steps.currentIndex()]  # noqa: E731
+    monkeypatch.setattr(exams.NewExamWizard, "exec", own)
+    w.exams.new_exam()
+    assert w.check.exam.name == "Printed one" and w.showing() is w.scan
+    e = w.check.exam
+    assert (e.correct, e.wrong, e.blank, e.details["minutes"]) == (2, -0.5, 0, 90)
+
+
+def test_new_exam_wizard_true_false_and_layout_problems(app, tmp_path):
+    import json
+    from omr_app.new_exam import NewExamWizard
+    w = MainWindow(tmp_path / "omr.db")
+    z = NewExamWizard(w, w.store)
+    z.name.setText("Quick quiz")
+    z.true_false.setChecked(True)
+    z.total.setValue(20)
+    z.roll.setValue(0)
+    z.update_preview()
+    assert z.options.value() == 2 and not z.options.isEnabled() and z.made
+    assert {g["options"] for g in z.made["grids"] if g["kind"] == "questions"} == {"TF"}
+    z.total.setValue(300)
+    z.options.setEnabled(True)
+    z.true_false.setChecked(False)
+    z.options.setValue(8)
+    z.update_preview()
+    assert z.made is None and z.layout_problem
+    assert z.check_step("Review and create") == z.layout_problem
+    z.total.setValue(40)
+    z.update_preview()
+    z.create()
+    assert json.loads(w.store.exam(z.exam_id).template_json)["print"]
 
 
 def test_sections_and_a_short_key(app, tmp_path, monkeypatch):
@@ -393,7 +451,7 @@ def test_clicking_an_exam_opens_its_page(app, tmp_path, monkeypatch):
     assert "Check sheets" not in w.PAGES and w.showing() is w.exams
     row = next(r for r in range(w.exams.table.rowCount()) if w.exams.table.item(r, 0).text() == "Made here")
     w.exams.table.cellClicked.emit(row, 0)
-    assert w.check.exam.id == made and w.showing() is w.scan  # nothing read yet: start on Scan
+    assert w.check.exam.id == made and w.showing() is w.print_sheet  # nothing read yet: print the sheet first
     assert w.exam_page.title.text() == "Made here" and w.print_sheet.save.isEnabled()
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "sheet.pdf"), ""))
     w.print_sheet.save.click()

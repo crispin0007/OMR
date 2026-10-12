@@ -19,6 +19,9 @@ from sheets import fill, random_marks, scan
     SheetSpec("Mock", 90, options=4, roll_digits=3, sets=4,
               sections=[SheetSection("Physics", 30, 4, -1), SheetSection("Chemistry", 30, 4, -1),
                         SheetSection("Maths", 30, 4, -1)]),
+    SheetSpec("True or false", 40, options=2, roll_digits=4, sets=0, true_false=True),
+    SheetSpec("Multi", 30, options=4, roll_digits=4, sets=0,
+              sections=[SheetSection("One answer", 15), SheetSection("Several", 15, partial=True)]),
 ])
 def test_printed_sheet_reads_back_exactly(spec):
     d = layout(spec)
@@ -27,6 +30,19 @@ def test_printed_sheet_reads_back_exactly(spec):
     marks, answers, roll, set_code = random_marks(t, spec.questions)
     r = read_page(scan(fill(render(d), t, marks), angle=0.6, seed=1), t)
     assert (r.roll_number, r.set_code, r.answers, r.flags) == (roll, set_code, answers, [])
+
+
+def test_true_false_and_partial_sections_reach_the_template():
+    with pytest.raises(ValueError, match="2 options"):
+        layout(SheetSpec("Bad", 10, options=4, true_false=True))
+    t = parse(layout(SheetSpec("Mixed", 20, sections=[SheetSection("A", 10), SheetSection("B", 10, partial=True)])))
+    assert [g.multi for g in t.grids if g.kind == "questions"] == [False, True]
+    d = layout(SheetSpec("Several", 10, roll_digits=0, sets=0, sections=[SheetSection("B", 10, partial=True)]))
+    t = parse(d)
+    gi = next(i for i, g in enumerate(t.grids) if g.kind == "questions")
+    r = read_page(scan(fill(render(d), t, {(gi, 0, 0): "pen", (gi, 0, 2): "pen"}), angle=0.3, seed=4), t)
+    assert r.answers[1] == "AC" and r.flags == []
+    assert json.loads(json.dumps(d))["sections"][0]["partial"] is True
 
 
 def test_printed_blank_sheet_reads_blank_and_upside_down_is_found():

@@ -83,6 +83,7 @@ class SheetSection:
     questions: int
     correct: float = 1.0
     wrong: float = 0.0
+    partial: bool = False  # more than one bubble may be filled, with part marks for part of a multi-correct answer
 
 
 @dataclass
@@ -97,6 +98,7 @@ class SheetSpec:
     heading: str = DEFAULT_HEADING
     instructions: list[str] = field(default_factory=lambda: list(DEFAULT_INSTRUCTIONS))
     logo: bytes = b""  # JPEG from `logo_jpeg`, or nothing
+    true_false: bool = False  # two options printed T and F
 
 
 def layout(spec: SheetSpec) -> dict:
@@ -105,6 +107,8 @@ def layout(spec: SheetSpec) -> dict:
         raise ValueError("give the sheet a name")
     if not 2 <= spec.options <= 8:
         raise ValueError("questions need 2 to 8 options")
+    if spec.true_false and spec.options != 2:
+        raise ValueError("true or false questions have 2 options")
     if not 0 <= spec.roll_digits <= MAX_ROLL_DIGITS:
         raise ValueError(f"the roll number can have 0 to {MAX_ROLL_DIGITS} digits")
     if spec.sets == 1 or not 0 <= spec.sets <= 8:
@@ -126,7 +130,7 @@ def layout(spec: SheetSpec) -> dict:
     _check_style(style)
 
     grids = _id_grids(spec.roll_digits, spec.sets)
-    grids += _question_grids(spec.options, sections, bool(spec.sections))
+    grids += _question_grids("TF" if spec.true_false else "ABCDEFGH"[:spec.options], sections, bool(spec.sections))
     d = {"name": spec.name.strip(), "version": 1, "page_mm": list(PAGE),
          "markers": {"shape": "ring", "size_mm": MARK, "centres_mm": MARKS},
          "orientation_mm": ORIENTATION, "bubble_mm": list(BUBBLE), "grids": grids, "print": style}
@@ -135,7 +139,7 @@ def layout(spec: SheetSpec) -> dict:
         d["sections"] = []
         for s in spec.sections:
             d["sections"].append({"name": s.name.strip(), "first": first, "last": first + s.questions - 1,
-                                  "correct": s.correct, "wrong": s.wrong, "blank": 0.0})
+                                  "correct": s.correct, "wrong": s.wrong, "blank": 0.0, "partial": s.partial})
             first += s.questions
     t = parse(d)
     _instruction_lines(style["instructions"], _header(t)["middle"])  # raises when they don't fit
@@ -230,8 +234,9 @@ def _header(t) -> dict:
     return h
 
 
-def _question_grids(options: int, sections: list[SheetSection], headed: bool) -> list[dict]:
+def _question_grids(letters: str, sections: list[SheetSection], headed: bool) -> list[dict]:
     """Question grids in bordered columns; each section starts a new column."""
+    options = len(letters)
     width = RIGHT - LEFT
     roomy = int((width + COLUMN_GAP) // (NUMBER_W + options * ROOMY_OPTION + COLUMN_GAP))
     head = BAND if headed else 0
@@ -259,7 +264,7 @@ def _question_grids(options: int, sections: list[SheetSection], headed: bool) ->
         left = s.questions
         for k in range(c):
             rows = -(-left // (c - k))
-            grids.append({"kind": "questions", "first": first, "options": "ABCDEFGH"[:options],
+            grids.append({"kind": "questions", "first": first, "options": letters, "multi": s.partial,
                           "origin_mm": [round(x + NUMBER_W + option / 2, 2), round(COLUMNS_TOP + head + pitch / 2, 2)],
                           "pitch_mm": [round(option, 3), pitch], "rows": rows, "cols": options})
             first += rows

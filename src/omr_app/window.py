@@ -10,7 +10,7 @@ from PySide6.QtCore import QStandardPaths, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QPixmap
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel,
                                QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QProgressDialog, QPushButton,
-                               QScrollArea, QSplitter, QStackedWidget, QTabWidget, QTableWidget, QTableWidgetItem,
+                               QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
 from omr_core.grading import Section, full_marks, marks_for, parse_key, score
@@ -22,9 +22,8 @@ from omr_core.students import Student
 from . import theme
 from .dashboard import DashboardPage, ResultsPage
 from .designer import DesignerPage
-from .new_sheet import NewSheetPage
 from .exam_page import ExamPage, ExamSettings, PrintSheet, StudentsTab
-from .exams import TEMPLATES, ExamsPage
+from .exams import TEMPLATES, ExamsPage  # noqa: F401  (tests find the templates here)
 from .review import ReviewPage
 from .scan import ScanPage
 from .sections import SectionsDialog
@@ -207,7 +206,7 @@ class CheckPage(QWidget):
         return Path(sheet.file).name
 
     @property
-    def marks(self) -> list[tuple[float, float, float]]:
+    def marks(self) -> list[tuple]:
         return marks_for(self.questions, self.correct.value(), self.wrong.value(), self.blank.value(), self.sections)
 
     def full_marks(self) -> float:
@@ -432,13 +431,9 @@ class MainWindow(QMainWindow):
         self.exams_area.addWidget(self.exams)
         self.exams_area.addWidget(self.exam_page)
         self.designer = DesignerPage()
-        self.new_sheet = NewSheetPage()
-        sheets = QTabWidget()
-        sheets.addTab(self.new_sheet, "New sheet")
-        sheets.addTab(self.designer, "Map a sheet you already print")
         self.settings = theme.SettingsPage(self.prefs)
         self.settings.changed.connect(self.apply_prefs)
-        self.pages = {"Dashboard": self.dashboard, "Exams": self.exams_area, "Sheet designer": sheets,
+        self.pages = {"Dashboard": self.dashboard, "Exams": self.exams_area, "Sheet designer": self.designer,
                       "Settings": self.settings}
 
         self.stack = QStackedWidget()
@@ -500,7 +495,7 @@ class MainWindow(QMainWindow):
         if exam_id is None:
             self.exams_area.setCurrentWidget(self.exams)
         elif go:
-            self.go("Scan" if not self.check.sheets else "Scanned sheets")
+            self.go("Scanned sheets" if self.check.sheets else "Print sheet" if self.print_sheet.template else "Scan")
 
     def reload_students(self):
         self.check.students = self.store.students(self.check.exam.id)

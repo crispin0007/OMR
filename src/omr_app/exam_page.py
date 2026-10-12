@@ -7,7 +7,7 @@ students, results, the printable sheet and the exam's settings all live here.
 import json
 from pathlib import Path
 
-from PySide6.QtCore import QStandardPaths, Qt, Signal
+from PySide6.QtCore import QDate, QStandardPaths, Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea,
                                QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
@@ -48,8 +48,20 @@ class ExamPage(QWidget):
     def refresh(self):
         exam = self.check.exam
         self.title.setText(exam.name if exam else "")
-        self.about.setText(f"{exam.template.name}, {len(self.check.questions)} questions  ·  "
-                           f"{len(self.check.sheets)} sheets read" if exam else "")
+        self.about.setText("  ·  ".join([*when(exam), f"{len(self.check.questions)} questions",
+                                         f"{len(self.check.sheets)} sheets read"]) if exam else "")
+
+
+def when(exam) -> list[str]:
+    """The exam's class, date, time and duration, as far as they were given."""
+    d = exam.details
+    out = [d["class"]] if d.get("class") else []
+    if d.get("date"):
+        day = QDate.fromString(d["date"], Qt.ISODate).toString("d MMM yyyy")
+        out.append(f"{day} at {d['time']}" if d.get("time") else day)
+    if d.get("minutes"):
+        out.append(f"{d['minutes']} minutes")
+    return out
 
 
 class StudentsTab(QWidget):
@@ -119,7 +131,7 @@ class StudentsTab(QWidget):
 
 
 class PrintSheet(QWidget):
-    """The exam's own sheet to print, when it was made on the New sheet tab."""
+    """The exam's own sheet to print, when New exam made it."""
 
     def __init__(self, check):
         super().__init__()
@@ -141,7 +153,7 @@ class PrintSheet(QWidget):
     def refresh(self):
         exam = self.check.exam
         d = json.loads(exam.template_json) if exam else {}
-        self.template = d if "print" in d else None  # only sheets made on New sheet carry what to print
+        self.template = d if "print" in d else None  # only sheets New exam made carry what to print
         self.save.setEnabled(self.template is not None)
         self.preview.clear()
         if exam is None:
@@ -198,8 +210,8 @@ class ExamSettings(QWidget):
     def refresh(self):
         exam = self.check.exam
         self.name.setText(exam.name if exam else "")
-        self.about.setText(f"Sheet: {exam.template.name}, {len(self.check.questions)} questions.  Created "
-                           f"{exam.created.replace('T', ' ')}." if exam else "")
+        self.about.setText("\n".join([*when(exam), f"Sheet: {exam.template.name}, {len(self.check.questions)} "
+                                       f"questions.  Created {exam.created.replace('T', ' ')}."]) if exam else "")
 
     def rename(self):
         try:

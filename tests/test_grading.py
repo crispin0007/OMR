@@ -54,9 +54,17 @@ def test_a_short_key_drops_the_rest():
 def test_sections_have_their_own_marks():
     physics, maths = Section("Physics", 1, 2, 4, -1), Section("Maths", 3, 3, 3, -1)
     marks = marks_for([1, 2, 3, 4], 1, 0, 0, [physics, maths])
-    assert marks == [(4, -1, 0), (4, -1, 0), (3, -1, 0), (1, 0, 0)]  # Q4 is in no section
+    assert marks == [(4, -1, 0, False), (4, -1, 0, False), (3, -1, 0, False), (1, 0, 0, False)]  # Q4: no section
     assert score(["A", "B", "C", "D"], ["A", "A", "C", "A"], marks=marks) == 4 - 1 + 3 + 0
     assert full_marks(["A", "A", "C", "-"], marks) == 11
+
+
+def test_partial_marking_gives_part_marks_for_part_of_a_multi_correct_answer():
+    marks = marks_for([1, 2, 3, 4, 5], 1, 0, 0, [Section("Multi", 1, 4, 4, -2, 0, partial=True)])
+    key = ["ABC", "ABC", "AB", "AB", "AB"]
+    # Q1 two of three right, Q2 all right, Q3 a wrong option spoils it, Q4 blank, Q5 outside the section
+    assert score(["AB", "ABC", "AC", "", "A"], key, marks=marks) == 4 * 2 / 3 + 4 - 2 + 0 + 0
+    assert score(["A", "", "", "", ""], ["*", "-", "A", "A", "A"], marks=marks) == 4  # bonus and dropped unchanged
 
 
 @pytest.mark.parametrize("sections", [
