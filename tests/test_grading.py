@@ -101,3 +101,11 @@ def test_key_from_csv_without_sets_and_with_spreadsheet_quirks():
 def test_key_from_csv_names_the_problem(text, problem):
     with pytest.raises(ValueError, match=problem):
         key_from_csv(text, [1, 2, 3, 4], "ABCD")
+
+
+def test_key_from_a_master_sheet_leaves_out_doubtful_marks():
+    from omr_core.grading import key_from_sheet
+    key, doubtful = key_from_sheet({1: "A", 2: "BD", 3: "", 4: "C", 5: "AB"},
+                                   [("Q4", "unclear mark"), ("Q5", "multiple marks"), ("roll number", "blank")],
+                                   [1, 2, 3, 4, 5])
+    assert key == ["A", "BD", "-", "-", "-"] and doubtful == [4, 5]
