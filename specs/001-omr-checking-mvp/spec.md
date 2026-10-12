@@ -183,6 +183,8 @@ show the matching names by roll number.
 2. **Given** an operator user, **When** they log in, **Then** they can scan and
    review but not change answer keys.
 
+---
+
 ### Edge Cases
 
 - A sheet whose registration marks are torn, folded or covered: flagged as
