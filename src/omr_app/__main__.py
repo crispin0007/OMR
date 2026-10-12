@@ -1,14 +1,13 @@
 import sys
 
-from PySide6.QtWidgets import QApplication, QLabel, QMainWindow
+from PySide6.QtWidgets import QApplication
+
+from omr_app.window import MainWindow
 
 
 def main() -> int:
     app = QApplication(sys.argv)
-    window = QMainWindow()
-    window.setWindowTitle("OMR")
-    window.setCentralWidget(QLabel("OMR checking: phase 1 in progress"))
-    window.resize(960, 640)
+    window = MainWindow()
     window.show()
     return app.exec()
 
