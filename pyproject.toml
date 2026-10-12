@@ -20,6 +20,7 @@ dev = ["pytest>=8"]
 
 [project.scripts]
 omr = "omr_app.__main__:main"
+omr-read = "omr_core.cli:main"
 
 [build-system]
 requires = ["hatchling"]
