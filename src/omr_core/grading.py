@@ -165,6 +165,18 @@ def format_key(keys: dict[str, list[str]]) -> str:
     return "\n".join(lines)
 
 
+def key_from_sheet(answers: dict[int, str], flags: list[tuple[str, str]],
+                   questions: list[int]) -> tuple[list[str], list[int]]:
+    """The key a filled master sheet gives, and the questions left out for a person to give.
+
+    A question is left out (dropped) when it is blank or flagged on the sheet: an unclear mark, or more than one
+    mark where one answer is allowed. The key is never guessed from a doubtful mark.
+    """
+    doubtful = {int(where[1:]) for where, _ in flags if where.startswith("Q") and where[1:].isdigit()}
+    key = [DROPPED if q in doubtful or not answers.get(q) else answers[q] for q in questions]
+    return key, [q for q in questions if q in doubtful]
+
+
 def key_to_csv(keys: dict[str, list[str]], questions: list[int]) -> str:
     """Keys as CSV: set, question, answer; set is empty for the key of every set and answer empty when dropped."""
     out = io.StringIO()

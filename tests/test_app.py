@@ -666,3 +666,20 @@ def test_first_run_shows_the_steps_and_help_has_the_shortcuts(app, tmp_path, mon
     w.open_exam(w.store.create_exam("Mock", (TEMPLATES / "test-100.json").read_text(encoding="utf-8")))
     w.exams.refresh()
     assert w.exams.start.isHidden() and not w.exams.table.isHidden()
+
+
+def test_answer_key_is_read_from_a_filled_master_sheet(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    t = load(TEMPLATES / "test-100.json")
+    marks, answers, _, set_code = random_marks(t, 8)
+    path = tmp_path / "master.png"
+    cv2.imwrite(str(path), scan(draw(t, marks), seed=8))
+    w = window(tmp_path)
+    k = w.check.key_tab
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a: (str(path), ""))
+    shown = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: shown.append(a[2]))
+    k.read_master()
+    key = k.keys()[set_code]
+    assert key == [answers[q] or "-" for q in w.check.questions]
+    assert f"Key for set {set_code}" in shown[0] and k.set_code() == set_code
