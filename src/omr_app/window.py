@@ -1,6 +1,7 @@
 """Main window: a sidebar of pages over the open exam, saved as it is read."""
 
 import csv
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -15,11 +16,12 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFile
 from omr_core.grading import parse_key, score
 from omr_core.reader import UnreadablePage, read_page
 from omr_core.sources import read_pages
-from omr_core.store import Exam, Store, StoredPage
+from omr_core.store import Exam, Store, StoredPage, to_review
 
 from . import theme
 from .dashboard import DashboardPage, ResultsPage
 from .exams import TEMPLATES, ExamsPage
+from .review import ReviewPage
 
 COLUMNS = ["File", "Page", "Roll number", "Set", "Answered", "Score", "Review"]
 
@@ -38,6 +40,7 @@ class CheckPage(QWidget):
 
     changed = Signal()  # sheets, key or marks changed
     wanted = Signal()  # another page asked to show sheets here
+    review_wanted = Signal()  # another page asked for the review queue
 
     def __init__(self, store: Store):
         super().__init__()
@@ -176,8 +179,8 @@ class CheckPage(QWidget):
         return len(self.questions) * self.correct.value()
 
     def to_check(self) -> list[int]:
-        """Sheets with anything to review, unreadable ones included."""
-        return [i for i, s in enumerate(self.sheets) if s.result is None or s.result.flags]
+        """Sheets with anything to review: flags, unreadable pages, duplicate roll numbers."""
+        return sorted({i for i, _, _ in to_review(self.sheets)})
 
     def open_sheets(self):
         paths, _ = QFileDialog.getOpenFileNames(
@@ -257,9 +260,10 @@ class CheckPage(QWidget):
     def fill_table(self):
         self.table.setRowCount(len(self.sheets))
         review_bg = QBrush(QColor(theme.tokens()["warn_bg"]))
+        items = Counter(i for i, _, _ in to_review(self.sheets))
         for row, sheet in enumerate(self.sheets):
             r = sheet.result
-            review = sheet.problem or (f"{len(r.flags)} to check" if r.flags else "")
+            review = sheet.problem or (f"{items[row]} to check" if items[row] else "")
             cells = [self.file_name(sheet), str(sheet.page), r.roll_number if r else "", r.set_code if r else "",
                      f"{sum(1 for q in self.questions if r.answers[q])}/{len(self.questions)}" if r else "",
                      self._score_text(sheet), review]
@@ -330,7 +334,7 @@ class CheckPage(QWidget):
 
 
 class MainWindow(QMainWindow):
-    PAGES = ["Dashboard", "Exams", "Check sheets", "Results", "Question Bank", "Syllabus", "Settings"]
+    PAGES = ["Dashboard", "Exams", "Check sheets", "Review", "Results", "Question Bank", "Syllabus", "Settings"]
     LATER = {"Question Bank": "Comes in phase 2", "Syllabus": "Comes in phase 3"}
 
     def __init__(self, db_path: str | Path | None = None):
@@ -346,10 +350,11 @@ class MainWindow(QMainWindow):
         self.exams.opened.connect(self.open_exam)
         self.dashboard = DashboardPage(self.check)
         self.results = ResultsPage(self.check)
+        self.review = ReviewPage(self.check)
         self.settings = theme.SettingsPage(self.prefs)
         self.settings.changed.connect(self.apply_prefs)
         self.pages = {"Dashboard": self.dashboard, "Exams": self.exams, "Check sheets": self.check,
-                      "Results": self.results, "Settings": self.settings}
+                      "Review": self.review, "Results": self.results, "Settings": self.settings}
 
         self.stack = QStackedWidget()
         sidebar = QWidget(objectName="sidebar")
@@ -378,6 +383,7 @@ class MainWindow(QMainWindow):
         sidebar.setFixedWidth(190)
 
         self.check.wanted.connect(lambda: self.go("Check sheets"))
+        self.check.review_wanted.connect(lambda: self.go("Review"))
         self.check.changed.connect(self.exams.refresh)
         central = QWidget()
         layout = QHBoxLayout(central)
