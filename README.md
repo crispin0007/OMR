@@ -120,6 +120,9 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    **Check a printed copy…** reads a scan or phone photo of one printed
    sheet, blank or with a few bubbles filled, and says whether it reads,
    before you print the rest.
+   **Written marks** is for an exam with a written (subjective) part: set what
+   it is out of, then type each student's marks. They add to the sheet's score
+   for the rank, and results and scorecards show both parts.
    **Exam settings** renames or deletes the exam. **Change sheet…** there
    gives the exam another template, for pages filled on a different sheet,
    and reads every page again with it: imported files from the original

@@ -78,3 +78,38 @@ def test_sections_and_item_analysis(tmp_path):
     assert wb["Item analysis"].max_row == 101
     write_scorecards(tmp_path / "cards.pdf", "Mock 1", t, graded)
     assert "Part 1 12" in pypdfium2.PdfDocument(tmp_path / "cards.pdf")[0].get_textpage().get_text_range()
+
+
+def test_written_marks_add_to_the_score_and_rank(tmp_path):
+    t, pages, key = exam_with_pages(tmp_path)
+    graded = grade(t, pages, key, 4, -1, 0, written={"444": 20, "222": 4.5})
+    assert [(g.page.result.roll_number, g.omr, g.written, g.score, g.rank) for g in graded] == [
+        ("444", 388, 20, 408, 1), ("111", 396, None, 396, 2), ("333", 396, None, 396, 2), ("222", 391, 4.5, 395.5, 4)]
+    write_excel(tmp_path / "merit.xlsx", "Mock 1", t, graded)
+    ws = load_workbook(tmp_path / "merit.xlsx")["Merit list"]
+    assert [c.value for c in ws[2]][5:8] == ["Score", "Sheet", "Written"]
+    assert [c.value for c in ws[3]][5:8] == [408, 388, 20]
+    write_scorecards(tmp_path / "cards.pdf", "Mock 1", t, graded)
+    text = pypdfium2.PdfDocument(tmp_path / "cards.pdf")[0].get_textpage().get_text_range()
+    assert "Sheet 396" in text and "Written not given" in text  # roll 111 comes first on the cards
+
+
+def test_written_marks_are_kept_checked_and_backed_up(tmp_path):
+    import pytest
+    s = Store(tmp_path / "omr.db")
+    exam = s.create_exam("Mock", TEMPLATE)
+    with pytest.raises(ValueError):
+        s.set_written(exam, "111", 5)  # no written part yet
+    s.set_written_out_of(exam, 20)
+    s.set_written(exam, "111", 12.5)
+    with pytest.raises(ValueError):
+        s.set_written(exam, "222", 21)
+    with pytest.raises(ValueError):
+        s.set_written_out_of(exam, 10)  # below a mark already typed
+    s.set_written(exam, "222", None)
+    assert s.written(exam) == {"111": 12.5} and Store(tmp_path / "omr.db").exam(exam).written_out_of == 20
+    s.backup(tmp_path / "backup.db")
+    other = Store(tmp_path / "other" / "omr.db")
+    other.restore(tmp_path / "backup.db")
+    new_id = other.exams()[0][0]
+    assert other.written(new_id) == {"111": 12.5} and other.exam(new_id).written_out_of == 20
