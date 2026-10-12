@@ -1,0 +1,77 @@
+"""Sections dialog: give a range of questions its own name and marks, e.g. Physics 1 to 50, 4 right, -1 wrong."""
+
+from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QHeaderView, QLabel, QPushButton, QTableWidget,
+                               QTableWidgetItem, QVBoxLayout, QWidget)
+
+from omr_core.grading import Section, check_sections
+
+COLUMNS = ["Section", "From question", "To question", "Correct", "Wrong", "Blank"]
+
+
+class SectionsDialog(QDialog):
+    def __init__(self, parent: QWidget, sections: list[Section], questions: list[int], marks: tuple[float, float, float]):
+        super().__init__(parent)
+        self.setWindowTitle("Sections")
+        self.questions = questions
+        self.marks = marks
+        self.sections: list[Section] = list(sections)
+        self.table = QTableWidget(0, len(COLUMNS))
+        self.table.setHorizontalHeaderLabels(COLUMNS)
+        self.table.verticalHeader().hide()
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        for s in sections:
+            self._add_row([s.name, s.first, s.last, s.correct, s.wrong, s.blank])
+        add = QPushButton("Add section")
+        add.clicked.connect(self.add)
+        remove = QPushButton("Remove section")
+        remove.clicked.connect(lambda: self.table.removeRow(self.table.currentRow()))
+        self.error = QLabel(objectName="error", wordWrap=True)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        row = QHBoxLayout()
+        row.addWidget(add)
+        row.addWidget(remove)
+        row.addStretch()
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Each section's questions get its own marks; questions in no section use the exam's "
+                                "marks. Results show a score per section.", objectName="muted", wordWrap=True))
+        layout.addWidget(self.table, 1)
+        layout.addLayout(row)
+        layout.addWidget(self.error)
+        layout.addWidget(buttons)
+        self.resize(720, 360)
+
+    def _add_row(self, values: list):
+        r = self.table.rowCount()
+        self.table.insertRow(r)
+        for col, v in enumerate(values):
+            self.table.setItem(r, col, QTableWidgetItem(f"{v:g}" if isinstance(v, float) else str(v)))
+
+    def add(self):
+        """A new row starting after the last section, to the end of the sheet."""
+        rows = self.read_rows(check=False)
+        start = max((s.last for s in rows), default=self.questions[0] - 1) + 1
+        start = next((q for q in self.questions if q >= start), self.questions[-1])
+        self._add_row([f"Section {len(rows) + 1}", start, self.questions[-1], *self.marks])
+
+    def read_rows(self, check: bool = True) -> list[Section]:
+        out = []
+        for r in range(self.table.rowCount()):
+            text = [(self.table.item(r, c).text() if self.table.item(r, c) else "").strip() for c in range(len(COLUMNS))]
+            try:
+                out.append(Section(text[0], int(text[1]), int(text[2]), *(float(t or 0) for t in text[3:])))
+            except ValueError:
+                if check:
+                    raise ValueError(f"row {r + 1}: questions must be whole numbers and marks numbers") from None
+        if check:
+            check_sections(out, self.questions)
+        return out
+
+    def accept(self):
+        try:
+            self.sections = self.read_rows()
+        except ValueError as e:
+            self.error.setText(str(e))
+            return
+        super().accept()

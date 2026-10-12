@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFile
                                QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
                                QWidget)
 
-from omr_core.grading import parse_key, score
+from omr_core.grading import Section, full_marks, marks_for, parse_key, score
 from omr_core.reader import UnreadablePage, read_page
 from omr_core.sources import read_pages
 from omr_core.store import Exam, Store, StoredPage, to_review
@@ -53,6 +53,7 @@ class CheckPage(QWidget):
         self.sheets: list[StoredPage] = []
         self.students: dict[str, Student] = {}
         self.keys: dict[str, list[str]] = {}
+        self.sections: list[Section] = []
 
         self.template_label = QLabel("Open or create an exam on the Exams page", objectName="muted")
         self.open_button = QPushButton("Open sheets…", objectName="primary")
@@ -71,7 +72,8 @@ class CheckPage(QWidget):
         self.key_edit.setPlaceholderText(
             "Answer key, one letter per question in order, e.g. ABDCA…\n"
             "One line per set: A: ABDC…   B: CADB…\n"
-            "Separate with commas for more than one correct option: A, AC, B.  * = bonus, - = dropped")
+            "Separate with commas for more than one correct option: A, AC, B.  * = bonus, - = dropped.  "
+            "A key shorter than the sheet counts only those questions.")
         self.key_edit.setFixedHeight(84)
         self.key_edit.textChanged.connect(self.update_key)
         self.key_status = QLabel(objectName="muted")
@@ -80,6 +82,10 @@ class CheckPage(QWidget):
         for text, box in (("Correct", self.correct), ("Wrong", self.wrong), ("Blank", self.blank)):
             marks.addWidget(QLabel(text))
             marks.addWidget(box)
+        self.sections_button = QPushButton("Sections…")
+        self.sections_button.setToolTip("Give ranges of questions their own name and marks, e.g. Physics 1 to 50")
+        self.sections_button.clicked.connect(self.edit_sections)
+        marks.addWidget(self.sections_button)
         marks.addSpacing(12)
         marks.addWidget(self.key_status, 1)
 
@@ -134,7 +140,7 @@ class CheckPage(QWidget):
         return box
 
     def _enable(self):
-        for w in (self.open_button, self.key_edit, self.correct, self.wrong, self.blank):
+        for w in (self.open_button, self.key_edit, self.correct, self.wrong, self.blank, self.sections_button):
             w.setEnabled(self.exam is not None)
         self.save_button.setEnabled(bool(self.sheets))
 
@@ -142,7 +148,7 @@ class CheckPage(QWidget):
         """Show an exam's saved key, marks and sheets; None closes it."""
         self.exam = None  # keeps the loading below from saving the scheme back
         if exam_id is None:
-            self.questions, self.sheets, self.students = [], [], {}
+            self.questions, self.sheets, self.students, self.sections = [], [], {}, []
             self.template_label.setText("Open or create an exam on the Exams page")
             self.key_edit.clear()
         else:
@@ -151,6 +157,7 @@ class CheckPage(QWidget):
             self.questions = sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows))
             self.sheets = self.store.pages(exam_id)
             self.students = self.store.students(exam_id)
+            self.sections = exam.sections
             self.template_label.setText(f"{exam.name}  ·  {t.name}, {len(self.questions)} questions")
             for box, v in ((self.correct, exam.correct), (self.wrong, exam.wrong), (self.blank, exam.blank)):
                 box.setValue(v)
@@ -180,8 +187,22 @@ class CheckPage(QWidget):
     def file_name(sheet: StoredPage) -> str:
         return Path(sheet.file).name
 
+    @property
+    def marks(self) -> list[tuple[float, float, float]]:
+        return marks_for(self.questions, self.correct.value(), self.wrong.value(), self.blank.value(), self.sections)
+
     def full_marks(self) -> float:
-        return len(self.questions) * self.correct.value()
+        key = next(iter(self.keys.values()), ["A"] * len(self.questions))  # sets differ only in order
+        return full_marks(key, self.marks)
+
+    def edit_sections(self):
+        dialog = SectionsDialog(self, self.sections, self.questions,
+                                (self.correct.value(), self.wrong.value(), self.blank.value()))
+        if not dialog.exec():
+            return
+        self.store.save_sections(self.exam.id, dialog.sections)
+        self.sections = dialog.sections
+        self.update_key()
 
     def review_items(self) -> list[tuple[int, str, str]]:
         return to_review(self.sheets, self.students)
@@ -250,8 +271,15 @@ class CheckPage(QWidget):
         options = "".join(sorted({o for g in t.grids if g.kind == "questions" for o in g.options}))
         try:
             self.keys = parse_key(self.key_edit.toPlainText(), len(self.questions), options)
-            self.key_status.setText(f"Key for {', '.join('set ' + s if s else 'all sets' for s in self.keys)}"
-                                    if self.keys else "Type the answer key to see scores")
+            text = (f"Key for {', '.join('set ' + s if s else 'all sets' for s in self.keys)}"
+                    if self.keys else "Type the answer key to see scores")
+            counted = max((sum(k != "-" for k in key) for key in self.keys.values()), default=len(self.questions))
+            if counted < len(self.questions):
+                text += f", {counted} of {len(self.questions)} questions counted"
+            if self.sections:
+                text += f".  {len(self.sections)} section{'s' if len(self.sections) > 1 else ''}: " + ", ".join(
+                    f"{s.name} {s.first}–{s.last}" for s in self.sections)
+            self.key_status.setText(text)
             self.key_status.setObjectName("muted")
         except ValueError as e:
             self.keys = {}
@@ -265,8 +293,7 @@ class CheckPage(QWidget):
         key = r and self.keys.get(r.set_code, self.keys.get(""))
         if not key:
             return None
-        return score([r.answers[q] for q in self.questions], key,
-                     self.correct.value(), self.wrong.value(), self.blank.value())
+        return score([r.answers[q] for q in self.questions], key, marks=self.marks)
 
     def _score_text(self, sheet: StoredPage) -> str:
         s = self.score_of(sheet)

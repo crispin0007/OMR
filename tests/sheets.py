@@ -2,14 +2,19 @@
 
 import cv2
 import numpy as np
+import zxingcpp
 
 from omr_core.template import Template
 
 INK = {"pen": 25, "pencil": 110}
 
 
-def draw(t: Template, marks: dict[tuple[int, int, int], str], dpi: int = 200, print_bgr=(110, 110, 110)) -> np.ndarray:
-    """A clean, upright page. `marks` maps (grid index, row, col) to "pen", "pencil" or "half"."""
+def draw(t: Template, marks: dict[tuple[int, int, int], str], dpi: int = 200, print_bgr=(110, 110, 110),
+         barcode: str = "", qr: bool = False) -> np.ndarray:
+    """A clean, upright page. `marks` maps (grid index, row, col) to "pen", "pencil" or "half".
+
+    `barcode` is printed as Code 128 (or a QR code) filling the template's barcode area.
+    """
     s = dpi / 25.4
     page = np.full((round(t.page[1] * s), round(t.page[0] * s), 3), 255, np.uint8)
     p = lambda x, y: (round(x * s), round(y * s))
@@ -19,6 +24,12 @@ def draw(t: Template, marks: dict[tuple[int, int, int], str], dpi: int = 200, pr
     if t.orientation:
         x, y, w, h = t.orientation
         cv2.rectangle(page, p(x, y), p(x + w, y + h), (0, 0, 0), -1)
+    if barcode:
+        x, y, w, h = t.barcode
+        fmt = zxingcpp.BarcodeFormat.QRCode if qr else zxingcpp.BarcodeFormat.Code128
+        code = np.array(zxingcpp.write_barcode_to_image(zxingcpp.create_barcode(barcode, fmt), scale=1))
+        (x0, y0), (x1, y1) = p(x, y), p(x + (h if qr else w), y + h)
+        page[y0:y1, x0:x1] = cv2.resize(code, (x1 - x0, y1 - y0), interpolation=cv2.INTER_NEAREST)[..., None]
     axes = p(t.bubble[0] / 2, t.bubble[1] / 2)
     for gi, g in enumerate(t.grids):
         for r in range(g.rows):

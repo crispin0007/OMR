@@ -9,6 +9,7 @@ top-left corner, measured on the printed sheet:
       "markers": {"shape": "square" | "ring", "size_mm": 8,
                   "centres_mm": [[x, y], ...]},          # TL, TR, BR, BL
       "orientation_mm": [x, y, w, h],                   # optional: an area always printed black
+      "barcode_mm": [x, y, w, h],                       # optional: a barcode or QR code holding the roll number
       "bubble_mm": [w, h],
       "dropout": "red",                                 # optional: drop pink or red print
       "grids": [{"kind": "questions", "first": 1, "options": "ABCD",
@@ -18,6 +19,7 @@ top-left corner, measured on the printed sheet:
 Grid kinds: "questions" (one row per question, one column per option),
 "roll_number" (one column per digit, rows are 0 to 9) and "set_code"
 (one row, one column per set). `origin_mm` is the centre of the top-left bubble.
+A sheet can identify the student by a roll number grid, a barcode, or both.
 """
 
 import json
@@ -53,6 +55,7 @@ class Template:
     grids: tuple[Grid, ...]
     orientation: tuple[float, float, float, float] | None = None
     dropout: str | None = None
+    barcode: tuple[float, float, float, float] | None = None
 
 
 def load(path: str | Path) -> Template:
@@ -82,6 +85,7 @@ def parse(d: dict) -> Template:
         grids=tuple(_grid(g) for g in d.get("grids", [])),
         orientation=tuple(_number(v, "orientation_mm") for v in d["orientation_mm"]) if "orientation_mm" in d else None,
         dropout=d.get("dropout"),
+        barcode=_area(d["barcode_mm"], "barcode_mm", (w, h)) if "barcode_mm" in d else None,
     )
     kinds = [g.kind for g in t.grids]
     if "questions" not in kinds:
@@ -114,6 +118,15 @@ def _grid(g: dict) -> Grid:
         raise ValueError(f"{kind} grid has {cols} columns but options {options!r}")
     return Grid(kind, _pair(g, "origin_mm"), _pair(g, "pitch_mm", positive=False), rows, cols,
                 options, int(g.get("first", 1)), bool(g.get("multi", False)))
+
+
+def _area(v, name: str, page: tuple[float, float]) -> tuple[float, float, float, float]:
+    if not isinstance(v, (list, tuple)) or len(v) != 4:
+        raise ValueError(f"{name} must be [x, y, w, h]")
+    x, y, w, h = (_number(n, name) for n in v)
+    if w <= 0 or h <= 0 or x < 0 or y < 0 or x + w > page[0] or y + h > page[1]:
+        raise ValueError(f"{name} must be an area on the page")
+    return x, y, w, h
 
 
 def _number(v, name) -> float:

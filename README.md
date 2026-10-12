@@ -68,17 +68,11 @@ Sheet designer and Settings.
    what needs checking.
 3. Type the answer key in the box: one letter per question (`ABDCA…`), or one
    line per set (`A: ABDC…`). Scores appear as you type. Set marks for
-   correct, wrong (e.g. -0.25) and blank answers.
-4. **Scan** reads sheets as the scanner feeds them. Pick the scanner,
-   resolution (200 DPI is right for most sheets) and whether to scan both
-   sides (blank backs are skipped), then press **Scan**. Each sheet is read
-   and saved the moment it arrives; the counters and the latest sheet update
-   as the stack feeds. A jam or double feed stops the run with every earlier
-   sheet saved; put the rest back and press Scan again. Scanners are found
-   through Windows (WIA). If yours isn't listed, scan with its own software
-   into a folder and pick **A folder my scanner software saves into**; each
-   file is read as soon as it is saved.
-5. **Review** lists everything the reader wasn't sure about, unreadable
+   correct, wrong (e.g. -0.25) and blank answers. A key shorter than the
+   sheet counts only those questions. **Sections…** gives ranges of
+   questions their own name and marks (e.g. Physics 1 to 30, 4 right, -1
+   wrong); results then show a score per section.
+4. **Review** lists everything the reader wasn't sure about, unreadable
    pages and repeated roll numbers. Each item shows that part of the sheet;
    click the right answer or press its key (Delete for blank, Space to keep
    the reading). Scores update at once and every change is logged.
@@ -86,8 +80,10 @@ Sheet designer and Settings.
    spread and recent batches. Click any of them to open those sheets.
    **Results** ranks every sheet with right, wrong and blank counts and its
    percentile, and exports a merit list to Excel (with every answer coloured
-   right or wrong) or one PDF scorecard per student.
-7. **Sheet designer** turns a scan of a sheet you already print into a
+   right or wrong, and an item analysis: per question the share right, wrong
+   and blank, the most chosen wrong answer and how well it separates strong
+   from weak students) or one PDF scorecard per student.
+6. **Sheet designer** turns a scan of a sheet you already print into a
    template. Open a flat scan of the whole page (blank or filled, 150 to 300
    DPI), click the four corner marks, then drag a box around each block of
    bubbles. It finds the bubbles, guesses roll number, set code or questions
@@ -95,7 +91,11 @@ Sheet designer and Settings.
    the scan with the new template, and **Save template…** puts it in
    `%LOCALAPPDATA%\OMR\templates`, where **New exam…** looks first.
    Sheets with a separate orientation mark are mapped without it.
-8. **Settings** picks Light, Dark or System theme, an accent colour, text size
+   If the sheet prints the roll number as a barcode or QR code, click
+   **Box the barcode next** and box it. On a sheet with no roll number
+   bubbles the code is the roll number; with both, a page where they
+   disagree goes to Review.
+7. **Settings** picks Light, Dark or System theme, an accent colour, text size
    and density. The button at the bottom of the sidebar switches light and dark.
 9. **Save CSV…** writes every page's score and answers for Excel.
 

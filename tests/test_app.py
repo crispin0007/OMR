@@ -14,7 +14,7 @@ from omr_app import designer, scanner, theme  # noqa: E402
 from omr_app.scan import FOLDER  # noqa: E402
 from omr_app.window import TEMPLATES, MainWindow  # noqa: E402
 from omr_core.reader import SCALE, read_page  # noqa: E402
-from omr_core.template import load  # noqa: E402
+from omr_core.template import load, parse  # noqa: E402
 from sheets import draw, random_marks, scan  # noqa: E402
 
 
