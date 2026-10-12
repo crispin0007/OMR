@@ -452,6 +452,18 @@ def test_answer_key_grid_keyboard_and_csv(app, tmp_path, monkeypatch):
     assert g.isHidden() and not w.check.key_edit.isHidden()
 
 
+def test_a_page_that_cant_be_read_says_why_and_offers_mapping(app, tmp_path):
+    w = window(tmp_path)
+    blank = tmp_path / "blank.png"
+    cv2.imwrite(str(blank), np.full((2339, 1654, 3), 255, np.uint8))
+    w.check.read_files([str(blank)])
+    c = w.check
+    assert c.table.item(0, 2).text().startswith("Can't read this page: ") and c.table.columnSpan(0, 2) == 5
+    assert "1 of 1 pages couldn't be read" in c.mismatch.text() and not c.map_button.isHidden()
+    c.map_button.click()
+    assert w.showing() is w.designer
+
+
 def test_sections_and_a_short_key(app, tmp_path, monkeypatch):
     from omr_app import sections
 
