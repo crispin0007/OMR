@@ -613,3 +613,24 @@ def test_exams_are_backed_up_and_restored(app, tmp_path, monkeypatch):
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a: (str(tmp_path / "x.db"), ""))
     new_pc.exams.restore()
     assert "isn't an OMR backup" in shown[-1] and new_pc.exams.table.rowCount() == 1
+
+
+def test_a_printed_copy_is_checked_before_printing_the_rest(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    from omr_app.exam_page import print_check
+    t = load(TEMPLATES / "test-100.json")
+    assert "Every bubble reads empty" in print_check(scan(draw(t, {})), t)
+    marks, answers, roll, _ = random_marks(t, 4)
+    said = print_check(scan(draw(t, marks)), t)
+    assert "This copy reads" in said and f"Roll number {roll}" in said
+    assert "can't be read" in print_check(np.full((2339, 1654, 3), 255, np.uint8), t)
+
+    w = window(tmp_path)
+    path = tmp_path / "copy.png"
+    cv2.imwrite(str(path), scan(draw(t, {})))
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a: (str(path), ""))
+    shown = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: shown.append(a[2]))
+    assert w.print_sheet.try_print.isEnabled()
+    w.print_sheet.check_print()
+    assert shown and shown[0].startswith("This copy reads")
