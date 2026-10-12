@@ -14,6 +14,9 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel, QLin
 
 from omr_core.sheet import PAPERS, render, write_pdf
 from omr_core.students import read_students
+from omr_core.template import parse
+
+from .new_exam import TEMPLATES, USER_TEMPLATES
 
 
 class ExamPage(QWidget):
@@ -191,7 +194,7 @@ class PrintSheet(QWidget):
 
 
 class ExamSettings(QWidget):
-    renamed = Signal()
+    changed = Signal()  # renamed, or a new sheet
     deleted = Signal()
 
     def __init__(self, check):
@@ -205,11 +208,17 @@ class ExamSettings(QWidget):
         row.addWidget(self.name, 1)
         row.addWidget(rename)
         self.about = QLabel(objectName="muted", wordWrap=True)
+        change = QPushButton("Change sheet…")
+        change.clicked.connect(self.change_sheet)
         delete = QPushButton("Delete exam…")
         delete.clicked.connect(self.delete)
         layout = QVBoxLayout(self)
         layout.addLayout(row)
         layout.addWidget(self.about)
+        layout.addSpacing(24)
+        layout.addWidget(QLabel("If students filled a different sheet from this exam's, pick that sheet's template; "
+                                "every page is read again with it.", objectName="muted", wordWrap=True))
+        layout.addWidget(change, 0, Qt.AlignLeft)
         layout.addSpacing(24)
         layout.addWidget(QLabel("Deleting removes the exam and every sheet read for it.", objectName="muted"))
         layout.addWidget(delete, 0, Qt.AlignLeft)
@@ -227,7 +236,39 @@ class ExamSettings(QWidget):
         except ValueError as e:
             QMessageBox.warning(self, "Can't rename", str(e))
             return
-        self.renamed.emit()
+        self.changed.emit()
+
+    def change_sheet(self):
+        start = USER_TEMPLATES if USER_TEMPLATES.is_dir() and any(USER_TEMPLATES.glob("*.json")) else TEMPLATES
+        path, _ = QFileDialog.getOpenFileName(self, "Change sheet", str(start), "Templates (*.json)")
+        if not path:
+            return
+        try:
+            text = Path(path).read_text(encoding="utf-8")
+            t = parse(json.loads(text))
+        except (OSError, ValueError) as e:
+            QMessageBox.warning(self, "Can't use that template", f"{path}\n\n{e}")
+            return
+        check = self.check
+        if check.sheets and QMessageBox.question(
+                self, "Change sheet", f"Read all {len(check.sheets)} pages again with “{t.name}”? Corrections made "
+                "on the Review tab are replaced by the new readings (the change log keeps them).",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        pages = check.read_again(t)
+        if pages is None:
+            return  # stopped: nothing changed
+        try:
+            check.store.change_sheet(check.exam.id, text, pages)
+        except ValueError as e:
+            QMessageBox.warning(self, "Can't change the sheet", str(e))
+            return
+        self.changed.emit()  # reopens the exam with the new sheet
+        unreadable = sum(r is None for r, _ in pages.values())
+        QMessageBox.information(self, "Sheet changed", f"The exam now uses “{t.name}”. " + (
+            f"{len(pages) - unreadable} of {len(pages)} pages read" + (
+                f"; {unreadable} can't be read with this sheet and are listed under Scanned sheets."
+                if unreadable else ".") if pages else ""))
 
     def delete(self):
         exam = self.check.exam

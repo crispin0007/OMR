@@ -568,3 +568,28 @@ def test_the_installer_recipe_finds_everything_it_bundles():
                  "packaging/omr.ico", "LICENSE"):
         assert (root / path).is_file(), path
     assert (new_exam.TEMPLATES / "test-100.json").is_file()
+
+
+def test_changing_the_sheet_reads_every_page_again(app, tmp_path, monkeypatch):
+    import json
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    from omr_core.sheet import SheetSpec, layout
+    files = sheet_files(tmp_path, [1, 2])
+    t = load(TEMPLATES / "test-100.json")
+    scanned = random_marks(t, 3)  # from the scanner: no file to go back to
+    w = window(tmp_path)
+    w.open_exam(w.store.create_exam("Wrong sheet", json.dumps(layout(SheetSpec("Weekly", 30)))))
+    c = w.check
+    c.read_files([f[0] for f in files])
+    c.read_image(scan(draw(t, scanned[0]), seed=3), "Scanner", "Scanner", 1)
+    assert all(s.result is None for s in c.sheets)
+
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(TEMPLATES / "test-100.json"), ""))
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.Yes)
+    shown = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: shown.append(a[2]))
+    w.exam_settings.change_sheet()
+    assert c.exam.template.name == t.name and "3 of 3 pages read" in shown[0]
+    assert [(s.result.roll_number, s.result.answers) for s in c.sheets] == [
+        (files[0][2], files[0][1]), (files[1][2], files[1][1]), (scanned[2], scanned[1])]
+    assert c.table.rowCount() == 3 and c.mismatch.isHidden()

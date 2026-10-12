@@ -182,16 +182,40 @@ class Store:
         with self.db:
             self.db.executemany("UPDATE page SET exam_id = ? WHERE id = ?", [(exam_id, i) for i in page_ids])
 
+    def change_sheet(self, exam_id: int, template_json: str, pages: dict[int, tuple[PageResult | None, str]]):
+        """Give an exam another sheet together with every one of its pages read again with it, in one go, so no
+        page read with the old sheet is graded on the new one. Sections that still fit stay; otherwise the
+        exam takes the new sheet's own (or none). Hand corrections give way to the new readings; the change
+        log keeps them. Raises ValueError for a template the reader can't use or a page left out."""
+        d = json.loads(template_json)
+        t = parse(d)
+        questions = sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows))
+        ids = {i for (i,) in self.db.execute("SELECT id FROM page WHERE exam_id = ?", (exam_id,))}
+        if set(pages) != ids:
+            raise ValueError("every page of the exam must be read again with the new sheet")
+        sections = self.exam(exam_id).sections
+        try:
+            check_sections(sections, questions)
+        except ValueError:
+            sections = sections_from_json(d.get("sections", []))
+            check_sections(sections, questions)
+        with self.db:
+            self.db.execute("UPDATE exam SET template = ?, sections = ? WHERE id = ?",
+                            (template_json, json.dumps(sections_to_json(sections)), exam_id))
+            for page_id, (result, problem) in pages.items():
+                values, image = _row(result)
+                # An unreadable page keeps the image it had, to try yet another sheet with.
+                self.db.execute("UPDATE page SET roll_number = ?, set_code = ?, answers = ?, flags = ?, problem = ?, "
+                                "image = COALESCE(?, image) WHERE id = ?", (*values, problem, image, page_id))
+
     def add_page(self, exam_id: int, batch: str, file: str, page_no: int, result: PageResult | None,
-                 problem: str = "") -> StoredPage:
-        """Save one page and commit at once."""
+                 problem: str = "", scan: np.ndarray | None = None) -> StoredPage:
+        """Save one page and commit at once. An unreadable page keeps its `scan`, to read again with another
+        sheet when the scanner's pages have no file to go back to."""
         read_at = datetime.now().isoformat(timespec="seconds")
-        image = None
-        if result is not None and result.aligned is not None:
-            ok, png = cv2.imencode(".png", result.aligned)
-            image = png.tobytes() if ok else None
-        values = (None,) * 4 if result is None else (
-            result.roll_number, result.set_code, json.dumps(result.answers), json.dumps(result.flags))
+        values, image = _row(result)
+        if result is None and scan is not None:
+            image = _png(scan)
         with self.db:
             cur = self.db.execute(
                 "INSERT INTO page (exam_id, batch, file, page_no, read_at, roll_number, set_code, answers, flags, "
@@ -288,11 +312,25 @@ class Store:
         rows = self.db.execute("SELECT roll_number, name, class_name FROM student WHERE exam_id = ?", (exam_id,))
         return {r[0]: Student(*r) for r in rows}
 
-    def image(self, page_id: int) -> np.ndarray | None:
+    def image(self, page_id: int, as_saved: bool = False) -> np.ndarray | None:
+        """The aligned page in grey, or as saved (an unreadable page's scan keeps its colour for dropout)."""
         row = self.db.execute("SELECT image FROM page WHERE id = ?", (page_id,)).fetchone()
         if not row or row[0] is None:
             return None
-        return cv2.imdecode(np.frombuffer(row[0], np.uint8), cv2.IMREAD_GRAYSCALE)
+        return cv2.imdecode(np.frombuffer(row[0], np.uint8), cv2.IMREAD_UNCHANGED if as_saved else cv2.IMREAD_GRAYSCALE)
+
+
+def _png(image: np.ndarray) -> bytes | None:
+    ok, png = cv2.imencode(".png", image)
+    return png.tobytes() if ok else None
+
+
+def _row(result: PageResult | None) -> tuple[tuple, bytes | None]:
+    """(roll number, set code, answers, flags) as stored, and the aligned image as PNG."""
+    if result is None:
+        return (None,) * 4, None
+    return ((result.roll_number, result.set_code, json.dumps(result.answers), json.dumps(result.flags)),
+            None if result.aligned is None else _png(result.aligned))
 
 
 def to_review(pages: list[StoredPage], students: dict[str, Student] | None = None) -> list[tuple[int, str, str]]:

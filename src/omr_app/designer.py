@@ -404,4 +404,5 @@ class DesignerPage(QWidget):
             QMessageBox.warning(self, "Couldn't save", str(e))
             return
         self.saved.emit(path)
-        QMessageBox.information(self, "Template saved", f"Saved {path}.\n\nPick it in New exam… on the Exams page.")
+        QMessageBox.information(self, "Template saved", f"Saved {path}.\n\nPick it in New exam… on the Exams "
+                                "page, or under an exam's Exam settings, Change sheet.")

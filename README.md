@@ -113,7 +113,10 @@ The sidebar opens Dashboard, Exams, Sheet designer and Settings.
    saves the exam's sheet as a PDF for A4, Letter, Legal, A3 or A5 paper.
    The sheet reads the same at any print size, scaled or "fit to page", as
    long as all four corner circles are on the paper.
-   **Exam settings** renames or deletes the exam.
+   **Exam settings** renames or deletes the exam. **Change sheet…** there
+   gives the exam another template, for pages filled on a different sheet,
+   and reads every page again with it: imported files from the original
+   file, scanned pages from the image kept for them.
    **Dashboard** in the sidebar shows the open exam's sheets read, average
    score, sheets to check, the score spread and recent batches. Click any of
    them to open those sheets.
