@@ -43,7 +43,7 @@ lost on crash.
 
 | Principle | How this plan meets it |
 |---|---|
-| I. Offline first | No network calls in phase 1 apart from nothing; licence checked locally. |
+| I. Offline first | No network calls in phase 1; the licence is checked locally. |
 | II. Core has no UI | Pipeline, storage, grading, exports and licence checks in `omr_core`; scanner and screens in `omr_app`. A CI step imports `omr_core` without PySide6 installed. |
 | III. One pipeline | Every source produces a grayscale or colour NumPy page and calls `read_page(page, template)`. |
 | IV. Accuracy over guessing | Bubble decision has a grey zone that flags, never picks. Corrections go through one function that writes the audit log. |
