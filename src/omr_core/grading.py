@@ -48,7 +48,12 @@ def sections_to_json(sections: list[Section]) -> list[dict]:
 
 
 def sections_from_json(data: list[dict]) -> list[Section]:
-    return [Section(**d) for d in data]
+    """Sections from stored or template JSON. Raises ValueError for anything that isn't a section."""
+    try:
+        return [Section(str(d["name"]), int(d["first"]), int(d["last"]), float(d["correct"]), float(d["wrong"]),
+                        float(d.get("blank", 0))) for d in data]
+    except (KeyError, TypeError, ValueError) as e:
+        raise ValueError(f"sections need a name, first and last question, and correct and wrong marks ({e})") from e
 
 
 def marks_for(questions: list[int], correct: float, wrong: float, blank: float,

@@ -10,8 +10,8 @@ from PySide6.QtCore import QStandardPaths, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QPixmap
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel,
                                QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QProgressDialog, QPushButton,
-                               QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
-                               QWidget)
+                               QScrollArea, QSplitter, QStackedWidget, QTabWidget, QTableWidget, QTableWidgetItem,
+                               QVBoxLayout, QWidget)
 
 from omr_core.grading import Section, full_marks, marks_for, parse_key, score
 from omr_core.reader import UnreadablePage, read_page
@@ -22,6 +22,7 @@ from omr_core.students import Student
 from . import theme
 from .dashboard import DashboardPage, ResultsPage
 from .designer import DesignerPage
+from .new_sheet import NewSheetPage
 from .exams import TEMPLATES, ExamsPage
 from .review import ReviewPage
 from .scan import ScanPage
@@ -401,11 +402,15 @@ class MainWindow(QMainWindow):
         self.scan = ScanPage(self.check)
         self.check.changed.connect(self.scan._enable)
         self.designer = DesignerPage()
+        self.new_sheet = NewSheetPage()
+        sheets = QTabWidget()
+        sheets.addTab(self.new_sheet, "New sheet")
+        sheets.addTab(self.designer, "Map a sheet you already print")
         self.settings = theme.SettingsPage(self.prefs)
         self.settings.changed.connect(self.apply_prefs)
         self.pages = {"Dashboard": self.dashboard, "Exams": self.exams, "Check sheets": self.check,
                       "Scan": self.scan, "Review": self.review, "Results": self.results,
-                      "Sheet designer": self.designer, "Settings": self.settings}
+                      "Sheet designer": sheets, "Settings": self.settings}
 
         self.stack = QStackedWidget()
         sidebar = QWidget(objectName="sidebar")
