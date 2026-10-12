@@ -235,13 +235,18 @@ def _header(t) -> dict:
 
 
 def _question_grids(letters: str, sections: list[SheetSection], headed: bool) -> list[dict]:
-    """Question grids in bordered columns; each section starts a new column."""
+    """Question grids in bordered columns.
+
+    Each section starts a new column when that fits; otherwise sections follow one another down the columns,
+    each under its own heading band.
+    """
     options = len(letters)
     width = RIGHT - LEFT
     roomy = int((width + COLUMN_GAP) // (NUMBER_W + options * ROOMY_OPTION + COLUMN_GAP))
     head = BAND if headed else 0
+    height = BOTTOM - COLUMNS_TOP - 0.5
     for pitch in PITCHES:
-        fit = int((BOTTOM - COLUMNS_TOP - head - 0.5) // pitch)
+        fit = int((height - head) // pitch)
         cols = [-(-s.questions // fit) for s in sections]
         if sum(cols) <= roomy:
             break
@@ -249,8 +254,7 @@ def _question_grids(letters: str, sections: list[SheetSection], headed: bool) ->
     column = (width - (n - 1) * COLUMN_GAP) / n
     option = (column - NUMBER_W) / options
     if option < MIN_OPTION:
-        raise ValueError(f"{sum(s.questions for s in sections)} questions with {options} options don't fit on one "
-                         "A4 page; use fewer questions, options or sections")
+        return _flowed_grids(letters, sections, head)
     # Spare columns go to the longest sections, so short sheets spread across the page.
     while sum(cols) < roomy:
         i = max(range(len(sections)), key=lambda k: -(-sections[k].questions // cols[k]))
@@ -264,13 +268,65 @@ def _question_grids(letters: str, sections: list[SheetSection], headed: bool) ->
         left = s.questions
         for k in range(c):
             rows = -(-left // (c - k))
-            grids.append({"kind": "questions", "first": first, "options": letters, "multi": s.partial,
-                          "origin_mm": [round(x + NUMBER_W + option / 2, 2), round(COLUMNS_TOP + head + pitch / 2, 2)],
-                          "pitch_mm": [round(option, 3), pitch], "rows": rows, "cols": options})
+            grids.append(_grid(letters, s, first, x, COLUMNS_TOP + head, option, pitch, rows))
             first += rows
             left -= rows
             x += column + COLUMN_GAP
     return grids
+
+
+def _flowed_grids(letters: str, sections: list[SheetSection], head: float) -> list[dict]:
+    """Sections one after another down the columns, for sheets with more sections than columns.
+
+    Uses the fewest columns and then the roomiest row pitch that fit. Raises ValueError when nothing fits.
+    """
+    options = len(letters)
+    width = RIGHT - LEFT
+    height = BOTTOM - COLUMNS_TOP - 0.5
+    roomy = int((width + COLUMN_GAP) // (NUMBER_W + options * ROOMY_OPTION + COLUMN_GAP))
+    most = int((width + COLUMN_GAP) // (NUMBER_W + options * MIN_OPTION + COLUMN_GAP))
+    for n in range(max(roomy, 1), most + 1):
+        column = (width - (n - 1) * COLUMN_GAP) / n
+        option = (column - NUMBER_W) / options
+        for pitch in PITCHES:
+            placed = _flow(sections, n, height, head, pitch)
+            if placed is None:
+                continue
+            grids, first = [], 1
+            for s, col, top, rows in placed:
+                grids.append(_grid(letters, s, first, LEFT + col * (column + COLUMN_GAP), COLUMNS_TOP + top + head,
+                                   option, pitch, rows))
+                first += rows
+            return grids
+    raise ValueError(f"{sum(s.questions for s in sections)} questions with {options} options don't fit on one A4 "
+                     "page; use fewer questions or options")
+
+
+def _flow(sections: list[SheetSection], n: int, height: float, head: float, pitch: float):
+    """(section, column, top in mm, rows) for each piece of each section, or None when n columns are too few."""
+    placed, col, y = [], 0, 0.0
+    for s in sections:
+        left = s.questions
+        while left:
+            room = int((height - y - head) // pitch)
+            if room < min(left, 3):  # no heading with only a row or two under it at the foot of a column
+                col, y = col + 1, 0.0
+                if col == n:
+                    return None
+                continue
+            rows = min(left, room)
+            placed.append((s, col, y, rows))
+            y += head + rows * pitch
+            left -= rows
+    return placed
+
+
+def _grid(letters: str, s: SheetSection, first: int, x: float, top: float, option: float, pitch: float,
+          rows: int) -> dict:
+    """A question grid whose column starts at x and whose first row starts at top."""
+    return {"kind": "questions", "first": first, "options": letters, "multi": s.partial,
+            "origin_mm": [round(x + NUMBER_W + option / 2, 2), round(top + pitch / 2, 2)],
+            "pitch_mm": [round(option, 3), pitch], "rows": rows, "cols": len(letters)}
 
 
 def _instruction_lines(instructions: list[str], box) -> tuple[list[tuple[str, str]], float, float]:
@@ -452,18 +508,20 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO):
     headings = {sec["first"]: sec["name"] for sec in template.get("sections", [])}
     head = BAND if headings else 0
     questions = [g for g in t.grids if g.kind == "questions"]
-    rows = max(g.rows for g in questions)
-    for g in questions:
+    bottom = max(g.origin[1] - g.pitch[1] / 2 + g.rows * g.pitch[1] for g in questions) + 0.5  # every column ends here
+    for i, g in enumerate(questions):
         option, pitch = g.pitch
         x0 = g.origin[0] - option / 2 - NUMBER_W
         x1 = x0 + NUMBER_W + option * g.cols
         top = g.origin[1] - pitch / 2 - head
-        bottom = top + head + rows * pitch + 0.5
+        below = questions[i + 1] if i + 1 < len(questions) else None
+        same_column = below is not None and abs(below.origin[0] - g.origin[0]) < 0.1
+        end = below.origin[1] - below.pitch[1] / 2 - head if same_column else bottom
         for r in range(0, g.rows, 2):
             ry = g.origin[1] - pitch / 2 + r * pitch
             box(x0, ry, x1, ry + pitch, fill=stripe, stroke=False)
-        box(x0, top, x1, bottom)
-        c.line((x0 + NUMBER_W) * mm, y(top + head), (x0 + NUMBER_W) * mm, y(bottom))
+        box(x0, top, x1, end)
+        c.line((x0 + NUMBER_W) * mm, y(top + head), (x0 + NUMBER_W) * mm, y(end))
         if head:
             section = max((f for f in headings if f <= g.first), default=None)
             banded(x0, top, x1, headings.get(section, ""), 7.5)
