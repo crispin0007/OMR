@@ -9,7 +9,7 @@ from omr_app.window import MainWindow
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("OMR")
+    app.setApplicationName("OMR")  # names the data folders; keep it so existing exams are found
     app.setWindowIcon(QIcon(str(Path(__file__).with_name("icon.png"))))
     window = MainWindow()
     window.show()

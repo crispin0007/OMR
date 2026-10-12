@@ -634,3 +634,8 @@ def test_a_printed_copy_is_checked_before_printing_the_rest(app, tmp_path, monke
     assert w.print_sheet.try_print.isEnabled()
     w.print_sheet.check_print()
     assert shown and shown[0].startswith("This copy reads")
+def test_window_carries_the_app_name(app, tmp_path):
+    w = window(tmp_path)
+    assert w.windowTitle() == "OMR Checker  ·  Mock"
+    w.open_exam(None)
+    assert w.windowTitle() == "OMR Checker"

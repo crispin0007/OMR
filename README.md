@@ -1,4 +1,6 @@
-# OMR
+<p align="center"><img src="packaging/logo.png" alt="OMR Checker" width="240"></p>
+
+# OMR Checker
 
 Free, open-source, offline Windows software for checking OMR answer sheets: design or map a
 sheet, read filled sheets live from an ADF scanner or from scanned PDFs,
@@ -26,7 +28,7 @@ specs/          one folder per feature: spec, plan, tasks (spec-kit flow)
 
 ## Install on Windows
 
-Run `OMR-Setup-<version>.exe` and open OMR from the Start menu; nothing else is needed. To make the
+Run `OMR-Setup-<version>.exe` and open OMR Checker from the Start menu; nothing else is needed. To make the
 installer from this repository, see [packaging/README.md](packaging/README.md).
 
 ## Run it from source

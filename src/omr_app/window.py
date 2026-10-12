@@ -29,6 +29,8 @@ from .review import ReviewPage
 from .scan import ScanPage
 from .sections import SectionsDialog
 
+APP = "OMR Checker"
+
 COLUMNS = ["File", "Page", "Roll number", "Name", "Set", "Answered", "Score", "Review"]
 
 
@@ -520,7 +522,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, db_path: str | Path | None = None):
         super().__init__()
-        self.setWindowTitle("OMR")
+        self.setWindowTitle(APP)
         self.prefs = theme.load_prefs()
         if db_path is None:
             data = QStandardPaths.writableLocation(QStandardPaths.GenericDataLocation)  # %LOCALAPPDATA% on Windows
@@ -559,7 +561,15 @@ class MainWindow(QMainWindow):
         sidebar = QWidget(objectName="sidebar")
         nav = QVBoxLayout(sidebar)
         nav.setContentsMargins(10, 16, 10, 16)
-        nav.addWidget(QLabel("  OMR", objectName="title"))
+        brand = QHBoxLayout()
+        mark = QLabel()
+        mark.setPixmap(QPixmap(str(Path(__file__).with_name("icon.png"))).scaledToHeight(
+            30, Qt.SmoothTransformation))
+        brand.addWidget(mark)
+        name = QLabel(APP)
+        name.setStyleSheet("font-size: 15pt; font-weight: 700;")
+        brand.addWidget(name, 1)
+        nav.addLayout(brand)
         nav.addSpacing(12)
         self.nav = QButtonGroup(self)
         self.nav_buttons = {}
@@ -611,7 +621,7 @@ class MainWindow(QMainWindow):
         self.exam_settings.refresh()
         theme.settings().setValue("last_exam", exam_id or "")
         name = self.check.exam.name if self.check.exam else ""
-        self.setWindowTitle(f"OMR  ·  {name}" if name else "OMR")
+        self.setWindowTitle(f"{APP}  ·  {name}" if name else APP)
         if exam_id is None:
             self.exams_area.setCurrentWidget(self.exams)
         elif go:

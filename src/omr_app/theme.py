@@ -25,7 +25,7 @@ PAD_PX = {"Compact": 4, "Comfortable": 8}
 @dataclass
 class Prefs:
     theme: str = "System"
-    accent: str = ACCENTS["Violet"]
+    accent: str = ACCENTS["Blue"]  # the logo's blue
     font: str = "Normal"
     density: str = "Comfortable"
 
@@ -56,7 +56,7 @@ def is_dark(p: Prefs) -> bool:
     return QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
 
 
-_current = dict(LIGHT, accent=ACCENTS["Violet"])
+_current = dict(LIGHT, accent=ACCENTS["Blue"])
 
 
 def tokens() -> dict[str, str]:

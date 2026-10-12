@@ -1,41 +1,32 @@
-"""Draw the app icon (src/omr_app/icon.png and packaging/omr.ico). Run again after changing it."""
+"""Make the app icon (src/omr_app/icon.png and packaging/omr.ico) from the logo. Run again after changing it.
 
-import sys
+The icon is the logo's mark without the wordmark, on a white rounded square so it shows on dark taskbars too.
+"""
+
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPen
+import numpy as np
+from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def draw(size: int = 256) -> QImage:
-    image = QImage(size, size, QImage.Format_ARGB32)
-    image.fill(Qt.transparent)
-    p = QPainter(image)
-    p.setRenderHint(QPainter.Antialiasing)
-    s = size / 256
-    p.setPen(Qt.NoPen)
-    p.setBrush(QColor("#7c5cff"))
-    p.drawRoundedRect(QRectF(8 * s, 8 * s, 240 * s, 240 * s), 52 * s, 52 * s)
-    p.setBrush(QColor("#ffffff"))
-    p.drawRoundedRect(QRectF(56 * s, 36 * s, 144 * s, 184 * s), 14 * s, 14 * s)
-    for row, filled in enumerate((1, 3, 0, 2)):  # one answer marked in each row
-        for col in range(4):
-            box = QRectF((74 + col * 31) * s, (62 + row * 38) * s, 22 * s, 16 * s)
-            if col == filled:
-                p.setPen(Qt.NoPen)
-                p.setBrush(QColor("#2b2250"))
-            else:
-                p.setPen(QPen(QColor("#7c5cff"), 3 * s))
-                p.setBrush(Qt.NoBrush)
-            p.drawRoundedRect(box, 8 * s, 8 * s)
-    p.end()
-    return image
+def mark(logo: Image.Image, size: int = 256) -> Image.Image:
+    grey = np.asarray(logo.convert("L"))
+    words = int(grey.shape[0] * 0.70)  # the wordmark sits in the bottom 30%
+    ys, xs = np.nonzero(grey[:words] < 235)
+    x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
+    side = max(x1 - x0, y1 - y0)
+    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+    crop = logo.convert("RGB").crop((cx - side // 2, cy - side // 2, cx + side // 2, cy + side // 2))
+    inner = round(size * 0.86)
+    icon = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    ImageDraw.Draw(icon).rounded_rectangle((0, 0, size - 1, size - 1), radius=size // 5, fill="white")
+    icon.paste(crop.resize((inner, inner), Image.LANCZOS), ((size - inner) // 2,) * 2)
+    return icon
 
 
 if __name__ == "__main__":
-    app = QGuiApplication(sys.argv)
-    image = draw()
-    image.save(str(ROOT / "src" / "omr_app" / "icon.png"))
-    image.save(str(ROOT / "packaging" / "omr.ico"))
+    icon = mark(Image.open(ROOT / "packaging" / "logo.png"))
+    icon.save(ROOT / "src" / "omr_app" / "icon.png", optimize=True)
+    icon.save(ROOT / "packaging" / "omr.ico", sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])
