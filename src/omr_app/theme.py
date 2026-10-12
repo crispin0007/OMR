@@ -30,12 +30,12 @@ class Prefs:
     density: str = "Comfortable"
 
 
-def _settings() -> QSettings:
+def settings() -> QSettings:
     return QSettings(QSettings.IniFormat, QSettings.UserScope, "OMR", "OMR")  # %APPDATA%\OMR\OMR.ini on Windows
 
 
 def load_prefs() -> Prefs:
-    s, p = _settings(), Prefs()
+    s, p = settings(), Prefs()
     # The file can be edited by hand; anything unknown falls back to the default.
     theme, accent = s.value("theme", p.theme), s.value("accent", p.accent)
     font, density = s.value("font", p.font), s.value("density", p.density)
@@ -45,7 +45,7 @@ def load_prefs() -> Prefs:
 
 
 def save_prefs(p: Prefs):
-    s = _settings()
+    s = settings()
     for k, v in asdict(p).items():
         s.setValue(k, v)
 

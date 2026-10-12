@@ -21,6 +21,12 @@ def app(tmp_path):
     return QApplication.instance() or QApplication([])
 
 
+def window(tmp_path) -> MainWindow:
+    w = MainWindow(tmp_path / "omr.db")
+    w.open_exam(w.store.create_exam("Mock", (TEMPLATES / "test-100.json").read_text(encoding="utf-8")))
+    return w
+
+
 def sheet_files(tmp_path, seeds):
     t = load(TEMPLATES / "test-100.json")
     out = []
@@ -34,7 +40,7 @@ def sheet_files(tmp_path, seeds):
 
 def test_reads_sheets_and_scores_them(app, tmp_path):
     (path, answers, roll, set_code), = sheet_files(tmp_path, [3])
-    w = MainWindow()
+    w = window(tmp_path)
     c = w.check
     c.read_files([path])
     cell = lambda col: c.table.item(0, col).text()
@@ -59,7 +65,7 @@ def test_reads_sheets_and_scores_them(app, tmp_path):
 def test_dashboard_opens_the_sheets_behind_it(app, tmp_path):
     files = sheet_files(tmp_path, [1, 2])
     (tmp_path / "blank.png").write_bytes(cv2.imencode(".png", 255 + 0 * cv2.imread(files[0][0]))[1].tobytes())
-    w = MainWindow()
+    w = window(tmp_path)
     w.check.read_files([f[0] for f in files] + [str(tmp_path / "blank.png")])  # a page with no marks can't be read
     assert w.check.to_check() == [2]
     assert w.dashboard.to_check.value.text() == "1" and w.dashboard.batches.value.text() == "1"
@@ -70,8 +76,31 @@ def test_dashboard_opens_the_sheets_behind_it(app, tmp_path):
     assert not any(w.check.table.isRowHidden(r) for r in range(3))
 
 
-def test_settings_apply_and_are_kept(app):
-    w = MainWindow()
+def test_exam_is_there_after_reopening(app, tmp_path):
+    (path, answers, roll, set_code), = sheet_files(tmp_path, [4])
+    w = window(tmp_path)
+    w.check.read_files([path])
+    w.check.key_edit.setPlainText("".join(answers[q] or "A" for q in w.check.questions))
+    w.check.wrong.setValue(-0.25)
+    w.close()
+
+    w = MainWindow(tmp_path / "omr.db")  # opens the last exam
+    c = w.check
+    assert c.exam.name == "Mock" and w.stack.currentWidget() is w.dashboard
+    assert c.table.item(0, 2).text() == roll and c.wrong.value() == -0.25
+    assert c.table.item(0, 5).text() == str(sum(1 for q in c.questions if answers[q]))
+    c.table.selectRow(0)
+    assert c.page_view.pixmap() is not None and not c.page_view.pixmap().isNull()  # the page image was saved
+
+
+def test_first_run_starts_on_exams(app, tmp_path):
+    w = MainWindow(tmp_path / "omr.db")
+    assert w.check.exam is None and w.stack.currentWidget() is w.exams
+    assert not w.check.open_button.isEnabled()
+
+
+def test_settings_apply_and_are_kept(app, tmp_path):
+    w = MainWindow(tmp_path / "omr.db")
     w.settings.theme.setCurrentText("Dark")
     w.settings._set(accent="#123456")
     w.settings.font.setCurrentText("Large")

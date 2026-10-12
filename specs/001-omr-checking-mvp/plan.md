@@ -20,8 +20,9 @@ storage; openpyxl and ReportLab for exports; PySide6 for the app; pytwain on
 Windows for live scanning.
 
 **Storage**: SQLite file per install (`%LOCALAPPDATA%\OMR\omr.db`), WAL mode,
-one commit per graded page. Page images saved as PNG next to it. SQLAlchemy
-Core (not the ORM) so the phase 2 Network edition can point at PostgreSQL.
+one commit per graded page, aligned page images stored as PNG in the same
+file. Python's own `sqlite3`; revisit (e.g. SQLAlchemy Core) only if a
+networked edition needs another database.
 
 **Testing**: pytest. Core tests run on Windows and Linux in CI. Reader
 accuracy tests use generated sheets (below) and, once supplied, real scans in
