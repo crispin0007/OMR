@@ -19,6 +19,7 @@ from .dashboard import Tile, card
 
 FOLDER = "A folder my scanner software saves into"
 DPIS = ["200", "300", "150"]
+NO_EXAM = "Open an exam on the Exams page first; scanned sheets are saved into it."
 
 
 class ScanThread(QThread):
@@ -71,9 +72,13 @@ class ScanPage(QWidget):
         self.stop_button = QPushButton("Stop")
         self.stop_button.clicked.connect(self.stop)
 
+        self.import_button = QPushButton("Import scans…")
+        self.import_button.setToolTip("Read PDFs or images of sheets scanned earlier")
+        self.import_button.clicked.connect(check.open_sheets)
         top = QHBoxLayout()
-        top.addWidget(QLabel("Scan", objectName="title"))
+        top.addWidget(QLabel("Scan from the feeder, watch a folder, or import scan files.", objectName="muted"))
         top.addStretch()
+        top.addWidget(self.import_button)
         top.addWidget(self.start_button)
         top.addWidget(self.stop_button)
         options = QGridLayout()
@@ -147,13 +152,16 @@ class ScanPage(QWidget):
     def _enable(self):
         running = self.running
         self.start_button.setEnabled(self.check.exam is not None and not running)
+        self.import_button.setEnabled(self.check.exam is not None and not running)
         self.stop_button.setEnabled(running)
         for w in (self.source, self.dpi, self.duplex, self.folder, self.choose):
             w.setEnabled(not running)
         if not running:
             self._show_options()
         if self.check.exam is None and not running:
-            self.status.setText("Open an exam on the Exams page first; scanned sheets are saved into it.")
+            self.status.setText(NO_EXAM)
+        elif self.status.text() == NO_EXAM:
+            self.status.clear()
 
     @property
     def running(self) -> bool:

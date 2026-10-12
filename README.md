@@ -55,35 +55,47 @@ Templates live in `templates/`.
 omr
 ```
 
-The sidebar opens Dashboard, Exams, Check sheets, Scan, Review, Results,
-Sheet designer and Settings.
+The sidebar opens Dashboard, Exams, Sheet designer and Settings.
 
 1. On **Exams**, **New exam…** asks for a name and the sheet template
-   (`templates/test-100.json` by default). Double-click an exam to open it.
-   **Import students…** reads an Excel file with roll number, name and
-   class columns; names then show everywhere, roll numbers not on the list
-   go to Review, and rows that can't be used are listed, not imported.
-2. On **Check sheets**, **Open sheets…** reads PDFs or images. Each page gets
-   a row with its roll number, set and how many questions were answered.
-   Highlighted rows have marks to check; click a row to see the page and
-   what needs checking.
-3. Type the answer key in the box: one letter per question (`ABDCA…`), or one
-   line per set (`A: ABDC…`). Scores appear as you type. Set marks for
-   correct, wrong (e.g. -0.25) and blank answers. A key shorter than the
-   sheet counts only those questions. **Sections…** gives ranges of
-   questions their own name and marks (e.g. Physics 1 to 30, 4 right, -1
-   wrong); results then show a score per section.
-4. **Review** lists everything the reader wasn't sure about, unreadable
+   (`templates/test-100.json` by default). Click an exam to open its page.
+   The tabs below are all on that page; **All exams** goes back to the list.
+2. **Scan** reads sheets as the scanner feeds them. Pick the scanner,
+   resolution (200 DPI is right for most sheets) and whether to scan both
+   sides (blank backs are skipped), then press **Scan**. Each sheet is read
+   and saved the moment it arrives; the counters and the latest sheet update
+   as the stack feeds. A jam or double feed stops the run with every earlier
+   sheet saved; put the rest back and press Scan again. Scanners are found
+   through Windows (WIA). If yours isn't listed, scan with its own software
+   into a folder and pick **A folder my scanner software saves into**; each
+   file is read as soon as it is saved. **Import scans…** reads PDFs or
+   images scanned earlier.
+3. **Scanned sheets** has a row per page with its roll number, set and how
+   many questions were answered. Highlighted rows have marks to check; click
+   a row to see the page and what needs checking.
+4. **Answer key**: one letter per question (`ABDCA…`), or one line per set
+   (`A: ABDC…`). Scores appear as you type. A key shorter than the sheet
+   counts only those questions. **Marks and sections** sets marks for
+   correct, wrong (e.g. -0.25) and blank answers; **Sections…** gives ranges
+   of questions their own name and marks (e.g. Physics 1 to 30, 4 right, -1
+   wrong), and results then show a score per section.
+5. **Review** lists everything the reader wasn't sure about, unreadable
    pages and repeated roll numbers. Each item shows that part of the sheet;
    click the right answer or press its key (Delete for blank, Space to keep
    the reading). Scores update at once and every change is logged.
-6. **Dashboard** shows sheets read, average score, sheets to check, the score
-   spread and recent batches. Click any of them to open those sheets.
+   **Students** imports an Excel file with roll number, name and class
+   columns; names then show everywhere, roll numbers not on the list go to
+   Review, and rows that can't be used are listed, not imported.
    **Results** ranks every sheet with right, wrong and blank counts and its
    percentile, and exports a merit list to Excel (with every answer coloured
    right or wrong, and an item analysis: per question the share right, wrong
    and blank, the most chosen wrong answer and how well it separates strong
-   from weak students) or one PDF scorecard per student.
+   from weak students) or one PDF scorecard per student. **Print sheet**
+   saves the exam's sheet as a PDF when it was made on New sheet.
+   **Exam settings** renames or deletes the exam.
+   **Dashboard** in the sidebar shows the open exam's sheets read, average
+   score, sheets to check, the score spread and recent batches. Click any of
+   them to open those sheets.
 6. **Sheet designer** has two tabs. **New sheet** makes a sheet for you:
    choose the number of questions, options per question, roll number
    digits, question paper sets and, if you want, sections with their own

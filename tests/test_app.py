@@ -60,7 +60,7 @@ def test_reads_sheets_and_scores_them(app, tmp_path):
     assert w.results.table.item(0, 1).text() == roll
     assert w.results.table.item(0, 0).text() == "1"
     w.show()
-    for page in ("Dashboard", "Check sheets", "Results", "Settings"):  # every page paints without errors
+    for page in ["Dashboard", "Exams", "Sheet designer", "Settings", *w.exam_page.names]:  # every page paints
         w.go(page)
         assert not w.grab().isNull()
 
@@ -73,9 +73,9 @@ def test_dashboard_opens_the_sheets_behind_it(app, tmp_path):
     assert w.check.to_check() == [2]
     assert w.dashboard.to_check.value.text() == "1" and w.dashboard.batches.value.text() == "1"
     w.dashboard.to_check.mousePressEvent(None)
-    assert w.stack.currentWidget() is w.review
+    assert w.showing() is w.review
     w.dashboard.open_clean()
-    assert w.stack.currentWidget() is w.check
+    assert w.showing() is w.check
     assert [w.check.table.isRowHidden(r) for r in range(3)] == [False, False, True]
     w.check.show_sheets(None)
     assert not any(w.check.table.isRowHidden(r) for r in range(3))
@@ -91,7 +91,7 @@ def test_exam_is_there_after_reopening(app, tmp_path):
 
     w = MainWindow(tmp_path / "omr.db")  # opens the last exam
     c = w.check
-    assert c.exam.name == "Mock" and w.stack.currentWidget() is w.dashboard
+    assert c.exam.name == "Mock" and w.showing() is w.dashboard
     assert c.table.item(0, 2).text() == roll and c.wrong.value() == -0.25
     assert c.table.item(0, 6).text() == str(sum(1 for q in c.questions if answers[q]))
     c.table.selectRow(0)
@@ -100,7 +100,7 @@ def test_exam_is_there_after_reopening(app, tmp_path):
 
 def test_first_run_starts_on_exams(app, tmp_path):
     w = MainWindow(tmp_path / "omr.db")
-    assert w.check.exam is None and w.stack.currentWidget() is w.exams
+    assert w.check.exam is None and w.showing() is w.exams
     assert not w.check.open_button.isEnabled()
 
 
@@ -177,10 +177,9 @@ def test_imported_students_show_by_name(app, tmp_path, monkeypatch):
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(tmp_path / "students.xlsx"), ""))
     shown = []
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: shown.append(a[2]))
-    w.exams.table.selectRow(0)
-    w.exams.students_button.click()
+    w.students.import_button.click()
     assert shown and shown[0].startswith("Imported 1 student into")
-    assert w.check.table.item(0, 3).text() == "Asha Rai"
+    assert w.check.table.item(0, 3).text() == "Asha Rai" and w.students.table.item(0, 1).text() == "Asha Rai"
     w.check.key_edit.setPlainText("A" * 100)
     assert w.results.table.item(0, 2).text() == "Asha Rai"
 
@@ -343,3 +342,75 @@ def test_new_sheet_saves_a_template_and_a_pdf(app, tmp_path, monkeypatch):
     n.sections.item(1, 1).setText("ten")
     n.update_preview()
     assert "whole number" in n.error.text() and n.template is None
+
+
+def test_sections_and_a_short_key(app, tmp_path, monkeypatch):
+    from omr_app import sections
+
+    (path, answers, roll, set_code), = sheet_files(tmp_path, [4])
+    w = window(tmp_path)
+    c = w.check
+    c.read_files([path])
+    c.key_edit.setPlainText("".join(answers[q] or "A" for q in c.questions[:60]))  # only 60 questions in this paper
+    assert "60 of 100 questions counted" in c.key_status.text()
+    right = sum(1 for q in c.questions[:60] if answers[q])
+    assert c.table.item(0, 6).text() == str(right) and c.full_marks() == 60
+
+    def fill(dialog):
+        dialog.add()
+        dialog.table.item(0, 0).setText("Physics")
+        dialog.table.item(0, 2).setText("30")
+        dialog.table.item(0, 3).setText("4")
+        dialog.add()  # starts at 31
+        return dialog.table.item(1, 1).text() == "31" and dialog.accept() is None
+    monkeypatch.setattr(sections.SectionsDialog, "exec", fill)
+    w.go("Marks and sections")
+    c.sections_button.click()  # the real button, so a missing import or a broken dialog fails here
+    assert [s.name for s in w.store.exam(c.exam.id).sections] == ["Physics", "Section 2"]
+    assert "Physics: questions 1 to 30" in c.sections_label.text()
+    physics = sum(1 for q in c.questions[:30] if answers[q])
+    assert c.table.item(0, 6).text() == str(4 * physics + right - physics)
+    assert c.full_marks() == 4 * 30 + 30
+    headers = [w.results.table.horizontalHeaderItem(i).text() for i in range(w.results.table.columnCount())]
+    assert headers[4:7] == ["Score", "Physics", "Section 2"]
+    assert w.results.table.item(0, 5).text() == str(4 * physics)
+
+    dialog = sections.SectionsDialog(c, [], c.questions, (1, 0, 0))
+    dialog.add()
+    dialog.table.item(0, 2).setText("120")
+    dialog.accept()
+    assert "100" in dialog.error.text() and dialog.result() == 0  # stays open, says why
+
+
+def test_clicking_an_exam_opens_its_page(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    from omr_core.sheet import SheetSpec, layout
+    import json
+    w = MainWindow(tmp_path / "omr.db")
+    made = w.store.create_exam("Made here", json.dumps(layout(SheetSpec("Weekly", 30))))
+    mapped = w.store.create_exam("Mapped", (TEMPLATES / "test-100.json").read_text(encoding="utf-8"))
+    w.exams.refresh()
+    assert "Check sheets" not in w.PAGES and w.showing() is w.exams
+    row = next(r for r in range(w.exams.table.rowCount()) if w.exams.table.item(r, 0).text() == "Made here")
+    w.exams.table.cellClicked.emit(row, 0)
+    assert w.check.exam.id == made and w.showing() is w.scan  # nothing read yet: start on Scan
+    assert w.exam_page.title.text() == "Made here" and w.print_sheet.save.isEnabled()
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "sheet.pdf"), ""))
+    w.print_sheet.save.click()
+    assert (tmp_path / "sheet.pdf").read_bytes().startswith(b"%PDF")
+
+    w.exam_settings.name.setText("Weekly 1")
+    w.exam_settings.rename()
+    assert w.store.exam(made).name == "Weekly 1" and w.exam_page.title.text() == "Weekly 1"
+    w.exam_page.back.emit()
+    assert w.showing() is w.exams
+
+    w.open_exam(mapped)
+    assert not w.print_sheet.save.isEnabled() and "print yourself" in w.print_sheet.note.text()
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    w.go("Exams")
+    w.open_exam(mapped)
+    w.go("Exam settings")
+    assert w.showing() is w.exam_settings
+    w.exam_settings.delete()
+    assert w.check.exam is None and w.showing() is w.exams and [e[0] for e in w.store.exams()] == [made]

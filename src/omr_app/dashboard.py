@@ -235,7 +235,7 @@ class DashboardPage(QWidget):
             item.setData(Qt.UserRole, list(range(b.start, b.start + b.count)))
             self.recent.addItem(item)
         if not c.batches:
-            self.recent.addItem("No sheets yet. Open some on Check sheets.")
+            self.recent.addItem("No sheets yet. Open the exam to scan or import sheets.")
         self.update()
 
     def open_to_check(self):
@@ -272,7 +272,6 @@ class ResultsPage(QWidget):
         self.pdf = QPushButton("Scorecards (PDF)…")
         self.pdf.clicked.connect(lambda: self.export("PDF", "pdf", write_scorecards))
         top = QHBoxLayout()
-        top.addWidget(QLabel("Results", objectName="title"))
         top.addStretch()
         top.addWidget(self.excel)
         top.addWidget(self.pdf)
@@ -289,9 +288,9 @@ class ResultsPage(QWidget):
             self.graded = grade(c.exam.template, c.sheets, c.key_edit.toPlainText(), c.correct.value(),
                                 c.wrong.value(), c.blank.value(), c.students, c.sections) if c.exam else []
         except ValueError:
-            self.graded = []  # the key doesn't fit yet; Check sheets says why
+            self.graded = []  # the key doesn't fit yet; the Answer key tab says why
         self.note.setText("Ranked by score; equal scores share a rank. Double-click a row to open the sheet."
-                          if self.graded else "Type the answer key on Check sheets to see results.")
+                          if self.graded else "Type the answer key on the Answer key tab to see results.")
         self.excel.setEnabled(bool(self.graded))
         self.pdf.setEnabled(bool(self.graded))
         self.table.setSortingEnabled(False)

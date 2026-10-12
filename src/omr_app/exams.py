@@ -1,4 +1,4 @@
-"""Exams page: create, open and delete exams. Each exam keeps its own template, key, marks and sheets."""
+"""Exams page: create exams and open one. Each exam keeps its own template, key, marks, students and sheets."""
 
 from pathlib import Path
 
@@ -7,7 +7,6 @@ from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QFormLayo
                                QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from omr_core.store import Store
-from omr_core.students import read_students
 from omr_core.template import load
 
 TEMPLATES = Path(__file__).resolve().parents[2] / "templates"  # the repo's templates, in a source checkout
@@ -53,8 +52,9 @@ class NewExamDialog(QDialog):
 
 
 class ExamsPage(QWidget):
-    opened = Signal(object)  # exam id, or None when the open exam was deleted
-    students_changed = Signal(int)  # exam id
+    """Every exam; click one to open its page."""
+
+    opened = Signal(object)  # exam id
 
     def __init__(self, store: Store):
         super().__init__()
@@ -62,18 +62,10 @@ class ExamsPage(QWidget):
         self.open_id: int | None = None
         new = QPushButton("New exam…", objectName="primary")
         new.clicked.connect(self.new_exam)
-        self.open_button = QPushButton("Open")
-        self.open_button.clicked.connect(lambda: self.opened.emit(self.selected()))
-        self.students_button = QPushButton("Import students…")
-        self.students_button.setToolTip("An Excel file with roll number, name and (optionally) class columns")
-        self.students_button.clicked.connect(self.import_students)
-        self.delete_button = QPushButton("Delete…")
-        self.delete_button.clicked.connect(self.delete_exam)
         top = QHBoxLayout()
         top.addWidget(QLabel("Exams", objectName="title"))
         top.addStretch()
-        for b in (new, self.open_button, self.students_button, self.delete_button):
-            top.addWidget(b)
+        top.addWidget(new)
         self.note = QLabel(objectName="muted")
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["Exam", "Created", "Sheets", "Students", ""])
@@ -82,27 +74,19 @@ class ExamsPage(QWidget):
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.verticalHeader().hide()
         self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.cellDoubleClicked.connect(lambda *_: self.opened.emit(self.selected()))
-        self.table.itemSelectionChanged.connect(self._enable)
+        self.table.cellClicked.connect(lambda row, _: self.opened.emit(self.table.item(row, 0).data(Qt.UserRole)))
         layout = QVBoxLayout(self)
         layout.addLayout(top)
         layout.addWidget(self.note)
         layout.addWidget(self.table, 1)
         self.refresh()
 
-    def selected(self) -> int | None:
-        rows = self.table.selectionModel().selectedRows()
-        return self.table.item(rows[0].row(), 0).data(Qt.UserRole) if rows else None
-
-    def _enable(self):
-        for b in (self.open_button, self.students_button, self.delete_button):
-            b.setEnabled(self.selected() is not None)
-
     def refresh(self, open_id: int | None = ...):
         if open_id is not ...:
             self.open_id = open_id
         exams = self.store.exams()
-        self.note.setText("Double-click an exam to open it. Everything is saved as you work."
+        self.note.setText("Click an exam to open it: scan, check, set the key and marks, see results and print its "
+                          "sheet. Everything is saved as you work."
                           if exams else "Create an exam to start: give it a name and pick the sheet template.")
         self.table.setRowCount(len(exams))
         for row, (id_, name, created, pages, students) in enumerate(exams):
@@ -112,7 +96,6 @@ class ExamsPage(QWidget):
                 item.setData(Qt.UserRole, id_)
                 self.table.setItem(row, col, item)
         self.table.resizeColumnsToContents()
-        self._enable()
 
     def new_exam(self):
         dialog = NewExamDialog(self)
@@ -125,53 +108,3 @@ class ExamsPage(QWidget):
             QMessageBox.warning(self, "Can't create the exam", str(e))
             return
         self.opened.emit(exam_id)
-
-    def import_students(self):
-        exam_id = self.selected()
-        if exam_id is None:
-            return
-        exam = self.store.exam(exam_id)
-        roll = next((g for g in exam.template.grids if g.kind == "roll_number"), None)
-        if roll is None and exam.template.barcode is None:
-            QMessageBox.warning(self, "No roll number", "This exam's sheet has no roll number grid or barcode to match "
-                                "students by.")
-            return
-        path, _ = QFileDialog.getOpenFileName(self, "Import students", "", "Excel (*.xlsx *.xlsm)")
-        if not path:
-            return
-        try:
-            students, problems = read_students(path, roll.cols if roll else None)
-        except (OSError, ValueError) as e:
-            QMessageBox.warning(self, "Can't import students", str(e))
-            return
-        if not students:
-            QMessageBox.warning(self, "Can't import students", "No usable rows.\n\n" + "\n".join(problems[:30]))
-            return
-        replacing = self.store.students(exam_id)
-        if replacing and QMessageBox.question(
-                self, "Replace student list", f"“{exam.name}” already has {len(replacing)} students. Replace them "
-                f"with the {len(students)} in this file?", QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
-            return
-        self.store.set_students(exam_id, students)
-        self.refresh()
-        self.students_changed.emit(exam_id)
-        text = f"Imported {len(students)} student{'s' if len(students) != 1 else ''} into “{exam.name}”."
-        if problems:
-            more = f"\n…and {len(problems) - 30} more" if len(problems) > 30 else ""
-            text += f"\n\nSkipped {len(problems)} rows:\n" + "\n".join(problems[:30]) + more
-        QMessageBox.information(self, "Students imported", text)
-
-    def delete_exam(self):
-        exam_id = self.selected()
-        if exam_id is None:
-            return
-        name = self.store.exam(exam_id).name
-        sure = QMessageBox.question(
-            self, "Delete exam", f"Delete “{name}” and every sheet read for it? This can't be undone.",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if sure != QMessageBox.Yes:
-            return
-        self.store.delete_exam(exam_id)
-        if exam_id == self.open_id:
-            self.opened.emit(None)
-        self.refresh()

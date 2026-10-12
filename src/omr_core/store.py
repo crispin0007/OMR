@@ -145,6 +145,13 @@ class Store:
             self.db.execute("UPDATE exam SET sections = ? WHERE id = ?",
                             (json.dumps(sections_to_json(sections)), exam_id))
 
+    def rename_exam(self, exam_id: int, name: str):
+        name = name.strip()
+        if not name:
+            raise ValueError("the exam needs a name")
+        with self.db:
+            self.db.execute("UPDATE exam SET name = ? WHERE id = ?", (name, exam_id))
+
     def delete_exam(self, exam_id: int):
         with self.db:
             self.db.execute("DELETE FROM exam WHERE id = ?", (exam_id,))

@@ -88,7 +88,6 @@ class ReviewPage(QWidget):
         split.addWidget(right)
         split.setSizes([380, 760])
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Review", objectName="title"))
         layout.addWidget(split, 1)
         check.changed.connect(self.refresh)
         self.refresh()
@@ -134,7 +133,7 @@ class ReviewPage(QWidget):
         self.where.setText(f"{c.file_name(sheet)}  page {sheet.page}  ·  {item}")
         self.why.setText(why)
         if sheet.result is None:
-            self.picture.setText("This page couldn't be read. Scan it again and open it on Check sheets.")
+            self.picture.setText("This page couldn't be read. Scan it again, or import the scan again.")
             self.read_as.clear()
             self.help.hide()
             return
