@@ -33,7 +33,7 @@ task before it.
 - [x] T013 [US2] Correction function in `store.py` that re-grades and writes the audit log (user is the Windows login until T026 adds users)
 - [x] T014 [US2] Review queue screen in `src/omr_app/review.py`, sheet image with overlay
 - [x] T015 [US2] Duplicate roll number flags
-- [ ] T015b [US2] Unknown student flags (needs the student list, T026)
+- [x] T015b [US2] Unknown student flags
 
 ## Phase 5: US3 Publish results (P1)
 
@@ -58,7 +58,8 @@ task before it.
 ## Phase 8: US6 and US7 (P3)
 
 - [ ] T025 [US6] Design new sheets from blocks and print to PDF
-- [ ] T026 [P] [US7] Institute, classes and users with roles; student import from Excel
+- [x] T026a [US7] Student import from Excel per exam (roll number, name, class); names on screens and exports
+- [ ] T026 [P] [US7] Institute, classes and users with roles
 
 ## Phase 9: Release
 

@@ -44,13 +44,13 @@ def test_reads_sheets_and_scores_them(app, tmp_path):
     c = w.check
     c.read_files([path])
     cell = lambda col: c.table.item(0, col).text()
-    assert (cell(2), cell(3), cell(5)) == (roll, set_code, "")  # no key yet, no score
+    assert (cell(2), cell(4), cell(6)) == (roll, set_code, "")  # no key yet, no score
     key = [answers[q] or "A" for q in c.questions]
     c.key_edit.setPlainText(f"{set_code}: " + "".join(key))
     right = sum(1 for q in c.questions if answers[q])
-    assert cell(5) == str(right)
+    assert cell(6) == str(right)
     c.wrong.setValue(-1)
-    assert cell(5) == str(right)  # blanks aren't wrong
+    assert cell(6) == str(right)  # blanks aren't wrong
     c.table.selectRow(0)
     assert c.review_list.item(0).text() == "Nothing to check"
     assert w.dashboard.read.value.text() == "1" and w.dashboard.average.value.text() == f"{right:.1f}"
@@ -90,7 +90,7 @@ def test_exam_is_there_after_reopening(app, tmp_path):
     c = w.check
     assert c.exam.name == "Mock" and w.stack.currentWidget() is w.dashboard
     assert c.table.item(0, 2).text() == roll and c.wrong.value() == -0.25
-    assert c.table.item(0, 5).text() == str(sum(1 for q in c.questions if answers[q]))
+    assert c.table.item(0, 6).text() == str(sum(1 for q in c.questions if answers[q]))
     c.table.selectRow(0)
     assert c.page_view.pixmap() is not None and not c.page_view.pixmap().isNull()  # the page image was saved
 
@@ -133,12 +133,12 @@ def test_review_fixes_a_flagged_answer_and_logs_it(app, tmp_path):
     c = w.check
     c.read_files([str(path)])
     c.key_edit.setPlainText("".join(["C"] + [answers[q] or "A" for q in c.questions[1:]]))
-    before = float(c.table.item(0, 5).text())
+    before = float(c.table.item(0, 6).text())
     w.go("Review")
     assert [item for _, item, _ in w.review.items] == ["Q1"]
     assert w.review.picture.pixmap() is not None and not w.review.picture.pixmap().isNull()
     w.review.fix("Q1", "C")
-    assert w.review.items == [] and float(c.table.item(0, 5).text()) == before + 1
+    assert w.review.items == [] and float(c.table.item(0, 6).text()) == before + 1
     assert w.store.audit(c.exam.id)[0][4:] == ("Q1", "", "C")
     assert w.review.log.count() == 1
 
@@ -159,3 +159,24 @@ def test_results_export_asks_while_marks_wait_for_review(app, tmp_path, monkeypa
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
     w.results.excel.click()
     assert out.exists()
+
+
+def test_imported_students_show_by_name(app, tmp_path, monkeypatch):
+    from openpyxl import Workbook
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    (path, answers, roll, set_code), = sheet_files(tmp_path, [6])
+    wb = Workbook()
+    wb.active.append(["Roll number", "Name", "Class"])
+    wb.active.append([roll, "Asha Rai", "10 A"])
+    wb.save(tmp_path / "students.xlsx")
+    w = window(tmp_path)
+    w.check.read_files([path])
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(tmp_path / "students.xlsx"), ""))
+    shown = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: shown.append(a[2]))
+    w.exams.table.selectRow(0)
+    w.exams.students_button.click()
+    assert shown and shown[0].startswith("Imported 1 student into")
+    assert w.check.table.item(0, 3).text() == "Asha Rai"
+    w.check.key_edit.setPlainText("A" * 100)
+    assert w.results.table.item(0, 2).text() == "Asha Rai"
