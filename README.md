@@ -110,7 +110,9 @@ The sidebar opens Dashboard, Exams, Sheet designer and Settings.
    right or wrong, and an item analysis: per question the share right, wrong
    and blank, the most chosen wrong answer and how well it separates strong
    from weak students) or one PDF scorecard per student. **Print sheet**
-   saves the exam's sheet as a PDF to print at actual size.
+   saves the exam's sheet as a PDF for A4, Letter, Legal, A3 or A5 paper.
+   The sheet reads the same at any print size, scaled or "fit to page", as
+   long as all four corner circles are on the paper.
    **Exam settings** renames or deletes the exam.
    **Dashboard** in the sidebar shows the open exam's sheets read, average
    score, sheets to check, the score spread and recent batches. Click any of

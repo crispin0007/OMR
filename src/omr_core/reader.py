@@ -110,8 +110,18 @@ def _prepare(page: np.ndarray, dropout: str | None) -> np.ndarray:
 
 
 def _align(gray: np.ndarray, t: Template) -> np.ndarray:
-    """Warp the page so template millimetres map to SCALE pixels each."""
-    found = _find_markers(gray, t)
+    """Warp the page so template millimetres map to SCALE pixels each.
+
+    Everything after this works in the template's millimetres, so a sheet printed smaller, larger or on
+    other paper reads the same once its four corner marks are found.
+    """
+    try:
+        return _warp(gray, t, _markers_near(gray, t))
+    except UnreadablePage:  # printed at another size or on other paper: look further for the marks
+        return _warp(gray, t, _markers_anywhere(gray, t))
+
+
+def _warp(gray: np.ndarray, t: Template, found: list[tuple[float, float]]) -> np.ndarray:
     size = (round(t.page[0] * SCALE), round(t.page[1] * SCALE))
     for turn in (0, 2):  # upright, then upside down (markers swap TL<->BR, TR<->BL)
         dst = np.float32(t.markers[turn:] + t.markers[:turn]) * SCALE
@@ -146,8 +156,69 @@ def _flatten(aligned: np.ndarray) -> np.ndarray:
     return cv2.divide(aligned, np.maximum(paper, 1), scale=255)
 
 
-def _find_markers(gray: np.ndarray, t: Template) -> list[tuple[float, float]]:
-    """Centre of each registration mark, searched near where the template puts it."""
+def _markers_anywhere(gray: np.ndarray, t: Template) -> list[tuple[float, float]]:
+    """Each mark searched in its quarter of the page at any print size from half to one and a half times,
+    first on a small copy, then refined at full size.
+
+    The four marks are printed the same size, so the size is the one that matches all four best: a small
+    blob such as a filled bubble can look like one mark at a small size, but not like all four.
+    """
+    shrink = 4
+    small = cv2.resize(gray, None, fx=1 / shrink, fy=1 / shrink, interpolation=cv2.INTER_AREA)
+    s = gray.shape[1] / t.page[0]  # px per mm if the sheet filled the page's width
+    h, w = small.shape
+    corners = [((0 if mx < t.page[0] / 2 else w // 2), (0 if my < t.page[1] / 2 else h // 2)) for mx, my in t.markers]
+    best = (MIN_MARKER_SCORE, None, s)
+    for k in np.geomspace(0.5, 1.6, 11):
+        mark = _marker_image(t.marker_shape, t.marker_size * s * k / shrink)
+        half = mark.shape[0] // 2
+        scores, spots = [], []
+        for x0, y0 in corners:
+            roi = small[y0:y0 + h // 2 + h % 2, x0:x0 + w // 2 + w % 2]
+            if roi.shape[0] < mark.shape[0] or roi.shape[1] < mark.shape[1]:
+                break
+            _, m, _, (lx, ly) = cv2.minMaxLoc(cv2.matchTemplate(roi, mark, cv2.TM_CCOEFF_NORMED))
+            scores.append(m)
+            spots.append(((lx + x0 + half) * shrink, (ly + y0 + half) * shrink))
+        if len(scores) == 4 and min(scores) > best[0] and _scale(spots, t.markers):
+            best = (min(scores), spots, _scale(spots, t.markers))
+    if best[1] is None:
+        raise UnreadablePage("registration mark not found")
+    d = t.marker_size * best[2]  # the marks' size in pixels, from how far apart they are
+    r = int(d)
+    found = []
+    for cx, cy in best[1]:
+        roi = gray[max(cy - r, 0):cy + r, max(cx - r, 0):cx + r]
+        top, spot = -1.0, (cx, cy)
+        for f in (0.9, 1.0, 1.1):
+            mark = _marker_image(t.marker_shape, d * f)
+            if roi.shape[0] < mark.shape[0] or roi.shape[1] < mark.shape[1]:
+                continue
+            _, m, _, (lx, ly) = cv2.minMaxLoc(cv2.matchTemplate(roi, mark, cv2.TM_CCOEFF_NORMED))
+            if m > top:
+                half = mark.shape[0] // 2
+                top, spot = m, (lx + max(cx - r, 0) + half, ly + max(cy - r, 0) + half)
+        found.append(spot)
+    if len(set(found)) < 4:
+        raise UnreadablePage("registration marks overlap")
+    return found
+
+
+def _scale(found: list[tuple[float, float]], markers: list[tuple[float, float]]) -> float | None:
+    """Pixels per template millimetre if four points make the marks' rectangle: every side the same
+    share of its printed length, within 12% (room for tilt, fit-to-page stretch and phone angles).
+    None when they don't."""
+    ratios = []
+    for i in range(4):
+        (ax, ay), (bx, by) = found[i], found[(i + 1) % 4]
+        (mx, my), (nx, ny) = markers[i], markers[(i + 1) % 4]
+        ratios.append(np.hypot(bx - ax, by - ay) / np.hypot(nx - mx, ny - my))
+    mean = float(np.mean(ratios))
+    return mean if all(abs(r - mean) <= 0.12 * mean for r in ratios) else None
+
+
+def _markers_near(gray: np.ndarray, t: Template) -> list[tuple[float, float]]:
+    """Each mark searched near where the template puts it, assuming the sheet fills the page's width."""
     s = gray.shape[1] / t.page[0]  # rough px per mm, assuming the scan is cropped to the page
     d = t.marker_size * s
     pad = int(d)

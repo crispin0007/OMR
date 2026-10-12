@@ -5,7 +5,7 @@ import cv2
 import pytest
 
 from omr_core.designer import align, find_bubbles, fit_grid, marker_at
-from omr_core.reader import _find_markers, read_page
+from omr_core.reader import _markers_near, read_page
 from omr_core.template import load, parse
 from sheets import draw, random_marks, scan
 
@@ -75,7 +75,7 @@ def test_maps_the_private_sample_sheet():
         pytest.skip("private sample not available")
     t = load(folder / "sample-200q.json")
     gray = cv2.imread(str(folder / "photocopy.png"), cv2.IMREAD_GRAYSCALE)
-    marks, marks_mm, grids, size = map_sheet(gray, t, _find_markers(gray, t), list(t.markers))  # stands in for clicks
+    marks, marks_mm, grids, size = map_sheet(gray, t, _markers_near(gray, t), list(t.markers))  # stands in for clicks
     assert all(m[3] == "ring" for m in marks)
     d = json.loads((folder / "sample-200q.json").read_text())
     d["bubble_mm"] = list(size)

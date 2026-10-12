@@ -71,6 +71,21 @@ def photo(page: np.ndarray, tilt: float = 0.06, dim: float = 0.55, width: int = 
     return cv2.imdecode(cv2.imencode(".jpg", out, [cv2.IMWRITE_JPEG_QUALITY, quality])[1], cv2.IMREAD_COLOR)
 
 
+def reprint(page: np.ndarray, paper_mm: tuple[float, float], scale: float, stretch: float = 1.0,
+            dpi: int = 200) -> np.ndarray:
+    """An A4 page (rendered at 200 DPI) printed at another scale, centred on other paper, and scanned at `dpi`;
+    `stretch` widens it alone, as some printers' "fit to page" does."""
+    k = dpi / 200 * scale
+    img = cv2.resize(page, (round(page.shape[1] * k * stretch), round(page.shape[0] * k)), interpolation=cv2.INTER_AREA)
+    w, h = round(paper_mm[0] / 25.4 * dpi), round(paper_mm[1] / 25.4 * dpi)
+    out = np.full((h, w, 3), 255, np.uint8)
+    y0, x0 = (h - img.shape[0]) // 2, (w - img.shape[1]) // 2
+    img = img[max(-y0, 0):, max(-x0, 0):][:h, :w]  # a sheet a pixel larger than the paper loses that pixel
+    y0, x0 = max(y0, 0), max(x0, 0)
+    out[y0:y0 + img.shape[0], x0:x0 + img.shape[1]] = img
+    return out
+
+
 def random_marks(t: Template, seed: int) -> tuple[dict, dict[int, str], str, str]:
     """One random pen answer per question (some blank), a roll number and a set code."""
     rng = np.random.default_rng(seed)
