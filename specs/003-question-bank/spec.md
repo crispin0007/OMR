@@ -9,7 +9,9 @@
 **Input**: Phase 2 of the OMR Checker Management System plan. Teachers keep
 their questions in one place, sorted by subject, chapter and topic, build
 question papers from them, and get the answer keys straight into an exam,
-so nobody types a key by hand. Results flow back so each question shows how
+so nobody types a key by hand. The bank is optional: exams for papers typed
+or printed outside the app keep working exactly as in phase 1, with a typed
+or imported answer key. Results flow back so each question shows how
 students did on it. Offline, on the same PC and database as phase 1.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -207,6 +209,10 @@ empty install; every subject, topic, question, picture and statistic matches.
   exams built from the bank.
 - **FR-011**: System MUST export and import a subject or the whole bank as a
   single file, without duplicating what is already there.
+- **FR-012**: System MUST keep checking independent of the bank: creating an
+  exam, entering or importing its key, scanning, grading and results MUST work
+  with an empty bank, and an exam built from the bank MUST be graded the same
+  way as one with a typed key.
 
 ### Key Entities
 
@@ -232,6 +238,8 @@ empty install; every subject, topic, question, picture and statistic matches.
   lists every unusable row.
 - **SC-004**: Every question used in a graded exam shows that exam's figures
   as soon as results are saved.
+- **SC-005**: With no subjects or questions in the bank, every phase 1 test
+  and workflow passes unchanged.
 
 ## Assumptions
 

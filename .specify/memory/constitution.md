@@ -68,6 +68,11 @@ See `AGENTS.md` for the working rules.
   local network unless the user sends it.
 - **No data loss:** a crash, a paper jam or a power cut mid-scan must not lose
   pages already scanned or results already graded.
+- **Checking stands alone:** an exam needs only a sheet template and an answer
+  key, typed or imported. Papers typed or printed outside the app are checked
+  exactly like papers built in it. The question bank and syllabus maker are
+  optional extras: they can fill in an exam, but nothing in checking, grading
+  or results may require them.
 
 ## Development Workflow
 
@@ -85,4 +90,4 @@ needs a pull request that states the change, the reason, and what existing
 specs or code must change with it. Versioning: MAJOR for a removed or
 redefined principle, MINOR for a new principle or section, PATCH for wording.
 
-**Version**: 1.1.0 | **Ratified**: 2026-10-12 | **Last Amended**: 2026-10-12
+**Version**: 1.2.0 | **Ratified**: 2026-10-12 | **Last Amended**: 2026-10-12
