@@ -683,3 +683,27 @@ def test_answer_key_is_read_from_a_filled_master_sheet(app, tmp_path, monkeypatc
     key = k.keys()[set_code]
     assert key == [answers[q] or "-" for q in w.check.questions]
     assert f"Key for set {set_code}" in shown[0] and k.set_code() == set_code
+
+
+def test_absent_students_are_listed_and_saved(app, tmp_path, monkeypatch):
+    from openpyxl import Workbook
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    (path, _, roll, _), = sheet_files(tmp_path, [6])
+    wb = Workbook()
+    wb.active.append(["Roll number", "Name", "Class"])
+    wb.active.append([roll, "Asha Rai", "10 A"])
+    other = "9" * len(roll) if roll != "9" * len(roll) else "1" * len(roll)
+    wb.active.append([other, "Bikash Shah", "10 A"])
+    wb.save(tmp_path / "students.xlsx")
+    w = window(tmp_path)
+    w.check.read_files([path])
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(tmp_path / "students.xlsx"), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    w.students.import_button.click()
+    s = w.students
+    assert "2 students, 1 absent" in s.note.text() and s.save_absent.isEnabled()
+    s.absent_only.setChecked(True)
+    assert s.table.rowCount() == 1 and s.table.item(0, 1).text() == "Bikash Shah" and s.table.item(0, 3).text() == "Absent"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "absent.csv"), ""))
+    s.save_absent_list()
+    assert (tmp_path / "absent.csv").read_text(encoding="utf-8-sig") == f"Roll number,Name,Class\n{other},Bikash Shah,10 A\n"
