@@ -87,7 +87,9 @@ Sheet designer and Settings.
 6. **Sheet designer** has two tabs. **New sheet** makes a sheet for you:
    choose the number of questions, options per question, roll number
    digits, question paper sets and, if you want, sections with their own
-   marks. The preview updates as you choose. **Save template** makes it
+   marks. Choose the print colour, the heading, a logo and the instructions
+   too; the sheet reads the same in any colour. The preview updates as you
+   choose. **Save template** makes it
    available in **New exam…** (an exam made with it starts with its
    sections and marks), and **Save PDF to print…** gives the sheet to print
    at actual size. **Map a sheet you already print** turns a scan of an
@@ -120,3 +122,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 including schools and companies, can use, change and redistribute the
 software) and it includes an explicit patent grant, which protects users and
 contributors.
+
+Printed sheets use the Poppins font, under the SIL Open Font License
+([src/omr_core/fonts/OFL.txt](src/omr_core/fonts/OFL.txt)).

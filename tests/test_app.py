@@ -307,6 +307,13 @@ def test_new_sheet_saves_a_template_and_a_pdf(app, tmp_path, monkeypatch):
     n.options.setValue(5)
     n.roll.setValue(4)
     n.sets.setCurrentIndex(0)  # no sets
+    n.heading.setText("Weekly Test Answer Sheet")
+    n.colour.setCurrentIndex(n.colour.findText("Blue"))
+    n.instructions.setPlainText("Use a black pen.\nFill one bubble per question.")
+    logo = tmp_path / "logo.png"
+    cv2.imwrite(str(logo), np.full((30, 90, 3), (0, 120, 0), np.uint8))
+    monkeypatch.setattr(new_sheet.QFileDialog, "getOpenFileName", lambda *a: (str(logo), ""))
+    n.choose_logo()
     n.update_preview()
     assert n.template and not n.error.text() and not n.preview.pixmap().isNull()
     assert "60 questions" in n.summary.text()
@@ -329,6 +336,9 @@ def test_new_sheet_saves_a_template_and_a_pdf(app, tmp_path, monkeypatch):
     exam = w.store.exam(w.store.create_exam("Week 1", saved.read_text(encoding="utf-8")))
     assert [(s.name, s.first, s.last, s.correct) for s in exam.sections] == [("Part A", 1, 40, 1), ("Section 2", 41, 50, 2)]
     assert json.loads(saved.read_text())["grids"][0]["kind"] == "roll_number"
+    look = json.loads(saved.read_text())["print"]
+    assert (look["heading"], look["colour"], look["instructions"][1]) == (
+        "Weekly Test Answer Sheet", "#1565c0", "Fill one bubble per question.") and look["logo_jpeg"]
 
     n.sections.item(1, 1).setText("ten")
     n.update_preview()
