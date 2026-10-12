@@ -81,8 +81,14 @@ The sidebar opens Dashboard, Exams, Sheet designer and Settings.
 3. **Scanned sheets** has a row per page with its roll number, set and how
    many questions were answered. Highlighted rows have marks to check; click
    a row to see the page and what needs checking.
-4. **Answer key**: one letter per question (`ABDCA…`), or one line per set
-   (`A: ABDC…`). Scores appear as you type. A key shorter than the sheet
+4. **Answer key** has a row per question with its section and options.
+   Click the right option or press its letter, and the next question is
+   selected; arrow keys move between questions, Shift+letter or Ctrl+click
+   adds a second correct option, `*` makes a bonus question and Space drops
+   one. Pick the set at the top for a key per set. **Import CSV…** and
+   **Export CSV…** use the columns `set,question,answer` (`set` may be left
+   out), and **Paste as text** takes one letter per question (`ABDCA…`), or
+   one line per set (`A: ABDC…`). Scores appear as you go. A key shorter than the sheet
    counts only those questions. **Marks and sections** sets marks for
    correct, wrong (e.g. -0.25) and blank answers; **Sections…** gives ranges
    of questions their own name and marks (e.g. Physics 1 to 30, 4 right, -1

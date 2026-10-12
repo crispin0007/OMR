@@ -11,6 +11,8 @@ A section with partial marking gives part of the correct marks to an answer
 that picks some of a multi-correct question's options and no wrong one.
 """
 
+import csv
+import io
 from dataclasses import asdict, dataclass
 
 BONUS, DROPPED = "*", "-"
@@ -146,4 +148,65 @@ def parse_key(text: str, count: int, options: str) -> dict[str, list[str]]:
         if bad:
             raise ValueError(f"line {n}: {', '.join(bad)} is not an option ({options})")
         keys[set_code] = key
+    return keys
+
+
+def format_key(keys: dict[str, list[str]]) -> str:
+    """Keys as the text `parse_key` reads, leaving off the dropped questions at the end."""
+    lines = []
+    for set_code, key in keys.items():
+        key = list(key)
+        while key and key[-1] == DROPPED:
+            key.pop()
+        if not key:
+            continue
+        answers = ", ".join(key) if any(len(a) > 1 for a in key) else "".join(key)
+        lines.append(f"{set_code}: {answers}" if set_code else answers)
+    return "\n".join(lines)
+
+
+def key_to_csv(keys: dict[str, list[str]], questions: list[int]) -> str:
+    """Keys as CSV: set, question, answer; set is empty for the key of every set and answer empty when dropped."""
+    out = io.StringIO()
+    w = csv.writer(out, lineterminator="\n")
+    w.writerow(["set", "question", "answer"])
+    for set_code, key in keys.items():
+        for q, a in zip(questions, key):
+            w.writerow([set_code, q, "" if a == DROPPED else a])
+    return out.getvalue()
+
+
+def key_from_csv(text: str, questions: list[int], options: str) -> dict[str, list[str]]:
+    """Keys from CSV with a header of question and answer columns, and a set column when there are sets.
+
+    Answers are option letters ("B", "AC" or "A;C"), "*" for bonus, and empty or "-" for dropped. Questions
+    left out are dropped. Raises ValueError naming the line of anything that can't be used.
+    """
+    rows = list(csv.reader(io.StringIO(text.lstrip("﻿"))))  # Excel may start the file with a BOM
+    rows = [r for r in rows if any(c.strip() for c in r)]
+    if not rows:
+        raise ValueError("the file is empty")
+    header = [c.strip().lower() for c in rows[0]]
+    if "question" not in header or "answer" not in header:
+        raise ValueError("the first line must name the columns: question, answer (and set when there are sets)")
+    qi, ai, si = header.index("question"), header.index("answer"), header.index("set") if "set" in header else None
+    place = {q: i for i, q in enumerate(questions)}
+    keys: dict[str, list[str]] = {}
+    for n, row in enumerate(rows[1:], 2):
+        cell = lambda i: row[i].strip() if i is not None and i < len(row) else ""  # noqa: E731
+        set_code = cell(si).upper()
+        try:
+            q = int(cell(qi))
+        except ValueError:
+            raise ValueError(f"line {n}: question “{cell(qi)}” is not a number") from None
+        if q not in place:
+            raise ValueError(f"line {n}: the sheet has no question {q}")
+        answer = "".join(cell(ai).upper().replace(";", " ").replace(",", " ").split()) or DROPPED
+        if answer not in (BONUS, DROPPED):
+            bad = sorted({c for c in answer if c not in options})
+            if bad:
+                raise ValueError(f"line {n}: {', '.join(bad)} is not an option ({options})")
+            answer = "".join(sorted(set(answer)))
+        key = keys.setdefault(set_code, [DROPPED] * len(questions))
+        key[place[q]] = answer
     return keys
