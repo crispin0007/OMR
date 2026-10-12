@@ -35,3 +35,29 @@ def rank(scores: list[float]) -> list[tuple[int, float]]:
     ordered = sorted(scores, reverse=True)
     n = len(scores)
     return [(ordered.index(s) + 1, 100 * sum(t <= s for t in scores) / n) for s in scores]
+
+
+def parse_key(text: str, count: int, options: str) -> dict[str, list[str]]:
+    """Answer keys typed by a person, one per set code; "" is the key for every set.
+
+    Each line is an optional set code and a colon, then the answers in question
+    order: "A: ABCDA..." with one letter per question, or separated by spaces or
+    commas when a question has more than one correct option ("A, AC, *, -").
+    """
+    keys = {}
+    for n, line in enumerate(text.splitlines(), 1):
+        if not line.strip():
+            continue
+        set_code, _, answers = line.rpartition(":")
+        set_code = set_code.strip().upper()
+        answers = answers.upper().replace(",", " ")
+        key = answers.split() if " " in answers.strip() else list(answers.strip())
+        if set_code in keys:
+            raise ValueError(f"line {n}: a second key for {'set ' + set_code if set_code else 'all sets'}")
+        if len(key) != count:
+            raise ValueError(f"line {n}: {len(key)} answers, the sheet has {count} questions")
+        bad = sorted({c for a in key if a not in (BONUS, DROPPED) for c in a if c not in options})
+        if bad:
+            raise ValueError(f"line {n}: {', '.join(bad)} is not an option ({options})")
+        keys[set_code] = key
+    return keys

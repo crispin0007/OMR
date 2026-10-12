@@ -25,7 +25,8 @@ task before it.
 - [ ] T009b [US1] Barcode and QR (zxing-cpp)
 - [x] T010 [US1] PDF and image sources in `src/omr_core/sources.py` (pypdfium2, 200 DPI)
 - [x] T011 [US1] Reader tests on generated sheets: 100% accuracy, under 0.3 s per page; real-sheet fixture hook in `tests/test_fixtures.py`
-- [ ] T012 [US1] App: create exam, type answer key and marking scheme, import PDF, show scores
+- [x] T012 [US1] App: type answer key and marking scheme, import PDF or images, show scores and review items, save CSV
+- [ ] T012b [US1] App: create and reopen an exam (needs T005 store)
 
 ## Phase 4: US2 Review flagged answers (P1)
 
