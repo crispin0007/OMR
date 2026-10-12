@@ -295,3 +295,41 @@ def test_scanning_from_a_folder(app, tmp_path, monkeypatch):
     assert sorted(p.result.roll_number for p in w.store.pages(w.check.exam.id)) == sorted(f[2] for f in files)
     s.stop()
     assert not s.running
+
+
+def test_new_sheet_saves_a_template_and_a_pdf(app, tmp_path, monkeypatch):
+    import json
+    from omr_app import new_sheet
+    w = window(tmp_path)
+    n = w.new_sheet
+    n.name.setText("Weekly test")
+    n.questions.setValue(60)
+    n.options.setValue(5)
+    n.roll.setValue(4)
+    n.sets.setCurrentIndex(0)  # no sets
+    n.update_preview()
+    assert n.template and not n.error.text() and not n.preview.pixmap().isNull()
+    assert "60 questions" in n.summary.text()
+
+    n.add_section()
+    n.add_section()
+    n.sections.item(0, 0).setText("Part A")
+    n.sections.item(0, 1).setText("40")
+    n.sections.item(1, 2).setText("2")
+    n.update_preview()
+    assert n.questions.value() == 50 and not n.questions.isEnabled()  # 40 + the new section's 10
+
+    monkeypatch.setattr(new_sheet, "USER_TEMPLATES", tmp_path / "templates")
+    monkeypatch.setattr(new_sheet.QMessageBox, "information", lambda *a: None)
+    monkeypatch.setattr(new_sheet.QFileDialog, "getSaveFileName", lambda *a: (str(tmp_path / "sheet.pdf"), ""))
+    n.save_template()
+    n.save_pdf()
+    saved = tmp_path / "templates" / "Weekly test.json"
+    assert (tmp_path / "sheet.pdf").read_bytes().startswith(b"%PDF")
+    exam = w.store.exam(w.store.create_exam("Week 1", saved.read_text(encoding="utf-8")))
+    assert [(s.name, s.first, s.last, s.correct) for s in exam.sections] == [("Part A", 1, 40, 1), ("Section 2", 41, 50, 2)]
+    assert json.loads(saved.read_text())["grids"][0]["kind"] == "roll_number"
+
+    n.sections.item(1, 1).setText("ten")
+    n.update_preview()
+    assert "whole number" in n.error.text() and n.template is None

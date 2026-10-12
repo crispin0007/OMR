@@ -58,7 +58,7 @@ task before it.
 
 ## Phase 8: US6 and US7 (P3)
 
-- [ ] T025 [US6] Design new sheets from blocks and print to PDF
+- [x] T025 [US6] Make new sheets from a form (questions, options, roll digits, sets, sections) and print to PDF; A4 only for now
 - [x] T026a [US7] Student import from Excel per exam (roll number, name, class); names on screens and exports
 - [ ] T026 [P] [US7] Institute, classes and users with roles
 

@@ -109,10 +109,15 @@ class Store:
         name = name.strip()
         if not name:
             raise ValueError("the exam needs a name")
-        parse(json.loads(template_json))  # refuse a template the reader can't use
+        d = json.loads(template_json)
+        t = parse(d)  # refuse a template the reader can't use
+        # A sheet made in the app carries its sections and marks; the exam starts with them.
+        sections = sections_from_json(d.get("sections", []))
+        check_sections(sections, sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows)))
         with self.db:
-            cur = self.db.execute("INSERT INTO exam (name, template, created) VALUES (?, ?, ?)",
-                                  (name, template_json, datetime.now().isoformat(timespec="seconds")))
+            cur = self.db.execute("INSERT INTO exam (name, template, created, sections) VALUES (?, ?, ?, ?)",
+                                  (name, template_json, datetime.now().isoformat(timespec="seconds"),
+                                   json.dumps(sections_to_json(sections))))
         return cur.lastrowid
 
     def exams(self) -> list[tuple[int, str, str, int, int]]:

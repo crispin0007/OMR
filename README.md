@@ -84,8 +84,14 @@ Sheet designer and Settings.
    right or wrong, and an item analysis: per question the share right, wrong
    and blank, the most chosen wrong answer and how well it separates strong
    from weak students) or one PDF scorecard per student.
-6. **Sheet designer** turns a scan of a sheet you already print into a
-   template. Open a flat scan of the whole page (blank or filled, 150 to 300
+6. **Sheet designer** has two tabs. **New sheet** makes a sheet for you:
+   choose the number of questions, options per question, roll number
+   digits, question paper sets and, if you want, sections with their own
+   marks. The preview updates as you choose. **Save template** makes it
+   available in **New exam…** (an exam made with it starts with its
+   sections and marks), and **Save PDF to print…** gives the sheet to print
+   at actual size. **Map a sheet you already print** turns a scan of an
+   existing sheet into a template. Open a flat scan of the whole page (blank or filled, 150 to 300
    DPI), click the four corner marks, then drag a box around each block of
    bubbles. It finds the bubbles, guesses roll number, set code or questions
    and numbers them; fix anything on the right. **Test on this scan** reads
