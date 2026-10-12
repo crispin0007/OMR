@@ -534,3 +534,13 @@ def test_clicking_an_exam_opens_its_page(app, tmp_path, monkeypatch):
     assert w.showing() is w.exam_settings
     w.exam_settings.delete()
     assert w.check.exam is None and w.showing() is w.exams and [e[0] for e in w.store.exams()] == [made]
+
+
+def test_the_installer_recipe_finds_everything_it_bundles():
+    from pathlib import Path
+    from omr_app import new_exam
+    root = Path(__file__).parent.parent
+    for path in ("src/omr_core/fonts/Poppins-Regular.ttf", "src/omr_app/icon.png", "templates/test-100.json",
+                 "packaging/omr.ico", "LICENSE"):
+        assert (root / path).is_file(), path
+    assert (new_exam.TEMPLATES / "test-100.json").is_file()

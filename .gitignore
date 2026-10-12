@@ -17,3 +17,4 @@ tests/fixtures/**/*.tiff
 tests/fixtures/**/*.pdf
 tests/fixtures/**/*.bmp
 results*.csv
+.build-venv/
