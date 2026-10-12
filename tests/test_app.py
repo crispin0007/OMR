@@ -613,3 +613,10 @@ def test_exams_are_backed_up_and_restored(app, tmp_path, monkeypatch):
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a: (str(tmp_path / "x.db"), ""))
     new_pc.exams.restore()
     assert "isn't an OMR backup" in shown[-1] and new_pc.exams.table.rowCount() == 1
+
+
+def test_window_carries_the_app_name(app, tmp_path):
+    w = window(tmp_path)
+    assert w.windowTitle() == "OMR Checker  ·  Mock"
+    w.open_exam(None)
+    assert w.windowTitle() == "OMR Checker"
