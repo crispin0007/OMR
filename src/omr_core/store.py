@@ -292,7 +292,8 @@ def to_review(pages: list[StoredPage], students: dict[str, Student] | None = Non
         out.extend((i, where, why) for where, why in p.result.flags)
         same = [j for j in rolls.get(p.result.roll_number, []) if j != i]
         if same:
-            others = ", ".join(f"{Path(pages[j].file).name} page {pages[j].page}" for j in same)
+            others = ", ".join(f"{Path(pages[j].file).name} page {pages[j].page}" for j in same[:3])
+            others += f" and {len(same) - 3} more" if len(same) > 3 else ""
             out.append((i, "roll number", f"same roll number as {others}"))
         elif students and "?" not in p.result.roll_number and p.result.roll_number not in students:
             out.append((i, "roll number", "not on the student list"))

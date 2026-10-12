@@ -145,3 +145,12 @@ def test_review_lists_flags_unreadable_pages_and_duplicate_rolls(tmp_path):
     second = s.pages(exam)[1]
     s.correct(second.id, "roll number", "333", "asha")
     assert to_review(s.pages(exam)) == [(0, "Q1", "unclear mark"), (3, "page", "unreadable: registration mark not found")]
+
+
+def test_many_pages_with_one_roll_number_list_a_few_and_count_the_rest(tmp_path):
+    s = Store(tmp_path / "omr.db")
+    exam = s.create_exam("Mock", TEMPLATE)
+    for n in range(1, 7):
+        s.add_page(exam, "b", "a.pdf", n, PageResult("111", "A", {1: "B"}, []))
+    assert to_review(s.pages(exam))[0] == (0, "roll number", "same roll number as a.pdf page 2, a.pdf page 3, "
+                                                             "a.pdf page 4 and 2 more")

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QStandardPaths, Qt, Signal
+from PySide6.QtCore import QStandardPaths, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QPixmap
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel,
                                QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QProgressDialog, QPushButton,
@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFile
                                QVBoxLayout, QWidget)
 
 from omr_core.grading import Section, full_marks, marks_for, parse_key, score
-from omr_core.reader import UnreadablePage, read_page
+from omr_core.reader import read_or_reason
 from omr_core.sources import read_pages
 from omr_core.store import Exam, Store, StoredPage, to_review
 from omr_core.students import Student
@@ -155,6 +155,8 @@ class CheckPage(QWidget):
         layout.addLayout(top)
         layout.addWidget(split, 1)
 
+        self.refresh_timer = QTimer(self, singleShot=True, interval=1000)
+        self.refresh_timer.timeout.connect(self.fill_table)
         self.show_sheets(None)
         self._enable()
 
@@ -273,12 +275,10 @@ class CheckPage(QWidget):
         if failed:
             QMessageBox.warning(self, "Some files weren't read", "\n".join(failed))
 
-    def read_image(self, page, batch: str, file: str, n: int) -> StoredPage:
-        """Read one page image and save it at once; the caller refreshes the table."""
-        try:
-            result, problem = read_page(page, self.exam.template), ""
-        except UnreadablePage as e:
-            result, problem = None, f"unreadable: {e}"
+    def read_image(self, page, batch: str, file: str, n: int, read: tuple | None = None) -> StoredPage:
+        """Read one page image (unless `read` already holds what reading it gave) and save it at once; the
+        caller refreshes the table."""
+        result, problem = read or read_or_reason(page, self.exam.template)
         stored = self.store.add_page(self.exam.id, batch, file, n, result, problem)
         if stored.result:
             stored.result.aligned = None  # the image is in the store; don't keep every page in memory
@@ -326,7 +326,13 @@ class CheckPage(QWidget):
             return f"{s:g}"
         return "no key for set " + sheet.result.set_code if sheet.result and self.keys else ""
 
+    def refresh_soon(self):
+        """Refresh the table within a second; while a stack is scanned, at most once a second."""
+        if not self.refresh_timer.isActive():
+            self.refresh_timer.start()
+
     def fill_table(self):
+        self.refresh_timer.stop()
         self.table.clearSpans()
         self.table.setRowCount(len(self.sheets))
         review_bg = QBrush(QColor(theme.tokens()["warn_bg"]))
