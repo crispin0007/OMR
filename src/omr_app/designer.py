@@ -93,6 +93,7 @@ class DesignerPage(QWidget):
         self.marks: list[tuple[float, float, float, str]] = []
         self.blocks: list[dict] = []
         self.sizes: list[tuple[float, float]] = []
+        self.barcode: tuple[float, float, float, float] | None = None  # x, y, w, h in mm
 
         open_button = QPushButton("Open scan…", objectName="primary")
         open_button.clicked.connect(self.open_scan)
@@ -125,6 +126,8 @@ class DesignerPage(QWidget):
         self.options = QLineEdit()
         self.rows = QSpinBox(minimum=1, maximum=200)
         self.cols = QSpinBox(minimum=1, maximum=26)
+        self.barcode_button = QPushButton("Box the barcode next", checkable=True)
+        self.barcode_button.setToolTip("If the sheet has a barcode or QR code with the roll number, drag a box around it")
         remove = QPushButton("Remove block")
         remove.clicked.connect(self.remove_block)
         for w in (self.kind,):
@@ -156,6 +159,7 @@ class DesignerPage(QWidget):
         blocks_card, blocks = card("Bubble blocks")
         blocks.addWidget(self.block_list, 1)
         blocks.addWidget(self.editor)
+        blocks.addWidget(self.barcode_button)
         save_card, save_layout = card("Save")
         save_layout.addWidget(self.name)
         row = QHBoxLayout()
@@ -199,7 +203,8 @@ class DesignerPage(QWidget):
 
     def restart(self):
         """Back to clicking corner marks; keeps the scan."""
-        self.marks, self.blocks, self.sizes, self.aligned = [], [], [], None
+        self.marks, self.blocks, self.sizes, self.aligned, self.barcode = [], [], [], None, None
+        self.barcode_button.setChecked(False)
         self.block_list.clear()
         self.editor.setEnabled(False)
         self.error.clear()
@@ -216,7 +221,8 @@ class DesignerPage(QWidget):
             self.step.setText(f"2. Click the {CORNERS[len(self.marks)]} corner mark ({len(self.marks)} of 4 done).")
         else:
             self.step.setText("3. Drag a box around each block of bubbles: every question column, the roll number "
-                              "and the set code. Check rows and columns on the right. Scroll to zoom.")
+                              "and the set code. Check rows and columns on the right. Scroll to zoom. If the roll number is "
+                              "also a barcode or QR code, click Box the barcode next and box it.")
 
     @property
     def px_per_mm(self) -> float:
@@ -247,6 +253,11 @@ class DesignerPage(QWidget):
 
     def add_block(self, rect: QRectF):
         box = (rect.left() / SCALE, rect.top() / SCALE, rect.right() / SCALE, rect.bottom() / SCALE)
+        if self.barcode_button.isChecked():
+            self.barcode_button.setChecked(False)
+            self.barcode = tuple(round(v, 1) for v in (box[0], box[1], box[2] - box[0], box[3] - box[1]))
+            self._redraw()
+            return
         centres, size = find_bubbles(self.aligned, box)
         try:
             origin, pitch, rows, cols = fit_grid(centres, size)
@@ -322,6 +333,9 @@ class DesignerPage(QWidget):
                      "set_code": lambda: f"Set code {b.get('options', '')}"}[b["kind"]]()
             self.block_list.item(i).setText(f"{label}   ({b['rows']} × {b['cols']})")
         self.canvas.show_image(self.aligned) if self.aligned is not None else None
+        if self.barcode:
+            x, y, w, h = (v * SCALE for v in self.barcode)
+            self.canvas.scene().addRect(x, y, w, h, QPen(QColor(tokens()["accent"]), 3))
         brush = QBrush(QColor(tokens()["accent"]))
         r = 0.8 * SCALE
         for b in self.blocks:
@@ -336,7 +350,7 @@ class DesignerPage(QWidget):
     def template_dict(self) -> dict:
         if len(self.marks) < 4:
             raise ValueError("click the four corner marks first")
-        if not self.blocks:
+        if not any(b["kind"] == "questions" for b in self.blocks):
             raise ValueError("box at least one block of questions")
         shapes = [m[3] for m in self.marks]
         d = {
@@ -351,6 +365,8 @@ class DesignerPage(QWidget):
         }
         if self.dropout.isChecked():
             d["dropout"] = "red"
+        if self.barcode:
+            d["barcode_mm"] = list(self.barcode)
         parse(d)  # the reader's own checks: overlapping questions, points off the page, wrong roll rows
         return d
 

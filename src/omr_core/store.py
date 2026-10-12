@@ -179,6 +179,7 @@ class Store:
         _, roll, set_code, answers, flags, template = row
         if roll is None:
             raise ValueError("this page couldn't be read; scan it again")
+        typed = value.strip()  # a barcode roll number keeps its case
         t, answers, value = parse(json.loads(template)), json.loads(answers), value.upper()
         if item.startswith("Q") and item[1:].isdigit():
             q = int(item[1:])
@@ -197,9 +198,12 @@ class Store:
                 raise ValueError(f"{value!r} isn't a digit for {item}")
             before, roll = roll[n], roll[:n] + value + roll[n + 1:]
         elif item == "roll number":
-            if len(value) != len(roll) or not value.isdigit():
+            grid = next((g for g in t.grids if g.kind == "roll_number"), None)
+            if grid and (len(value) != len(roll) or not value.isdigit()):
                 raise ValueError(f"the roll number needs {len(roll)} digits")
-            before, roll = roll, value
+            if not grid and (not typed or "?" in typed or any(c.isspace() for c in typed)):
+                raise ValueError("type the roll number as printed under the barcode")
+            before, roll = roll, typed if not grid else value
         elif item == "set code":
             options = next((g.options for g in t.grids if g.kind == "set_code"), "")
             if len(value) != 1 or value not in options:

@@ -86,6 +86,10 @@ designer and Settings.
    the scan with the new template, and **Save template…** puts it in
    `%LOCALAPPDATA%\OMR\templates`, where **New exam…** looks first.
    Sheets with a separate orientation mark are mapped without it.
+   If the sheet prints the roll number as a barcode or QR code, click
+   **Box the barcode next** and box it. On a sheet with no roll number
+   bubbles the code is the roll number; with both, a page where they
+   disagree goes to Review.
 7. **Settings** picks Light, Dark or System theme, an accent colour, text size
    and density. The button at the bottom of the sidebar switches light and dark.
 8. **Save CSV…** writes every page's score and answers for Excel.

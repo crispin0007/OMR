@@ -63,3 +63,10 @@ def test_names_reach_grading_and_unknown_rolls_are_flagged(tmp_path):
     graded = grade(s.exam(exam).template, pages, "A" * 100, 1, 0, 0, students)
     assert [(g.student.name if g.student else None, g.to_check) for g in graded] == [("Asha Rai", False),
                                                                                        (None, True)]
+
+
+def test_barcode_roll_numbers_are_text(tmp_path):
+    path = workbook(tmp_path, [["Roll", "Name"], ["S-0042", "Asha"], [42, "Bina"], ["S 7", "Chet"]])
+    students, problems = read_students(path, None)
+    assert [s.roll_number for s in students] == ["S-0042", "42"]
+    assert problems == ["row 4: roll number 'S 7' has spaces"]
