@@ -54,15 +54,22 @@ Templates live in `templates/`.
 omr
 ```
 
-1. **Choose template…** picks the sheet layout (`templates/test-100.json` is
-   loaded by default).
+The sidebar opens Dashboard, Check sheets, Results and Settings.
+
+1. On **Check sheets**, **Choose template…** picks the sheet layout
+   (`templates/test-100.json` is loaded by default).
 2. **Open sheets…** reads PDFs or images. Each page gets a row with its roll
-   number, set and how many questions were answered. Yellow rows have marks
-   to check; click a row to see the page and what needs checking.
+   number, set and how many questions were answered. Highlighted rows have
+   marks to check; click a row to see the page and what needs checking.
 3. Type the answer key in the box: one letter per question (`ABDCA…`), or one
    line per set (`A: ABDC…`). Scores appear as you type. Set marks for
    correct, wrong (e.g. -0.25) and blank answers.
-4. **Save CSV…** writes every page's score and answers for Excel.
+4. **Dashboard** shows sheets read, average score, sheets to check, the score
+   spread and recent batches. Click any of them to open those sheets.
+   **Results** ranks every sheet with its percentile.
+5. **Settings** picks Light, Dark or System theme, an accent colour, text size
+   and density. The button at the bottom of the sidebar switches light and dark.
+6. **Save CSV…** writes every page's score and answers for Excel.
 
 Results aren't saved between runs yet.
 

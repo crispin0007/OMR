@@ -38,7 +38,7 @@ task before it.
 
 - [ ] T016 [US3] Re-grade an exam after a key or scheme change
 - [ ] T017 [US3] Excel merit list and PDF scorecards in `src/omr_core/export.py`
-- [ ] T018 [US3] Results screen with rank and percentile
+- [x] T018 [US3] Results screen with rank and percentile (spec 002)
 
 **Checkpoint**: P1 done. Test end to end on the real fixture set before going on.
 
