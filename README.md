@@ -11,6 +11,7 @@ Phase 1 (OMR checking MVP) is being specified. Read these first:
 
 - [Constitution](.specify/memory/constitution.md): the rules every change follows.
 - [Phase 1 spec](specs/001-omr-checking-mvp/spec.md): what phase 1 must do and how it is tested.
+- [Question bank spec](specs/003-question-bank/spec.md): phase 2, draft.
 - [AGENTS.md](AGENTS.md): how to write code here.
 
 ## Layout
