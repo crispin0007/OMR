@@ -14,7 +14,7 @@ task before it.
 
 - [x] T003 Template JSON format and validation in `src/omr_core/template.py`, with a template for a 100 question test sheet
 - [x] T004 [P] Generated test sheets in `tests/sheets.py` (fills, skew, noise, 180 degree rotation)
-- [ ] T005 SQLite schema and audit log in `src/omr_core/store.py`; one commit per graded page
+- [x] T005 SQLite store in `src/omr_core/store.py`: exams, pages with images, one commit per page (audit log comes with T013)
 - [ ] T006 [P] Spike: pytwain page-by-page transfer on 2 to 3 real ADF scanners; record results in `specs/001-omr-checking-mvp/research.md`
 
 ## Phase 3: US1 Grade a stack of scanned sheets (P1) 🎯 MVP
@@ -26,7 +26,7 @@ task before it.
 - [x] T010 [US1] PDF and image sources in `src/omr_core/sources.py` (pypdfium2, 200 DPI)
 - [x] T011 [US1] Reader tests on generated sheets: 100% accuracy, under 0.3 s per page; real-sheet fixture hook in `tests/test_fixtures.py`
 - [x] T012 [US1] App: type answer key and marking scheme, import PDF or images, show scores and review items, save CSV
-- [ ] T012b [US1] App: create and reopen an exam (needs T005 store)
+- [x] T012b [US1] App: create, open and delete exams; everything saved as it is read
 
 ## Phase 4: US2 Review flagged answers (P1)
 

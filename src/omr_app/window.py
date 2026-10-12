@@ -1,11 +1,11 @@
-"""Main window: a sidebar of pages over one set of sheets read in this run."""
+"""Main window: a sidebar of pages over the open exam, saved as it is read."""
 
 import csv
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QStandardPaths, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QPixmap
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel,
                                QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QProgressDialog, QPushButton,
@@ -13,23 +13,15 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFile
                                QWidget)
 
 from omr_core.grading import parse_key, score
-from omr_core.reader import PageResult, UnreadablePage, read_page
+from omr_core.reader import UnreadablePage, read_page
 from omr_core.sources import read_pages
-from omr_core.template import Template, load
+from omr_core.store import Exam, Store, StoredPage
 
 from . import theme
 from .dashboard import DashboardPage, ResultsPage
+from .exams import TEMPLATES, ExamsPage
 
-TEMPLATES = Path(__file__).resolve().parents[2] / "templates"  # the repo's templates, in a source checkout
 COLUMNS = ["File", "Page", "Roll number", "Set", "Answered", "Score", "Review"]
-
-
-@dataclass
-class Sheet:
-    file: str
-    page: int
-    result: PageResult | None  # None when the page couldn't be read at all
-    problem: str = ""
 
 
 @dataclass
@@ -42,22 +34,20 @@ class Batch:
 
 
 class CheckPage(QWidget):
-    """Pick a template, open scanned sheets, type the key, see scores and what needs review."""
+    """Open scanned sheets for the exam, type the key, see scores and what needs review."""
 
     changed = Signal()  # sheets, key or marks changed
     wanted = Signal()  # another page asked to show sheets here
 
-    def __init__(self):
+    def __init__(self, store: Store):
         super().__init__()
-        self.template: Template | None = None
+        self.store = store
+        self.exam: Exam | None = None
         self.questions: list[int] = []
-        self.sheets: list[Sheet] = []
-        self.batches: list[Batch] = []
+        self.sheets: list[StoredPage] = []
         self.keys: dict[str, list[str]] = {}
 
-        self.template_label = QLabel("No template chosen", objectName="muted")
-        choose = QPushButton("Choose template…")
-        choose.clicked.connect(self.choose_template)
+        self.template_label = QLabel("Open or create an exam on the Exams page", objectName="muted")
         self.open_button = QPushButton("Open sheets…", objectName="primary")
         self.open_button.clicked.connect(self.open_sheets)
         self.save_button = QPushButton("Save CSV…")
@@ -66,7 +56,6 @@ class CheckPage(QWidget):
         top.addWidget(QLabel("Check sheets", objectName="title"))
         top.addSpacing(16)
         top.addWidget(self.template_label)
-        top.addWidget(choose)
         top.addStretch()
         top.addWidget(self.open_button)
         top.addWidget(self.save_button)
@@ -129,23 +118,58 @@ class CheckPage(QWidget):
         layout.addLayout(marks)
         layout.addWidget(split, 1)
 
-        default = TEMPLATES / "test-100.json"
-        if default.exists():
-            self.set_template(str(default))
         self.show_sheets(None)
         self._enable()
 
     def _marks(self, value: float) -> QDoubleSpinBox:
         box = QDoubleSpinBox(minimum=-100, maximum=100, value=value, decimals=2, singleStep=0.25)
-        box.valueChanged.connect(self.fill_table)
+        box.valueChanged.connect(self.scheme_changed)
         return box
 
     def _enable(self):
-        self.open_button.setEnabled(self.template is not None)
+        for w in (self.open_button, self.key_edit, self.correct, self.wrong, self.blank):
+            w.setEnabled(self.exam is not None)
         self.save_button.setEnabled(bool(self.sheets))
 
+    def open_exam(self, exam_id: int | None):
+        """Show an exam's saved key, marks and sheets; None closes it."""
+        self.exam = None  # keeps the loading below from saving the scheme back
+        if exam_id is None:
+            self.questions, self.sheets = [], []
+            self.template_label.setText("Open or create an exam on the Exams page")
+            self.key_edit.clear()
+        else:
+            exam = self.store.exam(exam_id)
+            t = exam.template
+            self.questions = sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows))
+            self.sheets = self.store.pages(exam_id)
+            self.template_label.setText(f"{exam.name}  ·  {t.name}, {len(self.questions)} questions")
+            for box, v in ((self.correct, exam.correct), (self.wrong, exam.wrong), (self.blank, exam.blank)):
+                box.setValue(v)
+            self.key_edit.setPlainText(exam.answer_key)
+            self.exam = exam
+        self.update_key()
+        self.show_sheets(None)
+        self._enable()
+
+    def scheme_changed(self):
+        if self.exam is not None:
+            self.store.save_scheme(self.exam.id, self.key_edit.toPlainText(), self.correct.value(),
+                                   self.wrong.value(), self.blank.value())
+        self.fill_table()
+
+    @property
+    def batches(self) -> list[Batch]:
+        out = []
+        for i, s in enumerate(self.sheets):
+            if out and out[-1].name == s.batch and out[-1].start + out[-1].count == i:
+                out[-1].count += 1
+            else:
+                out.append(Batch(s.batch, datetime.fromisoformat(s.read_at), i, 1))
+        return out
+
     @staticmethod
-    def file_name(sheet: Sheet) -> str:
+    def file_name(sheet: StoredPage) -> str:
         return Path(sheet.file).name
 
     def full_marks(self) -> float:
@@ -155,25 +179,6 @@ class CheckPage(QWidget):
         """Sheets with anything to review, unreadable ones included."""
         return [i for i, s in enumerate(self.sheets) if s.result is None or s.result.flags]
 
-    def choose_template(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Choose template", str(TEMPLATES), "Templates (*.json)")
-        if path:
-            self.set_template(path)
-
-    def set_template(self, path: str):
-        try:
-            template = load(path)
-        except (OSError, ValueError) as e:
-            QMessageBox.warning(self, "Can't use this template", f"{path}\n\n{e}")
-            return
-        if self.sheets and template != self.template:
-            self.sheets, self.batches = [], []  # sheets read with another template don't match its questions
-        self.template = template
-        self.questions = sorted(g.first + r for g in template.grids if g.kind == "questions" for r in range(g.rows))
-        self.template_label.setText(f"{template.name}  ({len(self.questions)} questions)")
-        self.update_key()
-        self._enable()
-
     def open_sheets(self):
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Open scanned sheets", "", "Scans (*.pdf *.png *.jpg *.jpeg *.tif *.tiff *.bmp)")
@@ -181,7 +186,10 @@ class CheckPage(QWidget):
             self.read_files(paths)
 
     def read_files(self, paths: list[str]):
-        failed, start = [], len(self.sheets)
+        failed = []
+        # The time keeps two imports of the same files apart.
+        batch = (Path(paths[0]).name + (f" and {len(paths) - 1} more" if len(paths) > 1 else "")
+                 + f"  ·  {datetime.now():%d %b %H:%M:%S}")
         progress = QProgressDialog("Reading sheets…", "Stop", 0, len(paths), self)
         progress.setWindowModality(Qt.WindowModal)
         progress.setMinimumDuration(300)
@@ -195,26 +203,31 @@ class CheckPage(QWidget):
                     if progress.wasCanceled():
                         break
                     try:
-                        self.sheets.append(Sheet(path, n, read_page(page, self.template)))
+                        result, problem = read_page(page, self.exam.template), ""
                     except UnreadablePage as e:
-                        self.sheets.append(Sheet(path, n, None, f"unreadable: {e}"))
+                        result, problem = None, f"unreadable: {e}"
+                    stored = self.store.add_page(self.exam.id, batch, path, n, result, problem)
+                    if stored.result:
+                        stored.result.aligned = None  # the image is in the store; don't keep every page in memory
+                    self.sheets.append(stored)
             except (OSError, ValueError) as e:
                 failed.append(f"{name}: {e}")
             if progress.wasCanceled():
                 break
         progress.close()
-        if len(self.sheets) > start:
-            name = Path(paths[0]).name + (f" and {len(paths) - 1} more" if len(paths) > 1 else "")
-            self.batches.append(Batch(name, datetime.now(), start, len(self.sheets) - start))
         self.show_sheets(None)
         self._enable()
         if failed:
             QMessageBox.warning(self, "Some files weren't read", "\n".join(failed))
 
     def update_key(self):
-        if self.template is None:
+        if self.exam is None:
+            self.keys = {}
+            self.key_status.setText("")
+            self.fill_table()
             return
-        options = "".join(sorted({o for g in self.template.grids if g.kind == "questions" for o in g.options}))
+        t = self.exam.template
+        options = "".join(sorted({o for g in t.grids if g.kind == "questions" for o in g.options}))
         try:
             self.keys = parse_key(self.key_edit.toPlainText(), len(self.questions), options)
             self.key_status.setText(f"Key for {', '.join('set ' + s if s else 'all sets' for s in self.keys)}"
@@ -225,9 +238,9 @@ class CheckPage(QWidget):
             self.key_status.setText(str(e))
             self.key_status.setObjectName("error")
         self.key_status.setStyleSheet("")  # re-apply the theme for the new object name
-        self.fill_table()
+        self.scheme_changed()
 
-    def score_of(self, sheet: Sheet) -> float | None:
+    def score_of(self, sheet: StoredPage) -> float | None:
         r = sheet.result
         key = r and self.keys.get(r.set_code, self.keys.get(""))
         if not key:
@@ -235,7 +248,7 @@ class CheckPage(QWidget):
         return score([r.answers[q] for q in self.questions], key,
                      self.correct.value(), self.wrong.value(), self.blank.value())
 
-    def _score_text(self, sheet: Sheet) -> str:
+    def _score_text(self, sheet: StoredPage) -> str:
         s = self.score_of(sheet)
         if s is not None:
             return f"{s:g}"
@@ -286,7 +299,10 @@ class CheckPage(QWidget):
             self.page_view.setText(sheet.problem)
             self.answers_view.clear()
             return
-        a = r.aligned
+        a = self.store.image(sheet.id)
+        if a is None:
+            self.page_view.setText("No image saved for this page")
+            return
         image = QImage(a.data, a.shape[1], a.shape[0], a.strides[0], QImage.Format_Grayscale8).copy()
         self.page_view.setPixmap(QPixmap.fromImage(image).scaledToWidth(
             max(self.page_view.width() - 20, 300), Qt.SmoothTransformation))
@@ -314,20 +330,26 @@ class CheckPage(QWidget):
 
 
 class MainWindow(QMainWindow):
-    PAGES = ["Dashboard", "Check sheets", "Results", "Question Bank", "Syllabus", "Settings"]
+    PAGES = ["Dashboard", "Exams", "Check sheets", "Results", "Question Bank", "Syllabus", "Settings"]
     LATER = {"Question Bank": "Comes in phase 2", "Syllabus": "Comes in phase 3"}
 
-    def __init__(self):
+    def __init__(self, db_path: str | Path | None = None):
         super().__init__()
         self.setWindowTitle("OMR")
         self.prefs = theme.load_prefs()
-        self.check = CheckPage()
+        if db_path is None:
+            data = QStandardPaths.writableLocation(QStandardPaths.GenericDataLocation)  # %LOCALAPPDATA% on Windows
+            db_path = Path(data) / "OMR" / "omr.db"
+        self.store = Store(db_path)
+        self.check = CheckPage(self.store)
+        self.exams = ExamsPage(self.store)
+        self.exams.opened.connect(self.open_exam)
         self.dashboard = DashboardPage(self.check)
         self.results = ResultsPage(self.check)
         self.settings = theme.SettingsPage(self.prefs)
         self.settings.changed.connect(self.apply_prefs)
-        pages = {"Dashboard": self.dashboard, "Check sheets": self.check, "Results": self.results,
-                 "Settings": self.settings}
+        self.pages = {"Dashboard": self.dashboard, "Exams": self.exams, "Check sheets": self.check,
+                      "Results": self.results, "Settings": self.settings}
 
         self.stack = QStackedWidget()
         sidebar = QWidget(objectName="sidebar")
@@ -343,8 +365,8 @@ class MainWindow(QMainWindow):
                 b.setEnabled(False)
                 b.setToolTip(self.LATER[name])
             else:
-                self.stack.addWidget(pages[name])
-                b.clicked.connect(lambda _=False, w=pages[name]: self.stack.setCurrentWidget(w))
+                self.stack.addWidget(self.pages[name])
+                b.clicked.connect(lambda _=False, n=name: self.go(n))
             self.nav.addButton(b)
             self.nav_buttons[name] = b
             if name == "Settings":
@@ -356,6 +378,7 @@ class MainWindow(QMainWindow):
         sidebar.setFixedWidth(190)
 
         self.check.wanted.connect(lambda: self.go("Check sheets"))
+        self.check.changed.connect(self.exams.refresh)
         central = QWidget()
         layout = QHBoxLayout(central)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -366,12 +389,25 @@ class MainWindow(QMainWindow):
         self.resize(1280, 820)
         self.apply_prefs(self.prefs)
         QApplication.styleHints().colorSchemeChanged.connect(lambda _: self.apply_prefs(self.prefs))  # Windows switched
-        self.go("Dashboard")
+
+        last = theme.settings().value("last_exam")
+        known = {e[0] for e in self.store.exams()}
+        last = int(last) if str(last).isdigit() and int(last) in known else None
+        self.open_exam(last, go=False)
+        self.go("Dashboard" if last else "Exams")
+
+    def open_exam(self, exam_id: int | None, go: bool = True):
+        self.check.open_exam(exam_id)
+        self.exams.refresh(exam_id)
+        theme.settings().setValue("last_exam", exam_id or "")
+        name = self.check.exam.name if self.check.exam else ""
+        self.setWindowTitle(f"OMR  ·  {name}" if name else "OMR")
+        if go and exam_id is not None:
+            self.go("Check sheets")
 
     def go(self, name: str):
         self.nav_buttons[name].setChecked(True)
-        self.stack.setCurrentWidget({"Dashboard": self.dashboard, "Check sheets": self.check,
-                                     "Results": self.results, "Settings": self.settings}[name])
+        self.stack.setCurrentWidget(self.pages[name])
 
     def toggle_theme(self):
         """Quick switch between light and dark; Settings has System and the rest."""
@@ -382,3 +418,7 @@ class MainWindow(QMainWindow):
         theme.apply(QApplication.instance(), prefs)
         self.theme_button.setText("☀  Light mode" if theme.is_dark(prefs) else "☾  Dark mode")
         self.check.fill_table()  # repaints review rows and, through `changed`, the dashboard and results
+
+    def closeEvent(self, e):
+        self.store.close()
+        super().closeEvent(e)

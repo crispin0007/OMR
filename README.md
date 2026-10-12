@@ -54,13 +54,14 @@ Templates live in `templates/`.
 omr
 ```
 
-The sidebar opens Dashboard, Check sheets, Results and Settings.
+The sidebar opens Dashboard, Exams, Check sheets, Results and Settings.
 
-1. On **Check sheets**, **Choose template…** picks the sheet layout
-   (`templates/test-100.json` is loaded by default).
-2. **Open sheets…** reads PDFs or images. Each page gets a row with its roll
-   number, set and how many questions were answered. Highlighted rows have
-   marks to check; click a row to see the page and what needs checking.
+1. On **Exams**, **New exam…** asks for a name and the sheet template
+   (`templates/test-100.json` by default). Double-click an exam to open it.
+2. On **Check sheets**, **Open sheets…** reads PDFs or images. Each page gets
+   a row with its roll number, set and how many questions were answered.
+   Highlighted rows have marks to check; click a row to see the page and
+   what needs checking.
 3. Type the answer key in the box: one letter per question (`ABDCA…`), or one
    line per set (`A: ABDC…`). Scores appear as you type. Set marks for
    correct, wrong (e.g. -0.25) and blank answers.
@@ -71,7 +72,9 @@ The sidebar opens Dashboard, Check sheets, Results and Settings.
    and density. The button at the bottom of the sidebar switches light and dark.
 6. **Save CSV…** writes every page's score and answers for Excel.
 
-Results aren't saved between runs yet.
+Everything is saved as you work: each page as soon as it is read, and the key
+and marks as you type. Exams live in `%LOCALAPPDATA%\OMR\omr.db`; the app
+reopens the last exam.
 
 ## Contributing
 
