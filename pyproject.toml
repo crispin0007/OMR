@@ -1,0 +1,30 @@
+[project]
+name = "omr"
+version = "0.1.0"
+description = "Offline OMR checking for schools, colleges and exam bodies"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "opencv-python-headless>=4.9",
+]
+
+[project.optional-dependencies]
+app = [
+    "PySide6>=6.7",
+    "pytwain>=2.2; sys_platform == 'win32'",
+]
+dev = ["pytest>=8"]
+
+[project.scripts]
+omr = "omr_app.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/omr_core", "src/omr_app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
