@@ -465,6 +465,29 @@ def test_a_page_that_cant_be_read_says_why_and_offers_mapping(app, tmp_path):
     assert w.showing() is w.designer
 
 
+def test_pages_can_be_deleted_or_moved_to_another_exam(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+    from PySide6.QtCore import QItemSelectionModel
+    files = sheet_files(tmp_path, [1, 2, 3])
+    w = window(tmp_path)
+    other = w.store.create_exam("Retest", (TEMPLATES / "test-100.json").read_text(encoding="utf-8"))
+    c = w.check
+    c.read_files([f[0] for f in files])
+    assert not c.delete_button.isEnabled()
+    c.table.selectRow(0)
+    c.table.selectionModel().select(c.table.model().index(2, 0),
+                                    QItemSelectionModel.Select | QItemSelectionModel.Rows)
+    assert c.selected() == [0, 2] and c.move_button.isEnabled()
+    monkeypatch.setattr(QInputDialog, "getItem", lambda *a: ("Retest", True))
+    c.move_selected()
+    assert [p.result.roll_number for p in w.store.pages(other)] == [files[0][2], files[2][2]]
+    assert [s.result.roll_number for s in c.sheets] == [files[1][2]] and c.table.rowCount() == 1
+    c.table.selectRow(0)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.Yes)
+    c.delete_selected()
+    assert c.sheets == [] and w.store.pages(c.exam.id) == [] and c.table.rowCount() == 0
+
+
 def test_sections_and_a_short_key(app, tmp_path, monkeypatch):
     from omr_app import sections
 

@@ -161,6 +161,27 @@ class Store:
         with self.db:
             self.db.execute("DELETE FROM exam WHERE id = ?", (exam_id,))
 
+    def delete_pages(self, page_ids: list[int]):
+        """Remove pages, with their corrections, for scans that don't belong in the exam."""
+        with self.db:
+            self.db.executemany("DELETE FROM page WHERE id = ?", [(i,) for i in page_ids])
+
+    def same_sheet(self, exam_id: int, other_id: int) -> bool:
+        """Whether two exams read the same printed sheet, so a page read for one is right for the other."""
+        def geometry(e: int) -> dict:
+            d = json.loads(self.db.execute("SELECT template FROM exam WHERE id = ?", (e,)).fetchone()[0])
+            return {k: v for k, v in d.items() if k not in ("name", "print", "sections")}
+        return geometry(exam_id) == geometry(other_id)
+
+    def move_pages(self, page_ids: list[int], exam_id: int):
+        """Move pages, as read and corrected, to another exam on the same sheet. Raises ValueError otherwise."""
+        rows = self.db.execute(f"SELECT DISTINCT exam_id FROM page WHERE id IN ({','.join('?' * len(page_ids))})",
+                               page_ids).fetchall()
+        if any(not self.same_sheet(e, exam_id) for (e,) in rows):
+            raise ValueError("that exam uses a different sheet; import the original scans into it instead")
+        with self.db:
+            self.db.executemany("UPDATE page SET exam_id = ? WHERE id = ?", [(exam_id, i) for i in page_ids])
+
     def add_page(self, exam_id: int, batch: str, file: str, page_no: int, result: PageResult | None,
                  problem: str = "") -> StoredPage:
         """Save one page and commit at once."""
