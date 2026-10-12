@@ -51,6 +51,7 @@ class CheckPage(QWidget):
     changed = Signal()  # sheets, key or marks changed
     wanted = Signal()  # another page asked to show sheets here
     review_wanted = Signal()  # another page asked for the review queue
+    map_wanted = Signal()  # pages don't match the exam's sheet; map the one students used
 
     def __init__(self, store: Store):
         super().__init__()
@@ -114,6 +115,12 @@ class CheckPage(QWidget):
         filter_bar.addWidget(self.filter_label)
         filter_bar.addWidget(self.show_all)
         filter_bar.addStretch()
+        self.mismatch = QLabel(objectName="error", wordWrap=True)
+        self.map_button = QPushButton("Map my printed sheet…")
+        self.map_button.clicked.connect(self.map_wanted.emit)
+        mismatch_bar = QHBoxLayout()
+        mismatch_bar.addWidget(self.mismatch, 1)
+        mismatch_bar.addWidget(self.map_button)
 
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
@@ -124,6 +131,7 @@ class CheckPage(QWidget):
         table_box = QWidget()
         table_layout = QVBoxLayout(table_box)
         table_layout.setContentsMargins(0, 0, 0, 0)
+        table_layout.addLayout(mismatch_bar)
         table_layout.addLayout(filter_bar)
         table_layout.addWidget(self.table, 1)
 
@@ -319,6 +327,7 @@ class CheckPage(QWidget):
         return "no key for set " + sheet.result.set_code if sheet.result and self.keys else ""
 
     def fill_table(self):
+        self.table.clearSpans()
         self.table.setRowCount(len(self.sheets))
         review_bg = QBrush(QColor(theme.tokens()["warn_bg"]))
         items = Counter(i for i, _, _ in self.review_items())
@@ -334,6 +343,16 @@ class CheckPage(QWidget):
                 if review:
                     item.setBackground(review_bg)
                 self.table.setItem(row, col, item)
+            if r is None:  # say why across the row instead of leaving it empty
+                self.table.item(row, 2).setText(f"Can't read this page: {sheet.problem.removeprefix('unreadable: ')}")
+                self.table.setSpan(row, 2, 1, 5)
+        unreadable = sum(s.result is None for s in self.sheets)
+        self.mismatch.setText(
+            f"{unreadable} of {len(self.sheets)} pages couldn't be read. If students filled a sheet other than this "
+            "exam's (for example one you print yourself), map that sheet, then create an exam with “Use my own "
+            "printed sheet” and import the scans there." if unreadable else "")
+        for w in (self.mismatch, self.map_button):
+            w.setVisible(bool(unreadable))
         self.table.resizeColumnsToContents()
         self.changed.emit()
 
@@ -464,6 +483,7 @@ class MainWindow(QMainWindow):
 
         self.check.wanted.connect(lambda: self.go("Scanned sheets"))
         self.check.review_wanted.connect(lambda: self.go("Review"))
+        self.check.map_wanted.connect(lambda: self.go("Sheet designer"))
         self.check.changed.connect(self.exams.refresh)
         central = QWidget()
         layout = QHBoxLayout(central)

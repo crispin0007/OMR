@@ -1,14 +1,15 @@
 import json
+from pathlib import Path
 
 import cv2
 import numpy as np
 import pytest
 
-from omr_core.reader import read_page
+from omr_core.reader import UnreadablePage, read_page
 from omr_core.sheet import SheetSection, SheetSpec, layout, logo_jpeg, render, write_pdf
 from omr_core.store import Store
-from omr_core.template import parse
-from sheets import fill, random_marks, scan
+from omr_core.template import load, parse
+from sheets import draw, fill, photo, random_marks, scan
 
 
 @pytest.mark.parametrize("spec", [
@@ -47,6 +48,24 @@ def test_more_sections_than_columns_follow_one_another_down_the_columns(options)
     marks, answers, roll, set_code = random_marks(t, 7)
     r = read_page(scan(fill(render(d), t, marks), angle=0.5, seed=3), t)
     assert (r.roll_number, r.answers, r.flags) == (roll, answers, [])
+
+
+@pytest.mark.parametrize("seed", [1, 2])
+def test_a_tilted_dim_compressed_phone_photo_reads_back(seed):
+    d = layout(SheetSpec("Phone", 200, roll_digits=5, sets=4))
+    t = parse(d)
+    marks, answers, roll, set_code = random_marks(t, seed)
+    r = read_page(photo(fill(render(d), t, marks), seed=seed), t)
+    wrong = [q for q in answers if r.answers[q] != answers[q] and f"Q{q}" not in {w for w, _ in r.flags}]
+    assert (r.roll_number, r.set_code, wrong) == (roll, set_code, [])
+
+
+def test_another_layout_is_not_read_with_this_sheet():
+    """A sheet without the orientation bar, such as one a school prints itself, isn't read as this exam's."""
+    other = load(Path(__file__).parent.parent / "templates" / "test-100.json")
+    page = photo(draw(other, {}), dim=0.4)
+    with pytest.raises(UnreadablePage, match="orientation mark"):
+        read_page(page, parse(layout(SheetSpec("Ours", 100))))
 
 
 def test_a_sheet_too_big_for_a_page_is_refused():

@@ -111,10 +111,22 @@ def _align(gray: np.ndarray, t: Template) -> np.ndarray:
         aligned = cv2.warpPerspective(gray, warp, size, flags=cv2.INTER_AREA, borderValue=255)
         if t.orientation is None:
             return aligned  # shortcut: without an orientation mark an upside-down page is not detected
-        x, y, w, h = (round(v * SCALE) for v in t.orientation)
-        if aligned[y:y + h, x:x + w].mean() < 128:
+        if _bar_is_there(aligned, t.orientation):
             return aligned
     raise UnreadablePage("orientation mark not found")
+
+
+def _bar_is_there(aligned: np.ndarray, bar: tuple[float, float, float, float]) -> bool:
+    """Whether the orientation bar is printed here: much darker than the paper around it.
+
+    Compared with the paper around it rather than a fixed level, so a dim phone photo of a sheet without
+    the bar (another layout) is not taken for one with it.
+    """
+    x, y, w, h = (round(v * SCALE) for v in bar)
+    m = round(3 * SCALE)  # 3 mm of paper all round
+    around = aligned[max(y - m, 0):y + h + m, max(x - m, 0):x + w + m]
+    paper = np.percentile(around, 90)
+    return aligned[y:y + h, x:x + w].mean() < min(128, 0.6 * paper)
 
 
 def _flatten(aligned: np.ndarray) -> np.ndarray:

@@ -56,6 +56,21 @@ def scan(page: np.ndarray, angle: float = 0, upside_down: bool = False, noise: f
     return np.clip(out + rng.normal(0, noise, out.shape), 0, 255).astype(np.uint8)
 
 
+def photo(page: np.ndarray, tilt: float = 0.06, dim: float = 0.55, width: int = 1100, quality: int = 45,
+          seed: int = 0) -> np.ndarray:
+    """What a phone photo sent over a chat app looks like: taken at an angle, dim and unevenly lit, shrunk and
+    JPEG-compressed."""
+    h, w = page.shape[:2]
+    src = np.float32([[0, 0], [w, 0], [w, h], [0, h]])
+    dst = np.float32([[w * tilt, h * tilt / 2], [w * (1 - tilt / 3), 0], [w, h], [0, h * (1 - tilt / 4)]])
+    out = cv2.warpPerspective(page, cv2.getPerspectiveTransform(src, dst), (w, h), borderValue=(90, 90, 90))
+    light = np.linspace(1.0, dim, w)[None, :, None] * np.linspace(1.0, 0.85, h)[:, None, None]  # a shadow
+    rng = np.random.default_rng(seed)
+    out = np.clip(out * light + rng.normal(0, 4, out.shape), 0, 255).astype(np.uint8)
+    out = cv2.resize(out, (width, round(h * width / w)), interpolation=cv2.INTER_AREA)
+    return cv2.imdecode(cv2.imencode(".jpg", out, [cv2.IMWRITE_JPEG_QUALITY, quality])[1], cv2.IMREAD_COLOR)
+
+
 def random_marks(t: Template, seed: int) -> tuple[dict, dict[int, str], str, str]:
     """One random pen answer per question (some blank), a roll number and a set code."""
     rng = np.random.default_rng(seed)
