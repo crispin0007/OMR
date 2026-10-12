@@ -1,4 +1,4 @@
-"""Main window: a sidebar of pages over the open exam, saved as it is read."""
+"""Main window: a sidebar of pages; an exam opens into its own page with tabs, saved as it is read."""
 
 import csv
 from collections import Counter
@@ -23,9 +23,11 @@ from . import theme
 from .dashboard import DashboardPage, ResultsPage
 from .designer import DesignerPage
 from .new_sheet import NewSheetPage
+from .exam_page import ExamPage, ExamSettings, PrintSheet, StudentsTab
 from .exams import TEMPLATES, ExamsPage
 from .review import ReviewPage
 from .scan import ScanPage
+from .sections import SectionsDialog
 
 COLUMNS = ["File", "Page", "Roll number", "Name", "Set", "Answered", "Score", "Review"]
 
@@ -40,7 +42,11 @@ class Batch:
 
 
 class CheckPage(QWidget):
-    """Open scanned sheets for the exam, type the key, see scores and what needs review."""
+    """The open exam's scanned sheets, with scores and what needs review.
+
+    It also owns the exam's answer key and marks, shown on their own tabs as
+    `key_tab` and `marks_tab`.
+    """
 
     changed = Signal()  # sheets, key or marks changed
     wanted = Signal()  # another page asked to show sheets here
@@ -57,13 +63,12 @@ class CheckPage(QWidget):
         self.sections: list[Section] = []
 
         self.template_label = QLabel("Open or create an exam on the Exams page", objectName="muted")
-        self.open_button = QPushButton("Open sheets…", objectName="primary")
+        self.open_button = QPushButton("Import scans…", objectName="primary")
+        self.open_button.setToolTip("Read PDFs or images of filled sheets")
         self.open_button.clicked.connect(self.open_sheets)
         self.save_button = QPushButton("Save CSV…")
         self.save_button.clicked.connect(self.save_csv)
         top = QHBoxLayout()
-        top.addWidget(QLabel("Check sheets", objectName="title"))
-        top.addSpacing(16)
         top.addWidget(self.template_label)
         top.addStretch()
         top.addWidget(self.open_button)
@@ -75,20 +80,35 @@ class CheckPage(QWidget):
             "One line per set: A: ABDC…   B: CADB…\n"
             "Separate with commas for more than one correct option: A, AC, B.  * = bonus, - = dropped.  "
             "A key shorter than the sheet counts only those questions.")
-        self.key_edit.setFixedHeight(84)
         self.key_edit.textChanged.connect(self.update_key)
-        self.key_status = QLabel(objectName="muted")
+        self.key_status = QLabel(objectName="muted", wordWrap=True)
+        self.key_tab = QWidget()
+        key_layout = QVBoxLayout(self.key_tab)
+        key_layout.addWidget(self.key_status)
+        key_layout.addWidget(self.key_edit, 1)
+
         self.correct, self.wrong, self.blank = (self._marks(v) for v in (1, 0, 0))
         marks = QHBoxLayout()
         for text, box in (("Correct", self.correct), ("Wrong", self.wrong), ("Blank", self.blank)):
             marks.addWidget(QLabel(text))
             marks.addWidget(box)
+        marks.addStretch()
         self.sections_button = QPushButton("Sections…")
         self.sections_button.setToolTip("Give ranges of questions their own name and marks, e.g. Physics 1 to 50")
         self.sections_button.clicked.connect(self.edit_sections)
-        marks.addWidget(self.sections_button)
-        marks.addSpacing(12)
-        marks.addWidget(self.key_status, 1)
+        self.sections_label = QLabel(objectName="muted", wordWrap=True)
+        self.marks_tab = QWidget()
+        marks_layout = QVBoxLayout(self.marks_tab)
+        marks_layout.addWidget(QLabel("Marks for every question not in a section", objectName="muted"))
+        marks_layout.addLayout(marks)
+        marks_layout.addSpacing(12)
+        marks_layout.addWidget(QLabel("Sections give ranges of questions their own name and marks, and results show "
+                                      "a score per section.", objectName="muted", wordWrap=True))
+        sections_row = QHBoxLayout()
+        sections_row.addWidget(self.sections_button)
+        sections_row.addWidget(self.sections_label, 1)
+        marks_layout.addLayout(sections_row)
+        marks_layout.addStretch()
 
         self.filter_label = QLabel(objectName="muted")
         self.show_all = QPushButton("Show all")
@@ -128,8 +148,6 @@ class CheckPage(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addLayout(top)
-        layout.addWidget(self.key_edit)
-        layout.addLayout(marks)
         layout.addWidget(split, 1)
 
         self.show_sheets(None)
@@ -263,6 +281,8 @@ class CheckPage(QWidget):
         return stored
 
     def update_key(self):
+        self.sections_label.setText(", ".join(f"{s.name}: questions {s.first} to {s.last}, {s.correct:g} right, "
+                                              f"{s.wrong:g} wrong" for s in self.sections) or "No sections")
         if self.exam is None:
             self.keys = {}
             self.key_status.setText("")
@@ -277,9 +297,6 @@ class CheckPage(QWidget):
             counted = max((sum(k != "-" for k in key) for key in self.keys.values()), default=len(self.questions))
             if counted < len(self.questions):
                 text += f", {counted} of {len(self.questions)} questions counted"
-            if self.sections:
-                text += f".  {len(self.sections)} section{'s' if len(self.sections) > 1 else ''}: " + ", ".join(
-                    f"{s.name} {s.first}–{s.last}" for s in self.sections)
             self.key_status.setText(text)
             self.key_status.setObjectName("muted")
         except ValueError as e:
@@ -380,8 +397,7 @@ class CheckPage(QWidget):
 
 
 class MainWindow(QMainWindow):
-    PAGES = ["Dashboard", "Exams", "Check sheets", "Scan", "Review", "Results", "Sheet designer", "Question Bank",
-             "Syllabus", "Settings"]
+    PAGES = ["Dashboard", "Exams", "Sheet designer", "Question Bank", "Syllabus", "Settings"]
     LATER = {"Question Bank": "Comes in phase 2", "Syllabus": "Comes in phase 3"}
 
     def __init__(self, db_path: str | Path | None = None):
@@ -395,12 +411,26 @@ class MainWindow(QMainWindow):
         self.check = CheckPage(self.store)
         self.exams = ExamsPage(self.store)
         self.exams.opened.connect(self.open_exam)
-        self.exams.students_changed.connect(self.reload_students)
         self.dashboard = DashboardPage(self.check)
         self.results = ResultsPage(self.check)
         self.review = ReviewPage(self.check)
         self.scan = ScanPage(self.check)
         self.check.changed.connect(self.scan._enable)
+        self.students = StudentsTab(self.check)
+        self.students.changed.connect(self.reload_students)
+        self.print_sheet = PrintSheet(self.check)
+        self.exam_settings = ExamSettings(self.check)
+        self.exam_settings.renamed.connect(lambda: self.open_exam(self.check.exam.id))
+        self.exam_settings.deleted.connect(lambda: self.open_exam(None))
+        self.exam_page = ExamPage(self.check, [
+            ("Scan", self.scan), ("Scanned sheets", self.check), ("Review", self.review),
+            ("Answer key", self.check.key_tab), ("Marks and sections", self.check.marks_tab),
+            ("Students", self.students), ("Results", self.results), ("Print sheet", self.print_sheet),
+            ("Exam settings", self.exam_settings)])
+        self.exam_page.back.connect(lambda: self.go("Exams"))
+        self.exams_area = QStackedWidget()  # the list of exams, or one exam's page
+        self.exams_area.addWidget(self.exams)
+        self.exams_area.addWidget(self.exam_page)
         self.designer = DesignerPage()
         self.new_sheet = NewSheetPage()
         sheets = QTabWidget()
@@ -408,9 +438,8 @@ class MainWindow(QMainWindow):
         sheets.addTab(self.designer, "Map a sheet you already print")
         self.settings = theme.SettingsPage(self.prefs)
         self.settings.changed.connect(self.apply_prefs)
-        self.pages = {"Dashboard": self.dashboard, "Exams": self.exams, "Check sheets": self.check,
-                      "Scan": self.scan, "Review": self.review, "Results": self.results,
-                      "Sheet designer": sheets, "Settings": self.settings}
+        self.pages = {"Dashboard": self.dashboard, "Exams": self.exams_area, "Sheet designer": sheets,
+                      "Settings": self.settings}
 
         self.stack = QStackedWidget()
         sidebar = QWidget(objectName="sidebar")
@@ -438,7 +467,7 @@ class MainWindow(QMainWindow):
         nav.addWidget(self.theme_button)
         sidebar.setFixedWidth(190)
 
-        self.check.wanted.connect(lambda: self.go("Check sheets"))
+        self.check.wanted.connect(lambda: self.go("Scanned sheets"))
         self.check.review_wanted.connect(lambda: self.go("Review"))
         self.check.changed.connect(self.exams.refresh)
         central = QWidget()
@@ -461,20 +490,43 @@ class MainWindow(QMainWindow):
     def open_exam(self, exam_id: int | None, go: bool = True):
         self.check.open_exam(exam_id)
         self.exams.refresh(exam_id)
+        self.exam_page.refresh()
+        self.students.refresh()
+        self.print_sheet.refresh()
+        self.exam_settings.refresh()
         theme.settings().setValue("last_exam", exam_id or "")
         name = self.check.exam.name if self.check.exam else ""
         self.setWindowTitle(f"OMR  ·  {name}" if name else "OMR")
-        if go and exam_id is not None:
-            self.go("Check sheets")
+        if exam_id is None:
+            self.exams_area.setCurrentWidget(self.exams)
+        elif go:
+            self.go("Scan" if not self.check.sheets else "Scanned sheets")
 
-    def reload_students(self, exam_id: int):
-        if self.check.exam and self.check.exam.id == exam_id:
-            self.check.students = self.store.students(exam_id)
-            self.check.fill_table()
+    def reload_students(self):
+        self.check.students = self.store.students(self.check.exam.id)
+        self.check.fill_table()
+        self.exams.refresh()
 
     def go(self, name: str):
+        """Show a sidebar page, or a tab of the open exam's page."""
+        if name in self.exam_page.names:
+            if self.check.exam is None:
+                name = "Exams"
+            else:
+                self.exams_area.setCurrentWidget(self.exam_page)
+                self.exam_page.show_tab(name)
+                name = "Exams"
+        elif name == "Exams":
+            self.exams_area.setCurrentWidget(self.exams)
         self.nav_buttons[name].setChecked(True)
         self.stack.setCurrentWidget(self.pages[name])
+
+    def showing(self) -> QWidget:
+        """The page or exam tab on screen."""
+        if self.stack.currentWidget() is self.exams_area:
+            area = self.exams_area.currentWidget()
+            return self.exam_page.tabs.currentWidget() if area is self.exam_page else area
+        return self.stack.currentWidget()
 
     def toggle_theme(self):
         """Quick switch between light and dark; Settings has System and the rest."""
