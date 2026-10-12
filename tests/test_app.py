@@ -6,11 +6,12 @@ import pytest
 pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QSettings  # noqa: E402
+from PySide6.QtCore import QRectF, QSettings  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from omr_app import theme  # noqa: E402
+from omr_app import designer, theme  # noqa: E402
 from omr_app.window import TEMPLATES, MainWindow  # noqa: E402
+from omr_core.reader import SCALE, read_page  # noqa: E402
 from omr_core.template import load  # noqa: E402
 from sheets import draw, random_marks, scan  # noqa: E402
 
@@ -180,3 +181,48 @@ def test_imported_students_show_by_name(app, tmp_path, monkeypatch):
     assert w.check.table.item(0, 3).text() == "Asha Rai"
     w.check.key_edit.setPlainText("A" * 100)
     assert w.results.table.item(0, 2).text() == "Asha Rai"
+
+
+def test_designer_maps_a_sheet_and_saves_a_template(app, tmp_path, monkeypatch):
+    t = load(TEMPLATES / "test-100.json")
+    blank = tmp_path / "blank.png"
+    cv2.imwrite(str(blank), scan(draw(t, {}), angle=0.5))
+    w = window(tmp_path)
+    w.show()
+    w.go("Sheet designer")
+    d = w.designer
+    d.load_scan(str(blank))
+    s = d.gray.shape[1] / t.page[0]
+    d.mark_clicked(170 * s, 80 * s)  # blank paper, nowhere near a mark
+    assert d.error.text() and not d.marks
+    for x, y in t.markers:
+        d.mark_clicked(x * s + 5, y * s - 4)
+    assert len(d.marks) == 4 and d.canvas.drag_boxes
+    for g in t.grids:
+        (x0, y0), (x1, y1) = g.centre(0, 0), g.centre(g.rows - 1, g.cols - 1)
+        d.canvas.boxed.emit(QRectF((x0 - 4) * SCALE, (y0 - 4) * SCALE, (x1 - x0 + 8) * SCALE, (y1 - y0 + 8) * SCALE))
+    assert [b["kind"] for b in d.blocks] == [g.kind for g in t.grids]
+    assert [b.get("first") for b in d.blocks] == [None, None, 1, 26, 51, 76]
+    assert d.blocks[1]["options"] == "ABCD"
+
+    marks, answers, roll, set_code = random_marks(t, 5)
+    filled = tmp_path / "filled.png"
+    cv2.imwrite(str(filled), scan(draw(t, marks), seed=5))
+    d.load_scan(str(filled))  # a new scan starts the corners again
+    assert not d.blocks
+    for x, y in t.markers:
+        d.mark_clicked(x * s, y * s)
+    for g in t.grids:
+        (x0, y0), (x1, y1) = g.centre(0, 0), g.centre(g.rows - 1, g.cols - 1)
+        d.canvas.boxed.emit(QRectF((x0 - 4) * SCALE, (y0 - 4) * SCALE, (x1 - x0 + 8) * SCALE, (y1 - y0 + 8) * SCALE))
+    d.test_read()
+    assert f"roll number {roll}, set {set_code}" in d.test_result.text()
+
+    monkeypatch.setattr(designer, "USER_TEMPLATES", tmp_path / "templates")
+    monkeypatch.setattr(designer.QFileDialog, "getSaveFileName", lambda _p, _t, path, _f: (path, ""))
+    monkeypatch.setattr(designer.QMessageBox, "information", lambda *a: None)
+    d.name.setText("My sheet")
+    d.save()
+    saved = load(tmp_path / "templates" / "My sheet.json")
+    result = read_page(scan(draw(t, marks), seed=6), saved)
+    assert (result.roll_number, result.set_code, result.answers) == (roll, set_code, answers)

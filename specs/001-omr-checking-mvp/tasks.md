@@ -52,7 +52,7 @@ task before it.
 
 ## Phase 7: US5 Map an existing sheet (P2)
 
-- [ ] T023 [US5] Designer: load blank scan, click registration marks, draw grids that snap to bubbles
+- [x] T023 [US5] Designer: load blank scan, click registration marks, draw grids that snap to bubbles (orientation mark not mapped yet)
 - [ ] T024 [US5] Template for the Medical Education Commission sheet; test on its real filled scans
 
 ## Phase 8: US6 and US7 (P3)
