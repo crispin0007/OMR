@@ -11,6 +11,7 @@ from omr_core.grading import Section
 from omr_core.reader import PageResult
 from omr_core.sheet import SheetSection, SheetSpec, layout
 from omr_core.store import Store, to_review
+from omr_core.students import Student
 
 TEMPLATE = (Path(__file__).parent.parent / "templates" / "test-100.json").read_text(encoding="utf-8")
 
@@ -90,6 +91,7 @@ from omr_core.grading import Section
 from omr_core.reader import PageResult
 from omr_core.sheet import SheetSection, SheetSpec, layout
 from omr_core.store import Store, to_review
+from omr_core.students import Student
 Store({str(db)!r}).add_page({exam}, "b", "f.png", 1, PageResult("9", "A", {{1: "C"}}, []))
 os._exit(1)
 """
@@ -205,3 +207,32 @@ def test_changing_the_sheet_replaces_every_reading_at_once(tmp_path):
     weekly = layout(SheetSpec("Weekly", 30, sections=[SheetSection("Maths", 30)]))
     s.change_sheet(exam, json.dumps(weekly), {a.id: (None, "unreadable: x"), b.id: (None, "unreadable: x")})
     assert [(x.name, x.first, x.last) for x in s.exam(exam).sections] == [("Maths", 1, 30)]
+
+
+def test_backup_restores_on_another_pc_without_replacing_anything(tmp_path):
+    s = Store(tmp_path / "omr.db")
+    exam = s.create_exam("Mock", TEMPLATE)
+    s.save_scheme(exam, "ABCD", 4, -1, 0)
+    page = s.add_page(exam, "b", "a.pdf", 1, PageResult("12", "A", {1: "A"}, [("Q1", "unclear mark")],
+                                                         np.zeros((4, 4), np.uint8)))
+    s.correct(page.id, "Q1", "B", "teacher")
+    s.set_students(exam, [Student("12", "Asha", "10A")])
+    s.backup(tmp_path / "backup.db")
+    s.backup(tmp_path / "backup.db")  # again, over the last one
+
+    other = Store(tmp_path / "other" / "omr.db")  # the new PC, with an exam of its own
+    other.create_exam("Weekly", TEMPLATE)
+    assert other.restore(tmp_path / "backup.db") == (["Mock"], [])
+    assert other.restore(tmp_path / "backup.db") == ([], ["Mock"])  # nothing doubled
+    (new_id, *_), = [e for e in other.exams() if e[1] == "Mock"]
+    e = other.exam(new_id)
+    assert (e.answer_key, e.correct, e.wrong) == ("ABCD", 4, -1) and len(other.exams()) == 2
+    p, = other.pages(new_id)
+    assert p.result.answers == {1: "B"} and p.result.flags == [] and np.array_equal(other.image(p.id), np.zeros((4, 4)))
+    assert [a[4:] for a in other.audit(new_id)] == [("Q1", "A", "B")]
+    assert other.students(new_id)["12"].name == "Asha"
+
+    (tmp_path / "notes.txt").write_text("not a backup")
+    with pytest.raises(sqlite3.DatabaseError):
+        other.restore(tmp_path / "notes.txt")
+    assert len(other.exams()) == 2

@@ -1,7 +1,15 @@
-"""Exams page: create exams and open one. Each exam keeps its own template, key, marks, students and sheets."""
+"""Exams page: create exams and open one. Each exam keeps its own template, key, marks, students and sheets.
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+Back up copies every exam into one file; Restore adds the exams in such a file, on this PC or a new one.
+"""
+
+import sqlite3
+from datetime import date
+from pathlib import Path
+
+from PySide6.QtCore import QStandardPaths, Qt, Signal
+from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QTableWidget,
+                               QTableWidgetItem, QVBoxLayout, QWidget)
 
 from omr_core.store import Store
 
@@ -18,9 +26,16 @@ class ExamsPage(QWidget):
         self.open_id: int | None = None
         new = QPushButton("New exam…", objectName="primary")
         new.clicked.connect(self.new_exam)
+        backup = QPushButton("Back up…", toolTip="Save every exam, with its sheets, corrections and students, "
+                             "in one file to keep safe or take to another PC")
+        backup.clicked.connect(self.backup)
+        restore = QPushButton("Restore…", toolTip="Add the exams in a backup file; exams already here stay as they are")
+        restore.clicked.connect(self.restore)
         top = QHBoxLayout()
         top.addWidget(QLabel("Exams", objectName="title"))
         top.addStretch()
+        top.addWidget(backup)
+        top.addWidget(restore)
         top.addWidget(new)
         self.note = QLabel(objectName="muted")
         self.table = QTableWidget(0, 5)
@@ -57,3 +72,36 @@ class ExamsPage(QWidget):
         wizard = NewExamWizard(self, self.store)
         if wizard.exec():
             self.opened.emit(wizard.exam_id)
+
+    def backup(self):
+        docs = Path(QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
+        path, _ = QFileDialog.getSaveFileName(self, "Back up every exam", str(docs / f"OMR backup {date.today()}.db"),
+                                              "OMR backup (*.db)")
+        if not path:
+            return
+        try:
+            self.store.backup(path)
+        except (OSError, sqlite3.Error) as e:
+            QMessageBox.warning(self, "Couldn't back up", f"{path}\n\n{e}")
+            return
+        QMessageBox.information(self, "Backed up", f"Every exam is saved in {path}.\n\nKeep it on a USB drive or "
+                                "another PC; Restore… there brings the exams back.")
+
+    def restore(self):
+        docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+        path, _ = QFileDialog.getOpenFileName(self, "Restore exams from a backup", docs, "OMR backup (*.db)")
+        if not path:
+            return
+        try:
+            restored, skipped = self.store.restore(path)
+        except sqlite3.Error as e:
+            QMessageBox.warning(self, "Can't restore that file", f"{path}\n\nIt isn't an OMR backup ({e}).")
+            return
+        except OSError as e:
+            QMessageBox.warning(self, "Can't restore that file", f"{path}\n\n{e}")
+            return
+        self.refresh()
+        lines = [f"Restored {', '.join(restored)}." if restored else "No new exams in it."]
+        if skipped:
+            lines.append(f"Already here, left as they are: {', '.join(skipped)}.")
+        QMessageBox.information(self, "Restore", "\n\n".join(lines))

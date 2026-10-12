@@ -6,7 +6,10 @@ editing the template file later doesn't change an exam's results.
 """
 
 import json
+import os
+import shutil
 import sqlite3
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -156,6 +159,56 @@ class Store:
             raise ValueError("the exam needs a name")
         with self.db:
             self.db.execute("UPDATE exam SET name = ? WHERE id = ?", (name, exam_id))
+
+    def backup(self, path: str | Path):
+        """Copy every exam, with its pages, corrections and students, into one file, safely while in use."""
+        part = Path(f"{path}.part")
+        part.unlink(missing_ok=True)
+        dest = sqlite3.connect(part)
+        try:
+            self.db.backup(dest)
+        finally:
+            dest.close()
+        os.replace(part, path)  # a half-written backup never takes the name of a good one
+
+    def restore(self, path: str | Path) -> tuple[list[str], list[str]]:
+        """Add the exams in a backup alongside the ones here: (names restored, names already here and skipped).
+        Nothing here is replaced, so restoring twice or on the wrong PC loses nothing. Raises
+        sqlite3.DatabaseError for a file that isn't a database."""
+        restored, skipped = [], []
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:  # Windows: a refused file may stay open
+            copy = Path(d) / "backup.db"
+            shutil.copyfile(path, copy)
+            Store(copy).close()  # brings a backup from an older version up to this one; the original is untouched
+            self.db.execute("ATTACH DATABASE ? AS b", (str(copy),))
+            try:
+                here = set(self.db.execute("SELECT name, created FROM exam"))
+                with self.db:
+                    for old, name, created in self.db.execute("SELECT id, name, created FROM b.exam ORDER BY id"
+                                                              ).fetchall():
+                        if (name, created) in here:
+                            skipped.append(name)
+                            continue
+                        exam = self.db.execute(
+                            "INSERT INTO exam (name, template, answer_key, correct, wrong, blank, created, sections, "
+                            "details) SELECT name, template, answer_key, correct, wrong, blank, created, sections, "
+                            "details FROM b.exam WHERE id = ?", (old,)).lastrowid
+                        for (old_page,) in self.db.execute("SELECT id FROM b.page WHERE exam_id = ? ORDER BY id",
+                                                           (old,)).fetchall():
+                            page = self.db.execute(
+                                "INSERT INTO page (exam_id, batch, file, page_no, read_at, roll_number, set_code, "
+                                "answers, flags, problem, image) SELECT ?, batch, file, page_no, read_at, roll_number, "
+                                "set_code, answers, flags, problem, image FROM b.page WHERE id = ?",
+                                (exam, old_page)).lastrowid
+                            self.db.execute("INSERT INTO audit (page_id, at, user, item, before, after) SELECT ?, at, "
+                                            "user, item, before, after FROM b.audit WHERE page_id = ? ORDER BY id",
+                                            (page, old_page))
+                        self.db.execute("INSERT INTO student (exam_id, roll_number, name, class_name) SELECT ?, "
+                                        "roll_number, name, class_name FROM b.student WHERE exam_id = ?", (exam, old))
+                        restored.append(name)
+            finally:
+                self.db.execute("DETACH DATABASE b")
+        return restored, skipped
 
     def delete_exam(self, exam_id: int):
         with self.db:

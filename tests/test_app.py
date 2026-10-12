@@ -593,3 +593,23 @@ def test_changing_the_sheet_reads_every_page_again(app, tmp_path, monkeypatch):
     assert [(s.result.roll_number, s.result.answers) for s in c.sheets] == [
         (files[0][2], files[0][1]), (files[1][2], files[1][1]), (scanned[2], scanned[1])]
     assert c.table.rowCount() == 3 and c.mismatch.isHidden()
+
+
+def test_exams_are_backed_up_and_restored(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    shown = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: shown.append(a[2]))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: shown.append(a[2]))
+    w = window(tmp_path)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a: (str(tmp_path / "backup.db"), ""))
+    w.exams.backup()
+    assert (tmp_path / "backup.db").is_file() and "Every exam is saved" in shown[-1]
+
+    new_pc = MainWindow(tmp_path / "new" / "omr.db")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a: (str(tmp_path / "backup.db"), ""))
+    new_pc.exams.restore()
+    assert shown[-1] == "Restored Mock." and new_pc.exams.table.item(0, 0).text() == "Mock"
+    (tmp_path / "x.db").write_text("not a backup")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a: (str(tmp_path / "x.db"), ""))
+    new_pc.exams.restore()
+    assert "isn't an OMR backup" in shown[-1] and new_pc.exams.table.rowCount() == 1
