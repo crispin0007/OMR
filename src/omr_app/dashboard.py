@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (QFileDialog, QGridLayout, QHBoxLayout, QLabel, QL
                                QWidget)
 
 from omr_core.export import Graded, grade, write_excel, write_scorecards
-from omr_core.store import to_review
 
 from .theme import tokens
 
@@ -253,7 +252,7 @@ class DashboardPage(QWidget):
 
 
 class ResultsPage(QWidget):
-    COLUMNS = ["Rank", "Roll number", "Set", "Score", "Right", "Wrong", "Blank", "Percentile", "To check", "File",
+    COLUMNS = ["Rank", "Roll number", "Name", "Set", "Score", "Right", "Wrong", "Blank", "Percentile", "To check", "File",
                "Page"]
 
     def __init__(self, check):
@@ -288,7 +287,7 @@ class ResultsPage(QWidget):
         c = self.check
         try:
             self.graded = grade(c.exam.template, c.sheets, c.key_edit.toPlainText(), c.correct.value(),
-                                c.wrong.value(), c.blank.value()) if c.exam else []
+                                c.wrong.value(), c.blank.value(), c.students) if c.exam else []
         except ValueError:
             self.graded = []  # the key doesn't fit yet; Check sheets says why
         self.note.setText("Ranked by score; equal scores share a rank. Double-click a row to open the sheet."
@@ -301,13 +300,13 @@ class ResultsPage(QWidget):
         index = {p.id: i for i, p in enumerate(c.sheets)}
         for row, g in enumerate(self.graded):
             r = g.page.result
-            values = [g.rank, r.roll_number, r.set_code, g.score, g.right, g.wrong, g.blank, round(g.percentile, 1),
+            values = [g.rank, r.roll_number, g.student.name if g.student else "", r.set_code, g.score, g.right, g.wrong, g.blank, round(g.percentile, 1),
                       "yes" if g.to_check else "", c.file_name(g.page), g.page.page]
             for col, v in enumerate(values):
                 item = QTableWidgetItem()
                 item.setData(Qt.DisplayRole, v)
                 item.setData(Qt.UserRole, index[g.page.id])
-                if g.to_check and col == 8:
+                if g.to_check and col == 9:
                     item.setForeground(warn)
                 self.table.setItem(row, col, item)
         self.table.setSortingEnabled(True)
@@ -316,7 +315,7 @@ class ResultsPage(QWidget):
 
     def export(self, kind: str, ext: str, write):
         c = self.check
-        waiting = len(to_review(c.sheets))
+        waiting = len(c.review_items())
         if waiting and QMessageBox.question(
                 self, "Marks still to check",
                 f"{waiting} items still need checking on Review, so some scores may change. Export anyway?",

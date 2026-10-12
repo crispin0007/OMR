@@ -12,6 +12,7 @@ from reportlab.pdfgen import canvas
 
 from .grading import parse_key, rank, score, status
 from .store import StoredPage, to_review
+from .students import Student
 from .template import Template
 
 
@@ -26,6 +27,7 @@ class Graded:
     rank: int = 0
     percentile: float = 0.0
     to_check: bool = False
+    student: Student | None = None  # None when the exam has no student list or the roll number isn't on it
 
 
 def questions(t: Template) -> list[int]:
@@ -33,7 +35,7 @@ def questions(t: Template) -> list[int]:
 
 
 def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float, wrong: float,
-          blank: float) -> list[Graded]:
+          blank: float, students: dict[str, Student] | None = None) -> list[Graded]:
     """Every page that can be scored, best first, with rank and percentile.
 
     Pages that couldn't be read, or whose set has no key, are left out; they show in review instead.
@@ -42,7 +44,8 @@ def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float,
     qs = questions(t)
     options = "".join(sorted({o for g in t.grids if g.kind == "questions" for o in g.options}))
     keys = parse_key(answer_key, len(qs), options)
-    flagged = {i for i, _, _ in to_review(pages)}
+    students = students or {}
+    flagged = {i for i, _, _ in to_review(pages, students)}
     out = []
     for i, p in enumerate(pages):
         key = p.result and keys.get(p.result.set_code, keys.get(""))
@@ -51,7 +54,8 @@ def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float,
         answers = [p.result.answers[q] for q in qs]
         counts = [status(a, k) for a, k in zip(answers, key)]
         out.append(Graded(p, key, score(answers, key, correct, wrong, blank), counts.count("right"),
-                          counts.count("wrong"), counts.count("blank"), to_check=i in flagged))
+                          counts.count("wrong"), counts.count("blank"), to_check=i in flagged,
+                          student=students.get(p.result.roll_number)))
     out.sort(key=lambda g: -g.score)
     for g, (r, pct) in zip(out, rank([g.score for g in out])):
         g.rank, g.percentile = r, pct
@@ -66,20 +70,21 @@ def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Grad
     ws.title = "Merit list"
     ws.append([exam_name])
     ws["A1"].font = Font(bold=True, size=14)
-    head = ["Rank", "Roll number", "Set", "Score", "Right", "Wrong", "Blank", "Percentile", "To check", "File",
+    head = ["Rank", "Roll number", "Name", "Class", "Set", "Score", "Right", "Wrong", "Blank", "Percentile", "To check", "File",
             "Page"]
     ws.append(head)
     for g in graded:
         r = g.page.result
-        ws.append([g.rank, r.roll_number, r.set_code, g.score, g.right, g.wrong, g.blank, round(g.percentile, 1),
+        s = g.student
+        ws.append([g.rank, r.roll_number, s.name if s else "", s.class_name if s else "", r.set_code, g.score, g.right, g.wrong, g.blank, round(g.percentile, 1),
                    "yes" if g.to_check else "", Path(g.page.file).name, g.page.page])
     answers = wb.create_sheet("Answers")
-    answers.append(["Roll number", "Set", *(f"Q{q}" for q in qs)])
+    answers.append(["Roll number", "Name", "Set", *(f"Q{q}" for q in qs)])
     fills = {"right": PatternFill("solid", fgColor="C6EFCE"), "wrong": PatternFill("solid", fgColor="FFC7CE")}
     for g in graded:
         r = g.page.result
-        answers.append([r.roll_number, r.set_code, *(r.answers[q] for q in qs)])
-        for col, (q, k) in enumerate(zip(qs, g.key), start=3):
+        answers.append([r.roll_number, g.student.name if g.student else "", r.set_code, *(r.answers[q] for q in qs)])
+        for col, (q, k) in enumerate(zip(qs, g.key), start=4):
             fill = fills.get(status(r.answers[q], k))
             if fill:
                 answers.cell(answers.max_row, col).fill = fill
@@ -108,7 +113,9 @@ def write_scorecards(path: str | Path, exam_name: str, t: Template, graded: list
         c.setFont("Helvetica-Bold", 16)
         c.drawString(18 * mm, h - 20 * mm, exam_name)
         c.setFont("Helvetica", 11)
-        c.drawString(18 * mm, h - 28 * mm, f"Roll number {r.roll_number}    Set {r.set_code}")
+        s = g.student
+        who = f"{s.name}    " + (f"Class {s.class_name}    " if s.class_name else "") if s else ""
+        c.drawString(18 * mm, h - 28 * mm, f"{who}Roll number {r.roll_number}    Set {r.set_code}")
         c.setFont("Helvetica-Bold", 13)
         c.drawString(18 * mm, h - 38 * mm, f"Score {g.score:g}    Rank {g.rank} of {len(graded)}    "
                                            f"Percentile {g.percentile:.1f}")

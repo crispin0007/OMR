@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QListWidget, QLis
                                QSplitter, QVBoxLayout, QWidget)
 
 from omr_core.reader import SCALE
-from omr_core.store import to_review
 from omr_core.template import Grid, Template
 
 from .dashboard import card
@@ -94,7 +93,7 @@ class ReviewPage(QWidget):
     def refresh(self):
         c = self.check
         keep = self.queue.currentRow()
-        self.items = to_review(c.sheets) if c.exam else []
+        self.items = c.review_items() if c.exam else []
         self.queue.blockSignals(True)
         self.queue.clear()
         for i, item, why in self.items:
@@ -157,7 +156,8 @@ class ReviewPage(QWidget):
             options = found[0].options if found else ""
             self._choice_buttons(item, list(options), keep=None if r.set_code == "?" else r.set_code)
         else:  # the whole roll number, e.g. a duplicate
-            self.read_as.setText(f"Read as: {r.roll_number}")
+            student = c.students.get(r.roll_number)
+            self.read_as.setText(f"Read as: {r.roll_number}" + (f"  ({student.name})" if student else ""))
             edit = QLineEdit(r.roll_number, maxLength=len(r.roll_number))
             save = QPushButton("Save roll number", objectName="primary")
             save.clicked.connect(lambda: self.fix(item, edit.text()))

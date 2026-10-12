@@ -25,7 +25,7 @@ def test_exam_scheme_and_pages_survive_reopening(tmp_path):
     s.close()
 
     s = Store(db)
-    assert s.exams()[0][1:] == ("Mock 1", s.exams()[0][2], 2)
+    assert s.exams()[0][1:] == ("Mock 1", s.exams()[0][2], 2, 0)
     e = s.exam(exam)
     assert (e.answer_key, e.correct, e.wrong, e.template.name) == ("A: ABCD", 4, -1, json.loads(TEMPLATE)["name"])
     first, second = s.pages(exam)

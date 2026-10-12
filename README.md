@@ -58,6 +58,9 @@ The sidebar opens Dashboard, Exams, Check sheets, Review, Results and Settings.
 
 1. On **Exams**, **New exam…** asks for a name and the sheet template
    (`templates/test-100.json` by default). Double-click an exam to open it.
+   **Import students…** reads an Excel file with roll number, name and
+   class columns; names then show everywhere, roll numbers not on the list
+   go to Review, and rows that can't be used are listed, not imported.
 2. On **Check sheets**, **Open sheets…** reads PDFs or images. Each page gets
    a row with its roll number, set and how many questions were answered.
    Highlighted rows have marks to check; click a row to see the page and

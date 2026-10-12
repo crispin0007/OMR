@@ -17,13 +17,14 @@ from omr_core.grading import parse_key, score
 from omr_core.reader import UnreadablePage, read_page
 from omr_core.sources import read_pages
 from omr_core.store import Exam, Store, StoredPage, to_review
+from omr_core.students import Student
 
 from . import theme
 from .dashboard import DashboardPage, ResultsPage
 from .exams import TEMPLATES, ExamsPage
 from .review import ReviewPage
 
-COLUMNS = ["File", "Page", "Roll number", "Set", "Answered", "Score", "Review"]
+COLUMNS = ["File", "Page", "Roll number", "Name", "Set", "Answered", "Score", "Review"]
 
 
 @dataclass
@@ -48,6 +49,7 @@ class CheckPage(QWidget):
         self.exam: Exam | None = None
         self.questions: list[int] = []
         self.sheets: list[StoredPage] = []
+        self.students: dict[str, Student] = {}
         self.keys: dict[str, list[str]] = {}
 
         self.template_label = QLabel("Open or create an exam on the Exams page", objectName="muted")
@@ -138,7 +140,7 @@ class CheckPage(QWidget):
         """Show an exam's saved key, marks and sheets; None closes it."""
         self.exam = None  # keeps the loading below from saving the scheme back
         if exam_id is None:
-            self.questions, self.sheets = [], []
+            self.questions, self.sheets, self.students = [], [], {}
             self.template_label.setText("Open or create an exam on the Exams page")
             self.key_edit.clear()
         else:
@@ -146,6 +148,7 @@ class CheckPage(QWidget):
             t = exam.template
             self.questions = sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows))
             self.sheets = self.store.pages(exam_id)
+            self.students = self.store.students(exam_id)
             self.template_label.setText(f"{exam.name}  ·  {t.name}, {len(self.questions)} questions")
             for box, v in ((self.correct, exam.correct), (self.wrong, exam.wrong), (self.blank, exam.blank)):
                 box.setValue(v)
@@ -178,9 +181,16 @@ class CheckPage(QWidget):
     def full_marks(self) -> float:
         return len(self.questions) * self.correct.value()
 
+    def review_items(self) -> list[tuple[int, str, str]]:
+        return to_review(self.sheets, self.students)
+
     def to_check(self) -> list[int]:
-        """Sheets with anything to review: flags, unreadable pages, duplicate roll numbers."""
-        return sorted({i for i, _, _ in to_review(self.sheets)})
+        """Sheets with anything to review: flags, unreadable pages, duplicate or unknown roll numbers."""
+        return sorted({i for i, _, _ in self.review_items()})
+
+    def name_of(self, sheet: StoredPage) -> str:
+        s = sheet.result and self.students.get(sheet.result.roll_number)
+        return s.name if s else ""
 
     def open_sheets(self):
         paths, _ = QFileDialog.getOpenFileNames(
@@ -260,11 +270,12 @@ class CheckPage(QWidget):
     def fill_table(self):
         self.table.setRowCount(len(self.sheets))
         review_bg = QBrush(QColor(theme.tokens()["warn_bg"]))
-        items = Counter(i for i, _, _ in to_review(self.sheets))
+        items = Counter(i for i, _, _ in self.review_items())
         for row, sheet in enumerate(self.sheets):
             r = sheet.result
             review = sheet.problem or (f"{items[row]} to check" if items[row] else "")
-            cells = [self.file_name(sheet), str(sheet.page), r.roll_number if r else "", r.set_code if r else "",
+            cells = [self.file_name(sheet), str(sheet.page), r.roll_number if r else "", self.name_of(sheet),
+                     r.set_code if r else "",
                      f"{sum(1 for q in self.questions if r.answers[q])}/{len(self.questions)}" if r else "",
                      self._score_text(sheet), review]
             for col, text in enumerate(cells):
@@ -348,6 +359,7 @@ class MainWindow(QMainWindow):
         self.check = CheckPage(self.store)
         self.exams = ExamsPage(self.store)
         self.exams.opened.connect(self.open_exam)
+        self.exams.students_changed.connect(self.reload_students)
         self.dashboard = DashboardPage(self.check)
         self.results = ResultsPage(self.check)
         self.review = ReviewPage(self.check)
@@ -410,6 +422,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"OMR  ·  {name}" if name else "OMR")
         if go and exam_id is not None:
             self.go("Check sheets")
+
+    def reload_students(self, exam_id: int):
+        if self.check.exam and self.check.exam.id == exam_id:
+            self.check.students = self.store.students(exam_id)
+            self.check.fill_table()
 
     def go(self, name: str):
         self.nav_buttons[name].setChecked(True)

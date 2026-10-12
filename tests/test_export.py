@@ -48,9 +48,9 @@ def test_merit_list_and_scorecards(tmp_path):
     write_excel(tmp_path / "merit.xlsx", "Mock 1", t, graded)
     wb = load_workbook(tmp_path / "merit.xlsx")
     rows = list(wb["Merit list"].iter_rows(min_row=3, values_only=True))
-    assert [(r[0], r[1], r[3]) for r in rows] == [(g.rank, g.page.result.roll_number, g.score) for g in graded]
+    assert [(r[0], r[1], r[5]) for r in rows] == [(g.rank, g.page.result.roll_number, g.score) for g in graded]
     answers = wb["Answers"]
-    assert answers["A2"].value == graded[0].page.result.roll_number and answers.max_column == 102
+    assert answers["A2"].value == graded[0].page.result.roll_number and answers.max_column == 103
     write_scorecards(tmp_path / "cards.pdf", "Mock 1", t, graded)
     pdf = pypdfium2.PdfDocument(tmp_path / "cards.pdf")
     assert len(pdf) == 4

@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 
 from .reader import PageResult
+from .students import Student
 from .template import Template, parse
 
 SCHEMA = """
@@ -51,6 +52,13 @@ CREATE TABLE IF NOT EXISTS audit (
     item TEXT NOT NULL,              -- "Q12", "roll number digit 3", "set code"
     before TEXT NOT NULL,
     after TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS student (
+    exam_id INTEGER NOT NULL REFERENCES exam(id) ON DELETE CASCADE,
+    roll_number TEXT NOT NULL,
+    name TEXT NOT NULL,
+    class_name TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (exam_id, roll_number)
 );
 """
 
@@ -100,11 +108,11 @@ class Store:
                                   (name, template_json, datetime.now().isoformat(timespec="seconds")))
         return cur.lastrowid
 
-    def exams(self) -> list[tuple[int, str, str, int]]:
-        """(id, name, created, pages) for every exam, newest first."""
+    def exams(self) -> list[tuple[int, str, str, int, int]]:
+        """(id, name, created, pages, students) for every exam, newest first."""
         return self.db.execute(
-            "SELECT e.id, e.name, e.created, COUNT(p.id) FROM exam e LEFT JOIN page p ON p.exam_id = e.id "
-            "GROUP BY e.id ORDER BY e.id DESC").fetchall()
+            "SELECT e.id, e.name, e.created, (SELECT COUNT(*) FROM page p WHERE p.exam_id = e.id), "
+            "(SELECT COUNT(*) FROM student s WHERE s.exam_id = e.id) FROM exam e ORDER BY e.id DESC").fetchall()
 
     def exam(self, exam_id: int) -> Exam:
         row = self.db.execute("SELECT id, name, template, answer_key, correct, wrong, blank, created FROM exam "
@@ -213,6 +221,17 @@ class Store:
             "SELECT a.at, a.user, p.file, p.page_no, a.item, a.before, a.after FROM audit a "
             "JOIN page p ON p.id = a.page_id WHERE p.exam_id = ? ORDER BY a.id", (exam_id,)).fetchall()
 
+    def set_students(self, exam_id: int, students: list[Student]):
+        """Replace the exam's student list."""
+        with self.db:
+            self.db.execute("DELETE FROM student WHERE exam_id = ?", (exam_id,))
+            self.db.executemany("INSERT INTO student (exam_id, roll_number, name, class_name) VALUES (?, ?, ?, ?)",
+                                [(exam_id, s.roll_number, s.name, s.class_name) for s in students])
+
+    def students(self, exam_id: int) -> dict[str, Student]:
+        rows = self.db.execute("SELECT roll_number, name, class_name FROM student WHERE exam_id = ?", (exam_id,))
+        return {r[0]: Student(*r) for r in rows}
+
     def image(self, page_id: int) -> np.ndarray | None:
         row = self.db.execute("SELECT image FROM page WHERE id = ?", (page_id,)).fetchone()
         if not row or row[0] is None:
@@ -220,10 +239,11 @@ class Store:
         return cv2.imdecode(np.frombuffer(row[0], np.uint8), cv2.IMREAD_GRAYSCALE)
 
 
-def to_review(pages: list[StoredPage]) -> list[tuple[int, str, str]]:
+def to_review(pages: list[StoredPage], students: dict[str, Student] | None = None) -> list[tuple[int, str, str]]:
     """(index in pages, item, why) for everything a person must check before results go out.
 
-    The reader's flags, pages that couldn't be read, and roll numbers that more than one page has.
+    The reader's flags, pages that couldn't be read, roll numbers that more than one page has, and,
+    when the exam has a student list, roll numbers that aren't on it.
     """
     rolls: dict[str, list[int]] = {}
     for i, p in enumerate(pages):
@@ -239,4 +259,6 @@ def to_review(pages: list[StoredPage]) -> list[tuple[int, str, str]]:
         if same:
             others = ", ".join(f"{Path(pages[j].file).name} page {pages[j].page}" for j in same)
             out.append((i, "roll number", f"same roll number as {others}"))
+        elif students and "?" not in p.result.roll_number and p.result.roll_number not in students:
+            out.append((i, "roll number", "not on the student list"))
     return out
