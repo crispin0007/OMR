@@ -65,6 +65,14 @@ def read_page(page: np.ndarray, template: Template) -> PageResult:
     return result
 
 
+def read_or_reason(page: np.ndarray, template: Template) -> tuple[PageResult | None, str]:
+    """The page read, or None and why it can't be read, for pages to be kept either way."""
+    try:
+        return read_page(page, template), ""
+    except UnreadablePage as e:
+        return None, f"unreadable: {e}"
+
+
 def _barcode(page: np.ndarray, area: tuple[float, float, float, float]) -> str:
     """The text of the barcode or QR code in an area of the aligned page, or "" if none can be read."""
     x, y, w, h = (round(v * SCALE) for v in area)

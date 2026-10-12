@@ -265,6 +265,7 @@ def test_scanning_reads_each_page_and_stops_on_a_jam(app, tmp_path, monkeypatch)
     assert (s.scanned.value.text(), s.read.value.text(), s.skipped.value.text()) == ("4", "2", "2")
     assert [p.result.roll_number for p in w.store.pages(w.check.exam.id)] == [fronts[0][2], fronts[1][2]]
     assert fronts[1][2] in s.latest_text.text()
+    assert w.check.table.rowCount() == 2 and w.check.table.item(1, 2).text() == fronts[1][2]  # shown on stopping
 
     # The operator clears the jam and feeds the rest.
     monkeypatch.setattr(scanner, "scanners", lambda: [FakeScanner([scan(draw(t, fronts[2][0]))])])

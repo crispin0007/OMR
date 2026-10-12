@@ -12,6 +12,7 @@ from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
                                QPushButton, QVBoxLayout, QWidget)
 
+from omr_core.reader import read_or_reason
 from omr_core.sources import is_blank, read_pages, ready_files
 
 from . import scanner, theme
@@ -23,20 +24,21 @@ NO_EXAM = "Open an exam on the Exams page first; scanned sheets are saved into i
 
 
 class ScanThread(QThread):
-    """Pulls pages from the scanner off the UI thread; reading and saving happen on the UI thread."""
+    """Pulls pages from the scanner and reads them off the UI thread; saving happens on the UI thread, at once."""
 
-    page = Signal(object)
+    page = Signal(object, object)  # the page, and what reading it gave (None for a blank back)
     stopped = Signal(str)  # "" when the feeder ran out, else what went wrong
 
-    def __init__(self, device, dpi: int, duplex: bool):
+    def __init__(self, device, dpi: int, duplex: bool, template):
         super().__init__()
-        self.device, self.dpi, self.duplex = device, dpi, duplex
+        self.device, self.dpi, self.duplex, self.template = device, dpi, duplex, template
         self.stop = False
 
     def run(self):
         try:
             for page in self.device.pages(self.dpi, self.duplex):
-                self.page.emit(page)
+                blank = self.duplex and is_blank(page)
+                self.page.emit(page, None if blank else read_or_reason(page, self.template))
                 if self.stop:
                     break
         except scanner.ScanStopped as e:
@@ -207,8 +209,9 @@ class ScanPage(QWidget):
         else:
             device = self.devices[self.source.currentIndex()]
             self.batch, self.count = f"{device.name}  ·  {when}", 0
-            self.thread = ScanThread(device, int(self.dpi.currentText()), self.duplex.isChecked())
-            self.thread.page.connect(self.add_page)
+            self.thread = ScanThread(device, int(self.dpi.currentText()), self.duplex.isChecked(),
+                                     self.check.exam.template)
+            self.thread.page.connect(lambda page, read: self.add_page(page, read=read, blank=read is None))
             self.thread.stopped.connect(self.scan_stopped)
             self.thread.start()
             self.status.setText(f"Scanning from {device.name}…")
@@ -220,12 +223,14 @@ class ScanPage(QWidget):
             self.status.setText("Stopping after this page…")
         if self.timer.isActive():
             self.timer.stop()
+            self.check.fill_table()
             self.status.setText(f"Stopped. {self._summary()}")
         self._enable()
 
     def scan_stopped(self, problem: str):
         self.thread.wait()
         self.thread = None
+        self.check.fill_table()
         if problem:
             latest = self.check.sheets[-1] if len(self.check.sheets) > self.first else None
             roll = latest.result.roll_number if latest and latest.result else ""
@@ -243,16 +248,17 @@ class ScanPage(QWidget):
         rows = self._run_rows()
         return f"{len(rows)} sheets read, {self.to_check.value.text()} to check."
 
-    def add_page(self, page, file: str = "", n: int = 0):
-        """One page from the scanner or a folder file: skip a blank back, else read and save it at once."""
+    def add_page(self, page, file: str = "", n: int = 0, read: tuple | None = None, blank: bool | None = None):
+        """One page from the scanner or a folder file: skip a blank back, else read (unless the scanner's
+        thread already did) and save it at once."""
         self.pages_seen += 1
-        if self.duplex.isChecked() and is_blank(page):
+        if blank if blank is not None else self.duplex.isChecked() and is_blank(page):
             self.blank += 1
             self._count()
             return
         self.count += 1
-        stored = self.check.read_image(page, self.batch, file or self.batch.split("  ·  ")[0], n or self.count)
-        self.check.fill_table()
+        stored = self.check.read_image(page, self.batch, file or self.batch.split("  ·  ")[0], n or self.count, read)
+        self.check.refresh_soon()
         self._count()
         self._show_latest(stored)
 
