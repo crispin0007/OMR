@@ -9,11 +9,11 @@
 
 [Setup]
 AppId={{6B0D5A55-2C1E-4C8E-9C1B-0F6E4B7C2A31}
-AppName=OMR
+AppName=OMR Checker
 AppVersion={#Version}
 AppPublisher=OMR contributors
 DefaultDirName={autopf}\OMR
-DefaultGroupName=OMR
+DefaultGroupName=OMR Checker
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=..\dist
 OutputBaseFilename=OMR-Setup-{#Version}
@@ -32,8 +32,8 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Source: "..\dist\OMR\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 
 [Icons]
-Name: "{group}\OMR"; Filename: "{app}\OMR.exe"
-Name: "{autodesktop}\OMR"; Filename: "{app}\OMR.exe"; Tasks: desktopicon
+Name: "{group}\OMR Checker"; Filename: "{app}\OMR.exe"
+Name: "{autodesktop}\OMR Checker"; Filename: "{app}\OMR.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\OMR.exe"; Description: "Open OMR now"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\OMR.exe"; Description: "Open OMR Checker now"; Flags: nowait postinstall skipifsilent
