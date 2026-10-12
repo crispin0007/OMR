@@ -236,3 +236,16 @@ def test_backup_restores_on_another_pc_without_replacing_anything(tmp_path):
     with pytest.raises(sqlite3.DatabaseError):
         other.restore(tmp_path / "notes.txt")
     assert len(other.exams()) == 2
+
+
+def test_an_exam_in_a_test_series_starts_with_its_student_list(tmp_path):
+    s = Store(tmp_path / "omr.db")
+    first = s.create_exam("Mock 1", TEMPLATE, {"series": "JEE 2027"})
+    s.set_students(first, [Student("12345", "Asha", "12 A")])
+    other = s.create_exam("Quiz", TEMPLATE)
+    second = s.create_exam("Mock 2", TEMPLATE, {"series": "JEE 2027"})
+    assert s.students(second) == {"12345": Student("12345", "Asha", "12 A")} and s.students(other) == {}
+    s.set_series(other, " NEET 2027 ")
+    assert s.series_names() == ["JEE 2027", "NEET 2027"] and s.series_exams("JEE 2027") == [first, second]
+    s.set_series(other, "")
+    assert s.series_names() == ["JEE 2027"] and s.series_exams("") == [] and s.exam(other).details == {"series": ""}

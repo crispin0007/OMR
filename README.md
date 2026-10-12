@@ -111,6 +111,7 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    **Students** imports an Excel file with roll number, name and class
    columns; names then show everywhere, roll numbers not on the list go to
    Review, and rows that can't be used are listed, not imported.
+   **Use the list of another exam…** copies a list already imported.
    **Results** ranks every sheet with right, wrong and blank counts and its
    percentile, and exports a merit list to Excel (with every answer coloured
    right or wrong, and an item analysis: per question the share right, wrong
@@ -150,6 +151,12 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
 Everything is saved as you work: each page as soon as it is read, and the key
 and marks as you type. Exams live in `%LOCALAPPDATA%\OMR\omr.db`; the app
 reopens the last exam.
+
+**Test series**: give exams the same test series name (in New exam, or on
+Exam settings) and each new exam in it starts with the series' student list.
+**Test series…** on Exams ranks students on their total score over the
+series, with each test's score (absent when they have no sheet), the tests
+taken and their average percentage, and saves it to Excel.
 
 **Back up…** on Exams saves every exam, with its sheets, corrections and
 students, in one file. **Restore…** adds the exams in such a file, on the same

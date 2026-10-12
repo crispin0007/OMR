@@ -683,3 +683,50 @@ def test_answer_key_is_read_from_a_filled_master_sheet(app, tmp_path, monkeypatc
     key = k.keys()[set_code]
     assert key == [answers[q] or "-" for q in w.check.questions]
     assert f"Key for set {set_code}" in shown[0] and k.set_code() == set_code
+
+
+def test_a_test_series_shares_students_and_ranks_them_together(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+    from omr_app import series
+    from omr_app.new_exam import NewExamWizard
+    from omr_core.reader import PageResult
+    from omr_core.students import Student
+    w = window(tmp_path)  # "Mock", in no series yet
+    store, first = w.store, w.check.exam.id
+    store.set_students(first, [Student("11111", "Asha", "12")])
+    assert w.exams.series.isHidden()
+    w.exam_settings.series.setCurrentText("JEE 2027")
+    w.exam_settings.set_series()
+    assert store.exam(first).details["series"] == "JEE 2027" and "test series JEE 2027" in w.exam_page.about.text()
+    z = NewExamWizard(w, store)
+    z.name.setText("Mock 2")
+    assert z.series.findText("JEE 2027") >= 0
+    z.series.setCurrentText("JEE 2027")
+    z.update_review()
+    z.create()
+    assert store.students(z.exam_id) == store.students(first)  # carried over, not imported again
+
+    for exam, right in ((first, 30), (z.exam_id, 40)):
+        store.save_scheme(exam, "A" * 100 if exam == first else "", 1, 0, 0)
+        store.add_page(exam, "b", "s.png", 1, PageResult("11111", "A", {q: "A" if q <= right else "B"
+                                                                        for q in range(1, 101)}, []))
+    w.exams.refresh()
+    assert not w.exams.series.isHidden()
+    d = series.SeriesDialog(w, store)
+    assert d.series.currentText() == "JEE 2027" and d.table.rowCount() == 1
+    assert [d.table.item(0, c).text() for c in range(d.table.columnCount())] == [
+        "1", "11111", "Asha", "12", "30", "absent", "30", "1", "30"]
+    assert "Not counted: Mock 2: no results yet" in d.note.text()
+    out = tmp_path / "series.xlsx"
+    monkeypatch.setattr(series.QFileDialog, "getSaveFileName", lambda *a: (str(out), ""))
+    monkeypatch.setattr(series.QMessageBox, "information", lambda *a: None)
+    d.save_excel()
+    assert out.exists()
+
+    other = store.create_exam("Quiz", (TEMPLATES / "test-100.json").read_text(encoding="utf-8"))
+    w.open_exam(other)
+    monkeypatch.setattr(QInputDialog, "getItem", lambda _p, _t, _l, items, *a: (items[0], True))
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.Yes)
+    w.students.copy_students()
+    assert store.students(other) == store.students(first) and w.students.table.rowCount() == 1
