@@ -1,7 +1,7 @@
 """Main window: a sidebar of pages; an exam opens into its own page with tabs, saved as it is read."""
 
 import csv
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -292,11 +292,44 @@ class CheckPage(QWidget):
         """Read one page image (unless `read` already holds what reading it gave) and save it at once; the
         caller refreshes the table."""
         result, problem = read or read_or_reason(page, self.exam.template)
-        stored = self.store.add_page(self.exam.id, batch, file, n, result, problem)
+        stored = self.store.add_page(self.exam.id, batch, file, n, result, problem, page)
         if stored.result:
             stored.result.aligned = None  # the image is in the store; don't keep every page in memory
         self.sheets.append(stored)
         return stored
+
+    def read_again(self, template) -> dict[int, tuple] | None:
+        """Every page of the exam read with `template`, for changing its sheet: from the original file while it
+        is still there, else from the image saved for the page. None when stopped."""
+        progress = QProgressDialog("Reading the pages again…", "Stop", 0, len(self.sheets), self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(300)
+        out = {}
+        by_file = defaultdict(dict)
+        for sheet in self.sheets:
+            by_file[sheet.file][sheet.page] = sheet
+        for file, wanted in by_file.items():
+            # shortcut: an original file is trusted to be the one read before; a file replaced since would be
+            # read in its place. Comparing it would need a fingerprint stored with every page.
+            try:
+                if Path(file).is_file():
+                    for n, page in enumerate(read_pages(file), 1):
+                        if n in wanted:
+                            out[wanted.pop(n).id] = read_or_reason(page, template)
+                            progress.setValue(len(out))
+                            if progress.wasCanceled():
+                                return None
+            except (OSError, ValueError):
+                pass  # read from the saved images below
+            for sheet in wanted.values():
+                image = self.store.image(sheet.id, as_saved=True)
+                out[sheet.id] = (read_or_reason(image, template) if image is not None
+                                 else (None, "unreadable: no scan of this page is kept; scan it again"))
+                progress.setValue(len(out))
+                if progress.wasCanceled():
+                    return None
+        progress.close()
+        return out
 
     def update_key(self):
         self.sections_label.setText(", ".join(f"{s.name}: questions {s.first} to {s.last}, {s.correct:g} right, "
@@ -368,8 +401,8 @@ class CheckPage(QWidget):
         unreadable = sum(s.result is None for s in self.sheets)
         self.mismatch.setText(
             f"{unreadable} of {len(self.sheets)} pages couldn't be read. If students filled a sheet other than this "
-            "exam's (for example one you print yourself), map that sheet, then create an exam with “Use my own "
-            "printed sheet” and import the scans there." if unreadable else "")
+            "exam's (for example one you print yourself), map that sheet, then pick it under Exam settings, "
+            "Change sheet; every page is read again." if unreadable else "")
         for w in (self.mismatch, self.map_button):
             w.setVisible(bool(unreadable))
         self.table.resizeColumnsToContents()
@@ -505,7 +538,7 @@ class MainWindow(QMainWindow):
         self.students.changed.connect(self.reload_students)
         self.print_sheet = PrintSheet(self.check)
         self.exam_settings = ExamSettings(self.check)
-        self.exam_settings.renamed.connect(lambda: self.open_exam(self.check.exam.id))
+        self.exam_settings.changed.connect(lambda: self.open_exam(self.check.exam.id))
         self.exam_settings.deleted.connect(lambda: self.open_exam(None))
         self.exam_page = ExamPage(self.check, [
             ("Scan", self.scan), ("Scanned sheets", self.check), ("Review", self.review),

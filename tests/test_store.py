@@ -9,6 +9,7 @@ import pytest
 
 from omr_core.grading import Section
 from omr_core.reader import PageResult
+from omr_core.sheet import SheetSection, SheetSpec, layout
 from omr_core.store import Store, to_review
 
 TEMPLATE = (Path(__file__).parent.parent / "templates" / "test-100.json").read_text(encoding="utf-8")
@@ -87,6 +88,7 @@ def test_a_page_is_kept_when_the_app_dies_right_after_reading_it(tmp_path):
 import os
 from omr_core.grading import Section
 from omr_core.reader import PageResult
+from omr_core.sheet import SheetSection, SheetSpec, layout
 from omr_core.store import Store, to_review
 Store({str(db)!r}).add_page({exam}, "b", "f.png", 1, PageResult("9", "A", {{1: "C"}}, []))
 os._exit(1)
@@ -172,3 +174,34 @@ def test_pages_can_be_deleted_or_moved_to_an_exam_on_the_same_sheet(tmp_path):
     with pytest.raises(ValueError, match="different sheet"):
         s.move_pages([a.id], third)
     assert s.same_sheet(first, second) and not s.same_sheet(first, third)
+
+
+def test_changing_the_sheet_replaces_every_reading_at_once(tmp_path):
+    s = Store(tmp_path / "omr.db")
+    exam = s.create_exam("Mock", TEMPLATE)
+    s.save_sections(exam, [Section("Physics", 1, 100, 4, -1)])
+    scan = np.full((40, 30, 3), 200, np.uint8)
+    first = s.add_page(exam, "b", "a.pdf", 1, None, "unreadable: another layout", scan)
+    second = s.add_page(exam, "b", "a.pdf", 2, PageResult("1", "A", {1: "A"}, [], np.zeros((4, 4), np.uint8)))
+    assert np.array_equal(s.image(first.id, as_saved=True), scan)  # kept to read again
+    s.correct(second.id, "Q1", "B", "teacher")
+
+    other = json.loads(TEMPLATE)
+    other["name"] = "Other"
+    with pytest.raises(ValueError, match="every page"):
+        s.change_sheet(exam, json.dumps(other), {first.id: (None, "unreadable")})
+    read = PageResult("7", "B", {1: "C"}, [("Q1", "unclear mark")], np.ones((4, 4), np.uint8))
+    s.change_sheet(exam, json.dumps(other), {first.id: (read, ""), second.id: (None, "unreadable: x")})
+    e = s.exam(exam)
+    assert e.template.name == "Other" and [x.name for x in e.sections] == ["Physics"]
+    a, b = s.pages(exam)
+    assert (a.result.roll_number, a.result.answers, a.result.flags, a.problem) == (
+        "7", {1: "C"}, [("Q1", "unclear mark")], "")
+    assert b.result is None and b.problem == "unreadable: x"
+    assert np.array_equal(s.image(a.id), read.aligned) and np.array_equal(s.image(b.id), np.zeros((4, 4)))
+    assert len(s.audit(exam)) == 1  # the correction stays in the log
+
+    # Physics 1 to 100 doesn't fit a 30-question sheet: the exam takes that sheet's own sections.
+    weekly = layout(SheetSpec("Weekly", 30, sections=[SheetSection("Maths", 30)]))
+    s.change_sheet(exam, json.dumps(weekly), {a.id: (None, "unreadable: x"), b.id: (None, "unreadable: x")})
+    assert [(x.name, x.first, x.last) for x in s.exam(exam).sections] == [("Maths", 1, 30)]
