@@ -8,7 +8,7 @@ pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QRectF, QSettings, Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from omr_app import designer, scanner, theme  # noqa: E402
 from omr_app.scan import FOLDER  # noqa: E402
@@ -639,3 +639,23 @@ def test_window_carries_the_app_name(app, tmp_path):
     assert w.windowTitle() == "OMR Checker  ·  Mock"
     w.open_exam(None)
     assert w.windowTitle() == "OMR Checker"
+
+
+def test_first_run_shows_the_steps_and_help_has_the_shortcuts(app, tmp_path, monkeypatch):
+    from omr_app import exams, help
+    w = MainWindow(tmp_path / "omr.db")
+    assert not w.exams.start.isHidden() and w.exams.table.isHidden()
+    assert "Create the exam" in w.exams.start.text()
+    shown = []
+    monkeypatch.setattr(help.HelpDialog, "exec", lambda self: shown.append(self.findChild(QLabel).text()))
+    w.show_help()
+    assert "Ctrl+N" in shown[0] and str(tmp_path) in shown[0] and "OMR Checker" in shown[0]
+    monkeypatch.setattr(exams.NewExamWizard, "exec", lambda self: False)
+    w.new_exam()
+    assert w.showing() is w.exams
+    w.import_scans()  # no exam open yet: stays on Exams
+    assert w.showing() is w.exams
+
+    w.open_exam(w.store.create_exam("Mock", (TEMPLATES / "test-100.json").read_text(encoding="utf-8")))
+    w.exams.refresh()
+    assert w.exams.start.isHidden() and not w.exams.table.isHidden()

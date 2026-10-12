@@ -62,7 +62,9 @@ Templates live in `templates/`.
 omr
 ```
 
-The sidebar opens Dashboard, Exams, Sheet designer and Settings.
+The sidebar opens Dashboard, Exams, Sheet designer, Help and Settings. Until
+the first exam exists, Exams shows the steps below. **Help** (F1) repeats them
+with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
 
 1. On **Exams**, **New exam…** sets up the exam step by step: its name,
    class, date, time and duration; its subjects or sections and the
