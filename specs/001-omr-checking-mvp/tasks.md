@@ -40,6 +40,7 @@ task before it.
 - [x] T016 [US3] Re-grade an exam after a key or scheme change (scores follow the saved key and marks live)
 - [x] T017 [US3] Excel merit list and PDF scorecards in `src/omr_core/export.py` (names come with T026)
 - [x] T018 [US3] Results screen with rank and percentile (spec 002)
+- [x] T018b [US3] Marks per section, short keys count only the keyed questions, item analysis sheet in the Excel merit list
 
 **Checkpoint**: P1 done. Test end to end on the real fixture set before going on.
 

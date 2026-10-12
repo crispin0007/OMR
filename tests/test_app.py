@@ -226,3 +226,39 @@ def test_designer_maps_a_sheet_and_saves_a_template(app, tmp_path, monkeypatch):
     saved = load(tmp_path / "templates" / "My sheet.json")
     result = read_page(scan(draw(t, marks), seed=6), saved)
     assert (result.roll_number, result.set_code, result.answers) == (roll, set_code, answers)
+
+
+def test_sections_and_a_short_key(app, tmp_path, monkeypatch):
+    from omr_app import sections
+
+    (path, answers, roll, set_code), = sheet_files(tmp_path, [4])
+    w = window(tmp_path)
+    c = w.check
+    c.read_files([path])
+    c.key_edit.setPlainText("".join(answers[q] or "A" for q in c.questions[:60]))  # only 60 questions in this paper
+    assert "60 of 100 questions counted" in c.key_status.text()
+    right = sum(1 for q in c.questions[:60] if answers[q])
+    assert c.table.item(0, 6).text() == str(right) and c.full_marks() == 60
+
+    def fill(dialog):
+        dialog.add()
+        dialog.table.item(0, 0).setText("Physics")
+        dialog.table.item(0, 2).setText("30")
+        dialog.table.item(0, 3).setText("4")
+        dialog.add()  # starts at 31
+        return dialog.table.item(1, 1).text() == "31" and dialog.accept() is None
+    monkeypatch.setattr(sections.SectionsDialog, "exec", fill)
+    c.edit_sections()
+    assert [s.name for s in w.store.exam(c.exam.id).sections] == ["Physics", "Section 2"]
+    physics = sum(1 for q in c.questions[:30] if answers[q])
+    assert c.table.item(0, 6).text() == str(4 * physics + right - physics)
+    assert c.full_marks() == 4 * 30 + 30
+    headers = [w.results.table.horizontalHeaderItem(i).text() for i in range(w.results.table.columnCount())]
+    assert headers[4:7] == ["Score", "Physics", "Section 2"]
+    assert w.results.table.item(0, 5).text() == str(4 * physics)
+
+    dialog = sections.SectionsDialog(c, [], c.questions, (1, 0, 0))
+    dialog.add()
+    dialog.table.item(0, 2).setText("120")
+    dialog.accept()
+    assert "100" in dialog.error.text() and dialog.result() == 0  # stays open, says why

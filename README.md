@@ -68,7 +68,10 @@ designer and Settings.
    what needs checking.
 3. Type the answer key in the box: one letter per question (`ABDCA…`), or one
    line per set (`A: ABDC…`). Scores appear as you type. Set marks for
-   correct, wrong (e.g. -0.25) and blank answers.
+   correct, wrong (e.g. -0.25) and blank answers. A key shorter than the
+   sheet counts only those questions. **Sections…** gives ranges of
+   questions their own name and marks (e.g. Physics 1 to 30, 4 right, -1
+   wrong); results then show a score per section.
 4. **Review** lists everything the reader wasn't sure about, unreadable
    pages and repeated roll numbers. Each item shows that part of the sheet;
    click the right answer or press its key (Delete for blank, Space to keep
@@ -77,7 +80,9 @@ designer and Settings.
    spread and recent batches. Click any of them to open those sheets.
    **Results** ranks every sheet with right, wrong and blank counts and its
    percentile, and exports a merit list to Excel (with every answer coloured
-   right or wrong) or one PDF scorecard per student.
+   right or wrong, and an item analysis: per question the share right, wrong
+   and blank, the most chosen wrong answer and how well it separates strong
+   from weak students) or one PDF scorecard per student.
 6. **Sheet designer** turns a scan of a sheet you already print into a
    template. Open a flat scan of the whole page (blank or filled, 150 to 300
    DPI), click the four corner marks, then drag a box around each block of
