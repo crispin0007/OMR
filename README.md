@@ -62,7 +62,7 @@ Templates live in `templates/`.
 omr
 ```
 
-The sidebar opens Dashboard, Exams, Sheet designer, Help and Settings. Until
+The sidebar opens Dashboard, Exams, Map printed sheet, Help and Settings. Until
 the first exam exists, Exams shows the steps below. **Help** (F1) repeats them
 with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
 
@@ -75,7 +75,7 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    logo and instructions. The last step shows a summary and the sheet, and
    **Create exam** makes the exam with its sheet ready to print. For a sheet
    you already print, pick **Use my own printed sheet** and its template
-   (see Sheet designer). Click an exam to open its page.
+   (see Map printed sheet). Click an exam to open its page.
    The tabs below are all on that page; **All exams** goes back to the list.
 2. **Scan** reads sheets as the scanner feeds them. Pick the scanner,
    resolution (200 DPI is right for most sheets) and whether to scan both
@@ -127,7 +127,8 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    **Dashboard** in the sidebar shows the open exam's sheets read, average
    score, sheets to check, the score spread and recent batches. Click any of
    them to open those sheets.
-6. **Sheet designer** maps a sheet you already print: it turns a scan of
+6. **Map printed sheet** maps a sheet you already print, and is only needed
+   for such sheets (New exam makes new ones): it turns a scan of
    an existing sheet into a template. Open a flat scan of the whole page (blank or filled, 150 to 300
    DPI), click the four corner marks, then drag a box around each block of
    bubbles. It finds the bubbles, guesses roll number, set code or questions

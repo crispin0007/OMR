@@ -518,7 +518,7 @@ class CheckPage(QWidget):
 
 
 class MainWindow(QMainWindow):
-    PAGES = ["Dashboard", "Exams", "Sheet designer", "Question Bank", "Syllabus", "Settings"]
+    PAGES = ["Dashboard", "Exams", "Map printed sheet", "Question Bank", "Syllabus", "Settings"]
     LATER = {"Question Bank": "Comes in phase 2", "Syllabus": "Comes in phase 3"}
 
     def __init__(self, db_path: str | Path | None = None):
@@ -556,7 +556,7 @@ class MainWindow(QMainWindow):
         self.designer = DesignerPage()
         self.settings = theme.SettingsPage(self.prefs)
         self.settings.changed.connect(self.apply_prefs)
-        self.pages = {"Dashboard": self.dashboard, "Exams": self.exams_area, "Sheet designer": self.designer,
+        self.pages = {"Dashboard": self.dashboard, "Exams": self.exams_area, "Map printed sheet": self.designer,
                       "Settings": self.settings}
 
         self.stack = QStackedWidget()
@@ -599,7 +599,8 @@ class MainWindow(QMainWindow):
 
         self.check.wanted.connect(lambda: self.go("Scanned sheets"))
         self.check.review_wanted.connect(lambda: self.go("Review"))
-        self.check.map_wanted.connect(lambda: self.go("Sheet designer"))
+        self.check.map_wanted.connect(lambda: self.go("Map printed sheet"))
+        self.designer.new_exam_wanted.connect(self.new_exam)
         self.check.changed.connect(self.exams.refresh)
         central = QWidget()
         layout = QHBoxLayout(central)
