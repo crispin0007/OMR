@@ -54,7 +54,8 @@ Templates live in `templates/`.
 omr
 ```
 
-The sidebar opens Dashboard, Exams, Check sheets, Review, Results and Settings.
+The sidebar opens Dashboard, Exams, Check sheets, Review, Results, Sheet
+designer and Settings.
 
 1. On **Exams**, **New exam…** asks for a name and the sheet template
    (`templates/test-100.json` by default). Double-click an exam to open it.
@@ -77,9 +78,17 @@ The sidebar opens Dashboard, Exams, Check sheets, Review, Results and Settings.
    **Results** ranks every sheet with right, wrong and blank counts and its
    percentile, and exports a merit list to Excel (with every answer coloured
    right or wrong) or one PDF scorecard per student.
-6. **Settings** picks Light, Dark or System theme, an accent colour, text size
+6. **Sheet designer** turns a scan of a sheet you already print into a
+   template. Open a flat scan of the whole page (blank or filled, 150 to 300
+   DPI), click the four corner marks, then drag a box around each block of
+   bubbles. It finds the bubbles, guesses roll number, set code or questions
+   and numbers them; fix anything on the right. **Test on this scan** reads
+   the scan with the new template, and **Save template…** puts it in
+   `%LOCALAPPDATA%\OMR\templates`, where **New exam…** looks first.
+   Sheets with a separate orientation mark are mapped without it.
+7. **Settings** picks Light, Dark or System theme, an accent colour, text size
    and density. The button at the bottom of the sidebar switches light and dark.
-7. **Save CSV…** writes every page's score and answers for Excel.
+8. **Save CSV…** writes every page's score and answers for Excel.
 
 Everything is saved as you work: each page as soon as it is read, and the key
 and marks as you type. Exams live in `%LOCALAPPDATA%\OMR\omr.db`; the app

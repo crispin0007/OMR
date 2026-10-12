@@ -21,6 +21,7 @@ from omr_core.students import Student
 
 from . import theme
 from .dashboard import DashboardPage, ResultsPage
+from .designer import DesignerPage
 from .exams import TEMPLATES, ExamsPage
 from .review import ReviewPage
 
@@ -345,7 +346,8 @@ class CheckPage(QWidget):
 
 
 class MainWindow(QMainWindow):
-    PAGES = ["Dashboard", "Exams", "Check sheets", "Review", "Results", "Question Bank", "Syllabus", "Settings"]
+    PAGES = ["Dashboard", "Exams", "Check sheets", "Review", "Results", "Sheet designer", "Question Bank", "Syllabus",
+             "Settings"]
     LATER = {"Question Bank": "Comes in phase 2", "Syllabus": "Comes in phase 3"}
 
     def __init__(self, db_path: str | Path | None = None):
@@ -363,10 +365,12 @@ class MainWindow(QMainWindow):
         self.dashboard = DashboardPage(self.check)
         self.results = ResultsPage(self.check)
         self.review = ReviewPage(self.check)
+        self.designer = DesignerPage()
         self.settings = theme.SettingsPage(self.prefs)
         self.settings.changed.connect(self.apply_prefs)
         self.pages = {"Dashboard": self.dashboard, "Exams": self.exams, "Check sheets": self.check,
-                      "Review": self.review, "Results": self.results, "Settings": self.settings}
+                      "Review": self.review, "Results": self.results,
+                      "Sheet designer": self.designer, "Settings": self.settings}
 
         self.stack = QStackedWidget()
         sidebar = QWidget(objectName="sidebar")

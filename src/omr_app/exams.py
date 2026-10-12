@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QStandardPaths, Qt, Signal
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
                                QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
@@ -11,6 +11,8 @@ from omr_core.students import read_students
 from omr_core.template import load
 
 TEMPLATES = Path(__file__).resolve().parents[2] / "templates"  # the repo's templates, in a source checkout
+# Templates made in the sheet designer: %LOCALAPPDATA%\OMR\templates on Windows, next to the database.
+USER_TEMPLATES = Path(QStandardPaths.writableLocation(QStandardPaths.GenericDataLocation)) / "OMR" / "templates"
 
 
 class NewExamDialog(QDialog):
@@ -37,7 +39,8 @@ class NewExamDialog(QDialog):
         self._show_template()
 
     def choose(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Choose template", str(TEMPLATES), "Templates (*.json)")
+        start = USER_TEMPLATES if USER_TEMPLATES.is_dir() and any(USER_TEMPLATES.glob("*.json")) else TEMPLATES
+        path, _ = QFileDialog.getOpenFileName(self, "Choose template", str(start), "Templates (*.json)")
         if path:
             self.template_path = path
             self._show_template()
