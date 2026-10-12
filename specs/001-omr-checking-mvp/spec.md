@@ -9,7 +9,8 @@
 **Input**: Phase 1 of the OMR Checker Management System plan: an offline
 Windows product that designs answer sheets, reads filled sheets live from an
 ADF scanner or from scanned PDFs, grades them against an answer key, and
-publishes results. It must be good enough to sell on its own.
+publishes results. Free and open source (Apache-2.0); it must be good
+enough for an institute to rely on it on its own.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -20,7 +21,7 @@ scanned filled sheets. They import the PDF, the system reads every sheet,
 grades it, and shows each student's score.
 
 **Why this priority**: This is the core job a buyer pays for. Everything else
-(live scanning, designer, licensing) builds on a reader and grader that work.
+(live scanning, designer, setup) builds on a reader and grader that work.
 
 **Independent Test**: Import a fixture PDF of 50 filled sheets for a known
 template and answer key; every score matches the hand-checked score.
@@ -182,26 +183,6 @@ show the matching names by roll number.
 2. **Given** an operator user, **When** they log in, **Then** they can scan and
    review but not change answer keys.
 
----
-
-### User Story 8 - Activate an offline licence (Priority: P3)
-
-A buyer installs the app; it runs as a trial (limited days or sheet count,
-watermarked reports). To activate, the app shows a request code; the seller
-returns a signed licence file; the app checks it locally on every start.
-
-**Why this priority**: Required to sell, but not to prove the reader works.
-
-**Independent Test**: A licence signed for this machine activates the app
-offline; the same file on another machine, or an edited file, is rejected.
-
-**Acceptance Scenarios**:
-
-1. **Given** a licence file signed for another machine ID, **When** loaded,
-   **Then** it is rejected with a clear message.
-2. **Given** a trial past its limit, **When** the user grades sheets, **Then**
-   results are still viewable but exports are watermarked.
-
 ### Edge Cases
 
 - A sheet whose registration marks are torn, folded or covered: flagged as
@@ -256,12 +237,10 @@ offline; the same file on another machine, or an edited file, is rejected.
   and design a new sheet from blocks, both saving the same template format.
 - **FR-017**: System MUST import students from Excel and support users with
   admin, teacher and operator roles.
-- **FR-018**: System MUST run as a trial until activated with a licence file
-  signed for the PC's machine ID, verified locally on every start.
-- **FR-019**: Numerical answers and matrix match questions are [NEEDS
+- **FR-018**: Numerical answers and matrix match questions are [NEEDS
   CLARIFICATION: in the plan's feature list for phase 1, but neither sample
   sheet uses them; include in phase 1 or move to phase 2?]
-- **FR-020**: Interface language is [NEEDS CLARIFICATION: English only, or
+- **FR-019**: Interface language is [NEEDS CLARIFICATION: English only, or
   also Nepali or Hindi for reports?]
 
 ### Key Entities
@@ -283,7 +262,6 @@ offline; the same file on another machine, or an edited file, is rejected.
   corrected flag.
 - **Result**: score, rank, percentile per student per exam.
 - **AuditLog**: who changed what, when, before and after.
-- **Licence**: edition, machine ID, expiry, sheet quota, signature.
 
 ## Success Criteria *(mandatory)*
 

@@ -7,9 +7,9 @@ reviews check against this file; where they disagree, this file wins.
 
 ### I. Offline First (NON-NEGOTIABLE)
 
-The product is sold to schools, colleges, coaching centres and exam bodies
-that may have no reliable internet. Every Phase 1 feature, including licence
-activation, must work on a Windows PC with the network unplugged. Online
+The software is used by schools, colleges, coaching centres and exam bodies
+that may have no reliable internet. Every Phase 1 feature must work on a
+Windows PC with the network unplugged. Online
 features (update checks, SMS and email alerts) are optional extras that fail
 quietly and never block a workflow.
 
@@ -49,8 +49,8 @@ that lowers accuracy on that set does not merge. Hardware calibration
 Write only what the task needs, and finish all of it. No abstraction, option,
 config or "for later" code nobody asked for; prefer the standard library and
 already-installed dependencies; never add a dependency for a few lines. Never
-cut validation at trust boundaries (scanned input, imported files, licence
-files), error handling that prevents data loss, security, or accessibility.
+cut validation at trust boundaries (scanned input, imported files,
+templates), error handling that prevents data loss, security, or accessibility.
 See `AGENTS.md` for the working rules.
 
 ## Product Constraints
@@ -58,10 +58,12 @@ See `AGENTS.md` for the working rules.
 - **Platform:** Windows 10 and 11, 64-bit. Python 3.11+, PySide6 for the
   desktop shell, OpenCV and NumPy for reading, pytwain (WIA fallback) for
   scanners, pypdfium2 for PDF import, SQLite for storage.
-- **Licences of dependencies:** the product is closed source and sold, so
-  every dependency must allow that. No GPL or AGPL libraries (for example
-  PyMuPDF) in shipped code. PySide6 is used under LGPL with normal dynamic
-  linking.
+- **Open source:** the project is free and open source under the Apache
+  License 2.0. Every dependency in the shipped app must be compatible with
+  it: no GPL or AGPL libraries (for example PyMuPDF). PySide6 is used under
+  LGPL with normal dynamic linking.
+- **Clean room:** no code, sheet layouts or assets copied from closed
+  products (such as Addmen) or from projects under incompatible licences.
 - **Data stays local:** student data never leaves the PC or the institute's
   local network unless the user sends it.
 - **No data loss:** a crash, a paper jam or a power cut mid-scan must not lose
@@ -83,4 +85,4 @@ needs a pull request that states the change, the reason, and what existing
 specs or code must change with it. Versioning: MAJOR for a removed or
 redefined principle, MINOR for a new principle or section, PATCH for wording.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-12 | **Last Amended**: 2026-10-12
+**Version**: 1.1.0 | **Ratified**: 2026-10-12 | **Last Amended**: 2026-10-12

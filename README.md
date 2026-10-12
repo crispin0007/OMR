@@ -1,6 +1,6 @@
 # OMR
 
-An offline Windows product for checking OMR answer sheets: design or map a
+Free, open-source, offline Windows software for checking OMR answer sheets: design or map a
 sheet, read filled sheets live from an ADF scanner or from scanned PDFs,
 grade them against an answer key, and publish results. A question bank and a
 syllabus maker follow in later phases.
@@ -37,3 +37,14 @@ omr                             # start the desktop app
 
 The `app` extra pulls in PySide6, and pytwain on Windows for live scanning.
 `omr_core` installs and tests on any OS without it.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Licence
+
+[Apache License 2.0](LICENSE). We picked it because it is permissive (anyone,
+including schools and companies, can use, change and redistribute the
+software) and it includes an explicit patent grant, which protects users and
+contributors.

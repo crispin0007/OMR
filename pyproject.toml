@@ -3,6 +3,7 @@ name = "omr"
 version = "0.1.0"
 description = "Offline OMR checking for schools, colleges and exam bodies"
 readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.26",

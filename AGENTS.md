@@ -26,13 +26,13 @@ Take the first option that fully works:
 - No abstraction, option, config or "for later" code nobody asked for.
 - Comment only the why the code cannot show. A known shortcut gets
   `# shortcut: <the limit>, <when to upgrade>`.
-- New non-trivial logic (a branch, a loop, a parser, grading, licensing)
+- New non-trivial logic (a branch, a loop, a parser, grading)
   ships with a small test.
 
 ## Never cut
 
 - Validation of anything from outside: scanned pages, imported PDFs and
-  Excel files, licence files, templates.
+  Excel files, templates.
 - Error handling that prevents losing scanned pages or graded results.
 - Scanner calibration: DPI, thresholds, dropout colour.
 - Flagging for review: the engine never guesses a mark.
@@ -43,7 +43,19 @@ Take the first option that fully works:
   Windows-only modules.
 - Every page source (ADF, PDF, image, watched folder) hands a page image to
   the same pipeline; nothing downstream knows where it came from.
-- Dependencies must allow closed-source sale: no GPL or AGPL in shipped code.
+- Dependencies must be compatible with Apache-2.0: no GPL or AGPL in the
+  shipped app. Check the licence before adding one.
+
+## Clean room
+
+- Never copy code, sheet layouts, templates, images or text from closed
+  products (Addmen or any other OMR software), from their manuals or
+  decompiled binaries, or from projects whose licence is not compatible
+  with Apache-2.0.
+- You may study how other tools behave and read public papers, then write
+  your own code from that understanding. If you read a GPL project's source,
+  don't write the matching part here from memory of it.
+- Test sheets and fixtures must be ours or used with written permission.
 
 ## Checks
 
