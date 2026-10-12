@@ -60,7 +60,13 @@ def test_opens_a_database_from_before_sections(tmp_path):
     old.commit()
     old.close()
     e = Store(db).exam(1)
-    assert (e.name, e.answer_key, e.sections) == ("Old", "ABCD", [])
+    assert (e.name, e.answer_key, e.sections, e.details) == ("Old", "ABCD", [], {})
+
+
+def test_exam_details_are_kept(tmp_path):
+    s = Store(tmp_path / "omr.db")
+    exam = s.create_exam("Mock", TEMPLATE, {"class": "10A", "date": "2026-10-20", "time": "10:00", "minutes": 90})
+    assert Store(tmp_path / "omr.db").exam(exam).details["class"] == "10A"
 
 
 def test_refuses_bad_exams(tmp_path):

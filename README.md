@@ -57,8 +57,16 @@ omr
 
 The sidebar opens Dashboard, Exams, Sheet designer and Settings.
 
-1. On **Exams**, **New exam…** asks for a name and the sheet template
-   (`templates/test-100.json` by default). Click an exam to open its page.
+1. On **Exams**, **New exam…** sets up the exam step by step: its name,
+   class, date, time and duration; its subjects or sections and the
+   question numbers each covers; options per question (2 to 8, or true or
+   false), roll number digits and question paper sets; marks for right,
+   wrong (negative marking) and blank answers, per section, with partial
+   marking for multi-correct questions; and the sheet's colour, heading,
+   logo and instructions. The last step shows a summary and the sheet, and
+   **Create exam** makes the exam with its sheet ready to print. For a sheet
+   you already print, pick **Use my own printed sheet** and its template
+   (see Sheet designer). Click an exam to open its page.
    The tabs below are all on that page; **All exams** goes back to the list.
 2. **Scan** reads sheets as the scanner feeds them. Pick the scanner,
    resolution (200 DPI is right for most sheets) and whether to scan both
@@ -91,26 +99,19 @@ The sidebar opens Dashboard, Exams, Sheet designer and Settings.
    right or wrong, and an item analysis: per question the share right, wrong
    and blank, the most chosen wrong answer and how well it separates strong
    from weak students) or one PDF scorecard per student. **Print sheet**
-   saves the exam's sheet as a PDF when it was made on New sheet.
+   saves the exam's sheet as a PDF to print at actual size.
    **Exam settings** renames or deletes the exam.
    **Dashboard** in the sidebar shows the open exam's sheets read, average
    score, sheets to check, the score spread and recent batches. Click any of
    them to open those sheets.
-6. **Sheet designer** has two tabs. **New sheet** makes a sheet for you:
-   choose the number of questions, options per question, roll number
-   digits, question paper sets and, if you want, sections with their own
-   marks. Choose the print colour, the heading, a logo and the instructions
-   too; the sheet reads the same in any colour. The preview updates as you
-   choose. **Save template** makes it
-   available in **New exam…** (an exam made with it starts with its
-   sections and marks), and **Save PDF to print…** gives the sheet to print
-   at actual size. **Map a sheet you already print** turns a scan of an
-   existing sheet into a template. Open a flat scan of the whole page (blank or filled, 150 to 300
+6. **Sheet designer** maps a sheet you already print: it turns a scan of
+   an existing sheet into a template. Open a flat scan of the whole page (blank or filled, 150 to 300
    DPI), click the four corner marks, then drag a box around each block of
    bubbles. It finds the bubbles, guesses roll number, set code or questions
    and numbers them; fix anything on the right. **Test on this scan** reads
    the scan with the new template, and **Save template…** puts it in
-   `%LOCALAPPDATA%\OMR\templates`, where **New exam…** looks first.
+   `%LOCALAPPDATA%\OMR\templates`, where **Use my own printed sheet** looks
+   first.
    Sheets with a separate orientation mark are mapped without it.
    If the sheet prints the roll number as a barcode or QR code, click
    **Box the barcode next** and box it. On a sheet with no roll number

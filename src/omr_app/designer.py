@@ -22,7 +22,7 @@ from omr_core.sources import read_pages
 from omr_core.template import parse
 
 from .dashboard import card
-from .exams import USER_TEMPLATES
+from .new_exam import USER_TEMPLATES
 from .theme import tokens
 
 PAGES = {"A4 (210 × 297 mm)": (210.0, 297.0), "Letter (216 × 279 mm)": (215.9, 279.4)}
@@ -217,7 +217,7 @@ class DesignerPage(QWidget):
     def _say(self):
         if self.gray is None:
             self.step.setText("1. Open a flat scan of a sheet you already print (blank or filled), the whole page, "
-                              "at 150 to 300 DPI. To make a new sheet instead, use the New sheet tab.")
+                              "at 150 to 300 DPI. To make a new sheet instead, start a New exam.")
         elif len(self.marks) < 4:
             self.step.setText(f"2. Click the {CORNERS[len(self.marks)]} corner mark ({len(self.marks)} of 4 done).")
         else:
@@ -235,8 +235,8 @@ class DesignerPage(QWidget):
         found = marker_at(self.gray, x, y, self.px_per_mm)
         if found is None:
             self.error.setText("No corner mark found there. Click on the black square or ring in the corner itself. "
-                               "Sheets without such corner marks can't be mapped; make a new sheet on the New sheet "
-                               "tab instead.")
+                               "Sheets without such corner marks can't be mapped; let New exam make a sheet "
+                               "instead.")
             return
         self.error.clear()
         self.marks.append(found)

@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS exam (
     wrong REAL NOT NULL DEFAULT 0,
     blank REAL NOT NULL DEFAULT 0,
     created TEXT NOT NULL,
-    sections TEXT NOT NULL DEFAULT '[]'  -- JSON [Section, ...]
+    sections TEXT NOT NULL DEFAULT '[]',  -- JSON [Section, ...]
+    details TEXT NOT NULL DEFAULT '{}'    -- JSON {"class", "date", "time", "minutes"}, from New exam
 );
 CREATE TABLE IF NOT EXISTS page (
     id INTEGER PRIMARY KEY,
@@ -77,6 +78,7 @@ class Exam:
     blank: float
     created: str
     sections: list[Section]
+    details: dict
 
 
 @dataclass
@@ -98,14 +100,15 @@ class Store:
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.executescript(SCHEMA)
         columns = [r[1] for r in self.db.execute("PRAGMA table_info(exam)")]
-        if "sections" not in columns:  # a database from before sections
-            with self.db:
-                self.db.execute("ALTER TABLE exam ADD COLUMN sections TEXT NOT NULL DEFAULT '[]'")
+        for column, default in (("sections", "[]"), ("details", "{}")):  # a database from before them
+            if column not in columns:
+                with self.db:
+                    self.db.execute(f"ALTER TABLE exam ADD COLUMN {column} TEXT NOT NULL DEFAULT '{default}'")
 
     def close(self):
         self.db.close()
 
-    def create_exam(self, name: str, template_json: str) -> int:
+    def create_exam(self, name: str, template_json: str, details: dict | None = None) -> int:
         name = name.strip()
         if not name:
             raise ValueError("the exam needs a name")
@@ -115,9 +118,10 @@ class Store:
         sections = sections_from_json(d.get("sections", []))
         check_sections(sections, sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows)))
         with self.db:
-            cur = self.db.execute("INSERT INTO exam (name, template, created, sections) VALUES (?, ?, ?, ?)",
+            cur = self.db.execute("INSERT INTO exam (name, template, created, sections, details) "
+                                  "VALUES (?, ?, ?, ?, ?)",
                                   (name, template_json, datetime.now().isoformat(timespec="seconds"),
-                                   json.dumps(sections_to_json(sections))))
+                                   json.dumps(sections_to_json(sections)), json.dumps(details or {})))
         return cur.lastrowid
 
     def exams(self) -> list[tuple[int, str, str, int, int]]:
@@ -127,11 +131,12 @@ class Store:
             "(SELECT COUNT(*) FROM student s WHERE s.exam_id = e.id) FROM exam e ORDER BY e.id DESC").fetchall()
 
     def exam(self, exam_id: int) -> Exam:
-        row = self.db.execute("SELECT id, name, template, answer_key, correct, wrong, blank, created, sections "
-                              "FROM exam WHERE id = ?", (exam_id,)).fetchone()
+        row = self.db.execute("SELECT id, name, template, answer_key, correct, wrong, blank, created, sections, "
+                              "details FROM exam WHERE id = ?", (exam_id,)).fetchone()
         if row is None:
             raise KeyError(exam_id)
-        return Exam(row[0], row[1], parse(json.loads(row[2])), *row[2:8], sections_from_json(json.loads(row[8])))
+        return Exam(row[0], row[1], parse(json.loads(row[2])), *row[2:8], sections_from_json(json.loads(row[8])),
+                    json.loads(row[9]))
 
     def save_scheme(self, exam_id: int, answer_key: str, correct: float, wrong: float, blank: float):
         with self.db:

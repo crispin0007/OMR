@@ -7,6 +7,8 @@ Sheets reach grading after review, so every answer here is already decided.
 
 Sections give a range of questions its own marks, e.g. 4 right and -1 wrong
 for Physics 1 to 50; questions outside every section use the exam's marks.
+A section with partial marking gives part of the correct marks to an answer
+that picks some of a multi-correct question's options and no wrong one.
 """
 
 from dataclasses import asdict, dataclass
@@ -22,6 +24,7 @@ class Section:
     correct: float
     wrong: float
     blank: float = 0.0
+    partial: bool = False  # part marks for some but not all of a multi-correct answer
 
 
 def check_sections(sections: list[Section], questions: list[int]) -> None:
@@ -51,39 +54,48 @@ def sections_from_json(data: list[dict]) -> list[Section]:
     """Sections from stored or template JSON. Raises ValueError for anything that isn't a section."""
     try:
         return [Section(str(d["name"]), int(d["first"]), int(d["last"]), float(d["correct"]), float(d["wrong"]),
-                        float(d.get("blank", 0))) for d in data]
+                        float(d.get("blank", 0)), bool(d.get("partial", False))) for d in data]
     except (KeyError, TypeError, ValueError) as e:
         raise ValueError(f"sections need a name, first and last question, and correct and wrong marks ({e})") from e
 
 
 def marks_for(questions: list[int], correct: float, wrong: float, blank: float,
-              sections: list[Section] = ()) -> list[tuple[float, float, float]]:
-    """(correct, wrong, blank) marks for each question, from its section or the exam's marks."""
+              sections: list[Section] = ()) -> list[tuple[float, float, float, bool]]:
+    """(correct, wrong, blank, partial) marks for each question, from its section or the exam's marks."""
     out = []
     for q in questions:
         s = next((s for s in sections if s.first <= q <= s.last), None)
-        out.append((s.correct, s.wrong, s.blank) if s else (correct, wrong, blank))
+        out.append((s.correct, s.wrong, s.blank, s.partial) if s else (correct, wrong, blank, False))
     return out
 
 
 def score(answers: list[str], key: list[str], correct: float = 1.0, wrong: float = 0.0, blank: float = 0.0,
-          marks: list[tuple[float, float, float]] | None = None) -> float:
+          marks: list[tuple] | None = None) -> float:
     """Total marks for one sheet. `wrong` is negative for negative marking, e.g. -1.
 
-    `marks` gives each question its own (correct, wrong, blank), from `marks_for`.
+    `marks` gives each question its own (correct, wrong, blank, partial), from `marks_for`.
     """
     if len(answers) != len(key):
         raise ValueError(f"sheet has {len(answers)} answers but key has {len(key)}")
     marks = marks or [(correct, wrong, blank)] * len(key)
     total = 0.0
-    for answer, right, (c, w, b) in zip(answers, key, marks):
+    for answer, right, (c, w, b, *partial) in zip(answers, key, marks):
+        if partial and partial[0] and _part_right(answer, right):
+            # shortcut: counted as wrong in right/wrong/blank counts and colours; only the marks are partial
+            total += c * len(set(answer)) / len(set(right))
+            continue
         total += {"right": c, "wrong": w, "blank": b, "dropped": 0.0}[status(answer, right)]
     return total
 
 
-def full_marks(key: list[str], marks: list[tuple[float, float, float]]) -> float:
+def _part_right(answer: str, right: str) -> bool:
+    """Some, but not all, of a multi-correct question's options, and no wrong one."""
+    return right not in (BONUS, DROPPED) and bool(answer) and set(answer) < set(right)
+
+
+def full_marks(key: list[str], marks: list[tuple]) -> float:
     """The most a sheet can score: every counted question right."""
-    return sum(c for k, (c, _, _) in zip(key, marks) if k != DROPPED)
+    return sum(m[0] for k, m in zip(key, marks) if k != DROPPED)
 
 
 def status(answer: str, right: str) -> str:
