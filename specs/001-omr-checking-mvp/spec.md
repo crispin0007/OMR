@@ -289,6 +289,7 @@ show the matching names by roll number.
 - Per-topic analytics, SMS and email alerts, ICR and OCR are later phases.
 - A flat 200 DPI scan of a blank sample sheet and 10 to 20 filled ones will be
   provided to build the first template and fixture set.
-- Live TWAIN scanning from Python is the main technical risk; if pytwain
-  cannot deliver pages one by one on real scanners, a small C# helper feeds
-  pages to the app and nothing else changes.
+- Live scanning from Python is the main technical risk. It uses WIA, built
+  into Windows (pytwain is GPL-2.0 and can't ship). If a scanner's WIA driver
+  can't deliver pages one by one, its own software saves into a watched
+  folder and nothing else changes.

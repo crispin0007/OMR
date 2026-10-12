@@ -15,7 +15,7 @@ task before it.
 - [x] T003 Template JSON format and validation in `src/omr_core/template.py`, with a template for a 100 question test sheet
 - [x] T004 [P] Generated test sheets in `tests/sheets.py` (fills, skew, noise, 180 degree rotation)
 - [x] T005 SQLite store in `src/omr_core/store.py`: exams, pages with images, one commit per page (audit log comes with T013)
-- [ ] T006 [P] Spike: pytwain page-by-page transfer on 2 to 3 real ADF scanners; record results in `specs/001-omr-checking-mvp/research.md`
+- [ ] T006 [P] Try WIA page-by-page transfer on 2 to 3 real ADF scanners; record results in `specs/001-omr-checking-mvp/research.md`
 
 ## Phase 3: US1 Grade a stack of scanned sheets (P1) 🎯 MVP
 
@@ -46,10 +46,10 @@ task before it.
 
 ## Phase 6: US4 Live ADF scanning (P2)
 
-- [ ] T019 [US4] Scanner profiles and live run in `src/omr_app/scanner.py`, using the T006 spike
-- [ ] T020 [US4] Worker processes reading from the page queue; live counters and latest sheet
-- [ ] T021 [US4] Jam and double feed pause, blank back sides skipped, crash recovery test
-- [ ] T022 [P] [US4] Watched folder source
+- [x] T019 [US4] Scanner settings (remembered) and live run in `src/omr_app/scanner.py` and `scan.py`, through WIA
+- [x] T020 [US4] Live counters and latest sheet (pages read on the UI thread as they arrive; worker processes only if real scanners outrun it)
+- [x] T021 [US4] Jam and double feed stop the run, blank back sides skipped, every page committed as it arrives
+- [x] T022 [P] [US4] Watched folder source
 
 ## Phase 7: US5 Map an existing sheet (P2)
 

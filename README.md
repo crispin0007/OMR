@@ -54,8 +54,8 @@ Templates live in `templates/`.
 omr
 ```
 
-The sidebar opens Dashboard, Exams, Check sheets, Review, Results, Sheet
-designer and Settings.
+The sidebar opens Dashboard, Exams, Check sheets, Scan, Review, Results,
+Sheet designer and Settings.
 
 1. On **Exams**, **New exam…** asks for a name and the sheet template
    (`templates/test-100.json` by default). Double-click an exam to open it.
@@ -76,7 +76,7 @@ designer and Settings.
    pages and repeated roll numbers. Each item shows that part of the sheet;
    click the right answer or press its key (Delete for blank, Space to keep
    the reading). Scores update at once and every change is logged.
-5. **Dashboard** shows sheets read, average score, sheets to check, the score
+6. **Dashboard** shows sheets read, average score, sheets to check, the score
    spread and recent batches. Click any of them to open those sheets.
    **Results** ranks every sheet with right, wrong and blank counts and its
    percentile, and exports a merit list to Excel (with every answer coloured
@@ -97,7 +97,7 @@ designer and Settings.
    disagree goes to Review.
 7. **Settings** picks Light, Dark or System theme, an accent colour, text size
    and density. The button at the bottom of the sidebar switches light and dark.
-8. **Save CSV…** writes every page's score and answers for Excel.
+9. **Save CSV…** writes every page's score and answers for Excel.
 
 Everything is saved as you work: each page as soon as it is read, and the key
 and marks as you type. Exams live in `%LOCALAPPDATA%\OMR\omr.db`; the app

@@ -56,8 +56,8 @@ See `AGENTS.md` for the working rules.
 ## Product Constraints
 
 - **Platform:** Windows 10 and 11, 64-bit. Python 3.11+, PySide6 for the
-  desktop shell, OpenCV and NumPy for reading, pytwain (WIA fallback) for
-  scanners, pypdfium2 for PDF import, SQLite for storage.
+  desktop shell, OpenCV and NumPy for reading, WIA (built into Windows) for
+  scanners, with a watched folder for scanners without a WIA driver, pypdfium2 for PDF import, SQLite for storage.
 - **Open source:** the project is free and open source under the Apache
   License 2.0. Every dependency in the shipped app must be compatible with
   it: no GPL or AGPL libraries (for example PyMuPDF). PySide6 is used under

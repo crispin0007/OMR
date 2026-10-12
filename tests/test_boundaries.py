@@ -1,7 +1,7 @@
 import subprocess
 import sys
 
-UI_MODULES = ("PySide6", "pytwain", "win32api")
+UI_MODULES = ("PySide6", "pytwain", "win32api", "win32com", "pythoncom")
 
 # A fresh interpreter, because other tests (the app's) import PySide6 into this one.
 CHECK = f"""

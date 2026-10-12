@@ -1,6 +1,7 @@
 import os
 
 import cv2
+import numpy as np
 import pytest
 
 pytest.importorskip("PySide6")
@@ -9,7 +10,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QRectF, QSettings  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from omr_app import designer, theme  # noqa: E402
+from omr_app import designer, scanner, theme  # noqa: E402
+from omr_app.scan import FOLDER  # noqa: E402
 from omr_app.window import TEMPLATES, MainWindow  # noqa: E402
 from omr_core.reader import SCALE, read_page  # noqa: E402
 from omr_core.template import load, parse  # noqa: E402
@@ -228,27 +230,68 @@ def test_designer_maps_a_sheet_and_saves_a_template(app, tmp_path, monkeypatch):
     assert (result.roll_number, result.set_code, result.answers) == (roll, set_code, answers)
 
 
-def test_designer_maps_a_barcode(app, tmp_path):
-    import json
-    d = json.loads((TEMPLATES / "test-100.json").read_text(encoding="utf-8"))
-    d["barcode_mm"] = [140, 55, 55, 18]
-    t = parse(d)
-    marks, answers, roll, set_code = random_marks(t, 8)
-    path = tmp_path / "filled.png"
-    cv2.imwrite(str(path), scan(draw(t, marks, barcode="2026-0042"), seed=8))
+class FakeScanner:
+    name = "Test scanner"
+
+    def __init__(self, pages, problem=""):
+        self.pages_, self.problem = pages, problem
+
+    def pages(self, dpi, duplex):
+        assert (dpi, duplex) == (200, True)
+        yield from self.pages_
+        if self.problem:
+            raise scanner.ScanStopped(self.problem)
+
+
+def run_scan(app, page):
+    page.start()
+    page.thread.wait()
+    for _ in range(5):
+        app.processEvents()
+
+
+def test_scanning_reads_each_page_and_stops_on_a_jam(app, tmp_path, monkeypatch):
+    t = load(TEMPLATES / "test-100.json")
+    fronts = [random_marks(t, seed) for seed in (1, 2, 3)]
+    back = np.full((2339, 1654, 3), 240, np.uint8)
+    pages = [p for m in fronts[:2] for p in (scan(draw(t, m[0]), seed=1), back)]
+    monkeypatch.setattr(scanner, "scanners", lambda: [FakeScanner(pages, "Paper jam")])
     w = window(tmp_path)
-    page = w.designer
-    page.load_scan(str(path))
-    s = page.gray.shape[1] / t.page[0]
-    for x, y in t.markers:
-        page.mark_clicked(x * s, y * s)
-    for g in t.grids:
-        if g.kind != "roll_number":
-            (x0, y0), (x1, y1) = g.centre(0, 0), g.centre(g.rows - 1, g.cols - 1)
-            page.canvas.boxed.emit(QRectF((x0 - 4) * SCALE, (y0 - 4) * SCALE, (x1 - x0 + 8) * SCALE,
-                                          (y1 - y0 + 8) * SCALE))
-    page.barcode_button.setChecked(True)
-    page.canvas.boxed.emit(QRectF(137 * SCALE, 52 * SCALE, 61 * SCALE, 24 * SCALE))
-    assert page.template_dict()["barcode_mm"] == [137, 52, 61, 24]
-    page.test_read()
-    assert f"roll number 2026-0042, set {set_code}" in page.test_result.text()
+    s = w.scan
+    s.find_scanners()
+    assert s.source.currentText() == "Test scanner"
+    s.duplex.setChecked(True)
+    run_scan(app, s)
+    assert s.thread is None and "Paper jam" in s.status.text() and fronts[1][2] in s.status.text()
+    assert (s.scanned.value.text(), s.read.value.text(), s.skipped.value.text()) == ("4", "2", "2")
+    assert [p.result.roll_number for p in w.store.pages(w.check.exam.id)] == [fronts[0][2], fronts[1][2]]
+    assert fronts[1][2] in s.latest_text.text()
+
+    # The operator clears the jam and feeds the rest.
+    monkeypatch.setattr(scanner, "scanners", lambda: [FakeScanner([scan(draw(t, fronts[2][0]))])])
+    s.find_scanners()
+    run_scan(app, s)
+    assert s.status.text().startswith("Feeder empty") and len(w.store.pages(w.check.exam.id)) == 3
+
+
+def test_scanning_from_a_folder(app, tmp_path, monkeypatch):
+    monkeypatch.setattr(scanner, "scanners", lambda: [])
+    folder = tmp_path / "scans"
+    folder.mkdir()
+    files = sheet_files(folder, [5, 6])
+    (folder / "broken.png").write_bytes(b"not an image")
+    w = window(tmp_path)
+    s = w.scan
+    s.find_scanners()
+    assert s.source.currentText() == FOLDER and "No scanner found" in s.status.text()
+    s.folder.setText(str(folder))
+    s.start()
+    s.poll_folder()  # sizes noted, nothing read yet
+    assert s.read.value.text() == "0"
+    s.poll_folder()
+    assert s.read.value.text() == "2" and "broken.png" in s.status.text()
+    s.poll_folder()  # nothing read twice, the broken file isn't retried
+    assert len(w.store.pages(w.check.exam.id)) == 2
+    assert sorted(p.result.roll_number for p in w.store.pages(w.check.exam.id)) == sorted(f[2] for f in files)
+    s.stop()
+    assert not s.running
