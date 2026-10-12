@@ -16,8 +16,8 @@ then the designer and student setup (P3). Grading is already in
 
 **Primary Dependencies**: OpenCV (headless) and NumPy for reading;
 pypdfium2 for PDF pages; zxing-cpp for barcodes and QR; SQLAlchemy Core for
-storage; openpyxl and ReportLab for exports; PySide6 for the app; pytwain on
-Windows for live scanning.
+storage; openpyxl and ReportLab for exports; PySide6 for the app; WIA through pywin32 on
+Windows for live scanning (pytwain is GPL-2.0, so it can't ship).
 
 **Storage**: SQLite file per install (`%LOCALAPPDATA%\OMR\omr.db`), WAL mode,
 one commit per graded page, aligned page images stored as PNG in the same
@@ -75,7 +75,7 @@ src/omr_core/
 
 src/omr_app/
 ├── __main__.py     # main window, exam list
-├── scanner.py      # pytwain live ADF, page by page
+├── scanner.py      # WIA live ADF, page by page
 ├── review.py       # review queue on the sheet image
 └── designer.py     # map existing sheets, design new ones
 
@@ -118,12 +118,13 @@ flags, confidence), which `grading.score` already accepts.
 
 ### Live scanning
 
-pytwain in native transfer mode, one page per callback, pushed onto a queue
-read by worker processes. Each page is saved and committed before the next
-UI update. Jams and double feeds come back as TWAIN errors and pause the run.
-First task is a spike on two or three real scanners; if pytwain cannot give
-pages one by one, a small C# helper writes pages to a watched folder and the
-watched-folder source takes over.
+WIA through pywin32 (pytwain was the first choice but is GPL-2.0, which an
+Apache-2.0 app can't ship). A scan thread transfers one page at a time from
+the feeder; the UI thread reads and commits each page as it arrives. Jams,
+double feeds and other WIA errors stop the run with every earlier page saved.
+Blank backs in a duplex run are skipped. Scanners without a WIA driver use
+their own software to save into a folder, which the watched-folder source
+reads as each file finishes. Still to confirm on real scanners (T006).
 
 ### Generated test sheets
 
@@ -133,8 +134,8 @@ answers, so reader tests run in CI before any real scans exist.
 
 ## Risks
 
-- **pytwain page-by-page transfer** on real drivers (spike first, C# helper
-  fallback).
+- **WIA page-by-page transfer** on real drivers (T006); the watched folder
+  covers any scanner whose driver misbehaves.
 - **Accuracy on real sheets** is unknown until sample scans arrive.
 - **Nuitka build size and antivirus false positives**: test a build
   early in phase 1, not at the end.

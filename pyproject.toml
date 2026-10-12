@@ -16,7 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 app = [
     "PySide6>=6.7",
-    "pytwain>=2.2; sys_platform == 'win32'",
+    "pywin32>=306; sys_platform == 'win32'",
 ]
 dev = ["pytest>=8"]
 

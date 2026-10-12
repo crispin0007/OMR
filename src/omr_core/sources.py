@@ -39,3 +39,31 @@ def read_pages(path: str | Path) -> Iterator[np.ndarray]:
         yield from pages
     else:
         raise ValueError(f"{path.name}: unsupported file type {ext or '(none)'}")
+
+
+def is_blank(page: np.ndarray, ink_share: float = 0.003) -> bool:
+    """True for a page with almost no ink, such as the empty back of a sheet in a duplex scan.
+
+    A printed answer sheet has registration marks and bubble outlines, far more than 0.3% ink.
+    """
+    gray = cv2.cvtColor(page, cv2.COLOR_BGR2GRAY) if page.ndim == 3 else page
+    small = cv2.resize(gray, (0, 0), fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
+    paper = float(np.percentile(small, 90))
+    return float((small < paper - 80).mean()) < ink_share
+
+
+def ready_files(folder: str | Path, known: set[str], sizes: dict[str, int]) -> list[Path]:
+    """New scan files in a folder that the scanner has finished writing, oldest first.
+
+    A file counts as finished when its size is the same as at the previous call, so call this
+    on a timer and pass the same `sizes` each time. `known` holds files already read.
+    """
+    out = []
+    for path in sorted(Path(folder).iterdir(), key=lambda p: p.stat().st_mtime):
+        if path.suffix.lower() not in IMAGE_TYPES | {".pdf"} or str(path) in known or not path.is_file():
+            continue
+        size = path.stat().st_size
+        if size and sizes.get(str(path)) == size:
+            out.append(path)
+        sizes[str(path)] = size
+    return out

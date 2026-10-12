@@ -24,6 +24,7 @@ from .dashboard import DashboardPage, ResultsPage
 from .designer import DesignerPage
 from .exams import TEMPLATES, ExamsPage
 from .review import ReviewPage
+from .scan import ScanPage
 
 COLUMNS = ["File", "Page", "Roll number", "Name", "Set", "Answered", "Score", "Review"]
 
@@ -216,14 +217,7 @@ class CheckPage(QWidget):
                     QApplication.processEvents()
                     if progress.wasCanceled():
                         break
-                    try:
-                        result, problem = read_page(page, self.exam.template), ""
-                    except UnreadablePage as e:
-                        result, problem = None, f"unreadable: {e}"
-                    stored = self.store.add_page(self.exam.id, batch, path, n, result, problem)
-                    if stored.result:
-                        stored.result.aligned = None  # the image is in the store; don't keep every page in memory
-                    self.sheets.append(stored)
+                    self.read_image(page, batch, path, n)
             except (OSError, ValueError) as e:
                 failed.append(f"{name}: {e}")
             if progress.wasCanceled():
@@ -233,6 +227,18 @@ class CheckPage(QWidget):
         self._enable()
         if failed:
             QMessageBox.warning(self, "Some files weren't read", "\n".join(failed))
+
+    def read_image(self, page, batch: str, file: str, n: int) -> StoredPage:
+        """Read one page image and save it at once; the caller refreshes the table."""
+        try:
+            result, problem = read_page(page, self.exam.template), ""
+        except UnreadablePage as e:
+            result, problem = None, f"unreadable: {e}"
+        stored = self.store.add_page(self.exam.id, batch, file, n, result, problem)
+        if stored.result:
+            stored.result.aligned = None  # the image is in the store; don't keep every page in memory
+        self.sheets.append(stored)
+        return stored
 
     def update_key(self):
         if self.exam is None:
@@ -346,8 +352,8 @@ class CheckPage(QWidget):
 
 
 class MainWindow(QMainWindow):
-    PAGES = ["Dashboard", "Exams", "Check sheets", "Review", "Results", "Sheet designer", "Question Bank", "Syllabus",
-             "Settings"]
+    PAGES = ["Dashboard", "Exams", "Check sheets", "Scan", "Review", "Results", "Sheet designer", "Question Bank",
+             "Syllabus", "Settings"]
     LATER = {"Question Bank": "Comes in phase 2", "Syllabus": "Comes in phase 3"}
 
     def __init__(self, db_path: str | Path | None = None):
@@ -365,11 +371,13 @@ class MainWindow(QMainWindow):
         self.dashboard = DashboardPage(self.check)
         self.results = ResultsPage(self.check)
         self.review = ReviewPage(self.check)
+        self.scan = ScanPage(self.check)
+        self.check.changed.connect(self.scan._enable)
         self.designer = DesignerPage()
         self.settings = theme.SettingsPage(self.prefs)
         self.settings.changed.connect(self.apply_prefs)
         self.pages = {"Dashboard": self.dashboard, "Exams": self.exams, "Check sheets": self.check,
-                      "Review": self.review, "Results": self.results,
+                      "Scan": self.scan, "Review": self.review, "Results": self.results,
                       "Sheet designer": self.designer, "Settings": self.settings}
 
         self.stack = QStackedWidget()
@@ -447,5 +455,11 @@ class MainWindow(QMainWindow):
         self.check.fill_table()  # repaints review rows and, through `changed`, the dashboard and results
 
     def closeEvent(self, e):
+        thread = self.scan.thread
+        if thread is not None:
+            thread.stop = True
+            thread.wait()  # the page being fed finishes
+            QApplication.processEvents()  # read and save the pages it already sent before the database closes
+        self.scan.timer.stop()
         self.store.close()
         super().closeEvent(e)
