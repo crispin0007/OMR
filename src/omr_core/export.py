@@ -1,0 +1,139 @@
+"""Results for an exam: grade every page, and export a merit list (Excel) and scorecards (PDF) (US3)."""
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
+
+from .grading import parse_key, rank, score, status
+from .store import StoredPage, to_review
+from .template import Template
+
+
+@dataclass
+class Graded:
+    page: StoredPage
+    key: list[str]
+    score: float
+    right: int
+    wrong: int
+    blank: int
+    rank: int = 0
+    percentile: float = 0.0
+    to_check: bool = False
+
+
+def questions(t: Template) -> list[int]:
+    return sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows))
+
+
+def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float, wrong: float,
+          blank: float) -> list[Graded]:
+    """Every page that can be scored, best first, with rank and percentile.
+
+    Pages that couldn't be read, or whose set has no key, are left out; they show in review instead.
+    Raises ValueError if the key doesn't fit the sheet.
+    """
+    qs = questions(t)
+    options = "".join(sorted({o for g in t.grids if g.kind == "questions" for o in g.options}))
+    keys = parse_key(answer_key, len(qs), options)
+    flagged = {i for i, _, _ in to_review(pages)}
+    out = []
+    for i, p in enumerate(pages):
+        key = p.result and keys.get(p.result.set_code, keys.get(""))
+        if not key:
+            continue
+        answers = [p.result.answers[q] for q in qs]
+        counts = [status(a, k) for a, k in zip(answers, key)]
+        out.append(Graded(p, key, score(answers, key, correct, wrong, blank), counts.count("right"),
+                          counts.count("wrong"), counts.count("blank"), to_check=i in flagged))
+    out.sort(key=lambda g: -g.score)
+    for g, (r, pct) in zip(out, rank([g.score for g in out])):
+        g.rank, g.percentile = r, pct
+    return out
+
+
+def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Graded]):
+    """Merit list on the first sheet, every answer (green right, red wrong) on the second."""
+    qs = questions(t)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Merit list"
+    ws.append([exam_name])
+    ws["A1"].font = Font(bold=True, size=14)
+    head = ["Rank", "Roll number", "Set", "Score", "Right", "Wrong", "Blank", "Percentile", "To check", "File",
+            "Page"]
+    ws.append(head)
+    for g in graded:
+        r = g.page.result
+        ws.append([g.rank, r.roll_number, r.set_code, g.score, g.right, g.wrong, g.blank, round(g.percentile, 1),
+                   "yes" if g.to_check else "", Path(g.page.file).name, g.page.page])
+    answers = wb.create_sheet("Answers")
+    answers.append(["Roll number", "Set", *(f"Q{q}" for q in qs)])
+    fills = {"right": PatternFill("solid", fgColor="C6EFCE"), "wrong": PatternFill("solid", fgColor="FFC7CE")}
+    for g in graded:
+        r = g.page.result
+        answers.append([r.roll_number, r.set_code, *(r.answers[q] for q in qs)])
+        for col, (q, k) in enumerate(zip(qs, g.key), start=3):
+            fill = fills.get(status(r.answers[q], k))
+            if fill:
+                answers.cell(answers.max_row, col).fill = fill
+    for sheet, header_row in ((ws, 2), (answers, 1)):
+        for cell in sheet[header_row]:
+            cell.font = Font(bold=True)
+        sheet.freeze_panes = sheet.cell(header_row + 1, 1)
+        sheet.auto_filter.ref = f"A{header_row}:{sheet.cell(sheet.max_row, sheet.max_column).coordinate}"
+        for column in sheet.columns:
+            width = max(len(str(c.value or "")) for c in column[header_row - 1:]) + 2
+            sheet.column_dimensions[column[0].column_letter].width = min(max(width, 6), 40)
+    wb.save(path)
+
+
+def write_scorecards(path: str | Path, exam_name: str, t: Template, graded: list[Graded]):
+    """One A4 page per student: score, rank, and every answer next to the key."""
+    qs = questions(t)
+    c = canvas.Canvas(str(path), pagesize=A4)
+    c.setTitle(f"{exam_name} scorecards")
+    w, h = A4
+    per_column = 50
+    marks = {"right": ("right", colors.HexColor("#1f9d55")), "wrong": ("wrong", colors.HexColor("#d64545")),
+             "blank": ("blank", colors.grey), "dropped": ("dropped", colors.grey)}
+    for g in sorted(graded, key=lambda g: g.page.result.roll_number):
+        r = g.page.result
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(18 * mm, h - 20 * mm, exam_name)
+        c.setFont("Helvetica", 11)
+        c.drawString(18 * mm, h - 28 * mm, f"Roll number {r.roll_number}    Set {r.set_code}")
+        c.setFont("Helvetica-Bold", 13)
+        c.drawString(18 * mm, h - 38 * mm, f"Score {g.score:g}    Rank {g.rank} of {len(graded)}    "
+                                           f"Percentile {g.percentile:.1f}")
+        c.setFont("Helvetica", 10)
+        c.drawString(18 * mm, h - 45 * mm, f"Right {g.right}    Wrong {g.wrong}    Blank {g.blank}")
+        if g.to_check:
+            c.setFillColor(colors.HexColor("#c27c00"))
+            c.drawString(18 * mm, h - 51 * mm, "Some marks on this sheet were still being checked.")
+            c.setFillColor(colors.black)
+        top, row_h = h - 60 * mm, 4.4 * mm
+        col_w = (w - 36 * mm) / max(1, -(-len(qs) // per_column))
+        c.setFont("Helvetica", 8)
+        for n, (q, k) in enumerate(zip(qs, g.key)):
+            x = 18 * mm + (n // per_column) * col_w
+            y = top - (n % per_column) * row_h
+            sign, colour = marks[status(r.answers[q], k)]
+            c.setFillColor(colors.black)
+            c.drawString(x, y, f"Q{q}")
+            c.drawString(x + 10 * mm, y, r.answers[q] or "-")
+            c.setFillColor(colors.grey)
+            c.drawString(x + 19 * mm, y, "*" if k == "*" else k if k != "-" else "")
+            c.setFillColor(colour)
+            c.drawString(x + 28 * mm, y, sign)
+        c.setFillColor(colors.grey)
+        c.drawString(18 * mm, 12 * mm, "Columns: question, answer given, correct answer, result.")
+        c.setFillColor(colors.black)
+        c.showPage()
+    c.save()

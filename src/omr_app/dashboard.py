@@ -5,10 +5,12 @@ from math import atan2, degrees
 
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import (QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QTableWidget,
-                               QTableWidgetItem, QToolTip, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QFileDialog, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+                               QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QToolTip, QVBoxLayout,
+                               QWidget)
 
-from omr_core.grading import rank
+from omr_core.export import Graded, grade, write_excel, write_scorecards
+from omr_core.store import to_review
 
 from .theme import tokens
 
@@ -251,11 +253,13 @@ class DashboardPage(QWidget):
 
 
 class ResultsPage(QWidget):
-    COLUMNS = ["Rank", "Roll number", "Set", "Score", "Percentile", "To check", "File", "Page"]
+    COLUMNS = ["Rank", "Roll number", "Set", "Score", "Right", "Wrong", "Blank", "Percentile", "To check", "File",
+               "Page"]
 
     def __init__(self, check):
         super().__init__()
         self.check = check
+        self.graded: list[Graded] = []
         self.table = QTableWidget(0, len(self.COLUMNS))
         self.table.setHorizontalHeaderLabels(self.COLUMNS)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -264,8 +268,17 @@ class ResultsPage(QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.cellDoubleClicked.connect(self.open_sheet)
         self.note = QLabel(objectName="muted")
+        self.excel = QPushButton("Merit list (Excel)…", objectName="primary")
+        self.excel.clicked.connect(lambda: self.export("Excel", "xlsx", write_excel))
+        self.pdf = QPushButton("Scorecards (PDF)…")
+        self.pdf.clicked.connect(lambda: self.export("PDF", "pdf", write_scorecards))
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Results", objectName="title"))
+        top.addStretch()
+        top.addWidget(self.excel)
+        top.addWidget(self.pdf)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Results", objectName="title"))
+        layout.addLayout(top)
         layout.addWidget(self.note)
         layout.addWidget(self.table, 1)
         check.changed.connect(self.refresh)
@@ -273,29 +286,53 @@ class ResultsPage(QWidget):
 
     def refresh(self):
         c = self.check
-        scored = [(i, s) for i, s in enumerate(c.score_of(sh) for sh in c.sheets) if s is not None]
-        scored.sort(key=lambda x: -x[1])
-        ranks = rank([s for _, s in scored])
-        flagged = set(c.to_check())
-        self.note.setText("Sorted by score. Double-click a row to open the sheet. Sheets to check may still change."
-                          if scored else "Type the answer key on Check sheets to see results.")
+        try:
+            self.graded = grade(c.exam.template, c.sheets, c.key_edit.toPlainText(), c.correct.value(),
+                                c.wrong.value(), c.blank.value()) if c.exam else []
+        except ValueError:
+            self.graded = []  # the key doesn't fit yet; Check sheets says why
+        self.note.setText("Ranked by score; equal scores share a rank. Double-click a row to open the sheet."
+                          if self.graded else "Type the answer key on Check sheets to see results.")
+        self.excel.setEnabled(bool(self.graded))
+        self.pdf.setEnabled(bool(self.graded))
         self.table.setSortingEnabled(False)
-        self.table.setRowCount(len(scored))
+        self.table.setRowCount(len(self.graded))
         warn = QColor(tokens()["warn"])
-        for row, ((i, s), (r, pct)) in enumerate(zip(scored, ranks)):
-            sheet = c.sheets[i]
-            values = [r, sheet.result.roll_number, sheet.result.set_code, s, round(pct, 1),
-                      "yes" if i in flagged else "", c.file_name(sheet), sheet.page]
+        index = {p.id: i for i, p in enumerate(c.sheets)}
+        for row, g in enumerate(self.graded):
+            r = g.page.result
+            values = [g.rank, r.roll_number, r.set_code, g.score, g.right, g.wrong, g.blank, round(g.percentile, 1),
+                      "yes" if g.to_check else "", c.file_name(g.page), g.page.page]
             for col, v in enumerate(values):
                 item = QTableWidgetItem()
                 item.setData(Qt.DisplayRole, v)
-                item.setData(Qt.UserRole, i)
-                if i in flagged and col == 5:
+                item.setData(Qt.UserRole, index[g.page.id])
+                if g.to_check and col == 8:
                     item.setForeground(warn)
                 self.table.setItem(row, col, item)
         self.table.setSortingEnabled(True)
         self.table.sortItems(0, Qt.AscendingOrder)
         self.table.resizeColumnsToContents()
+
+    def export(self, kind: str, ext: str, write):
+        c = self.check
+        waiting = len(to_review(c.sheets))
+        if waiting and QMessageBox.question(
+                self, "Marks still to check",
+                f"{waiting} items still need checking on Review, so some scores may change. Export anyway?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        name = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in c.exam.name).strip() or "results"
+        default = f"{name} {'merit list' if ext == 'xlsx' else 'scorecards'}.{ext}"
+        path, _ = QFileDialog.getSaveFileName(self, f"Save {kind}", default, f"{kind} (*.{ext})")
+        if not path:
+            return
+        try:
+            write(path, c.exam.name, c.exam.template, self.graded)
+        except OSError as e:  # e.g. the file is open in Excel
+            QMessageBox.warning(self, "Couldn't save", f"{path}\n\n{e}")
+            return
+        self.window().statusBar().showMessage(f"Saved {path}", 5000)
 
     def open_sheet(self, row: int, _col: int):
         self.check.show_sheets(None)

@@ -37,8 +37,8 @@ task before it.
 
 ## Phase 5: US3 Publish results (P1)
 
-- [ ] T016 [US3] Re-grade an exam after a key or scheme change
-- [ ] T017 [US3] Excel merit list and PDF scorecards in `src/omr_core/export.py`
+- [x] T016 [US3] Re-grade an exam after a key or scheme change (scores follow the saved key and marks live)
+- [x] T017 [US3] Excel merit list and PDF scorecards in `src/omr_core/export.py` (names come with T026)
 - [x] T018 [US3] Results screen with rank and percentile (spec 002)
 
 **Checkpoint**: P1 done. Test end to end on the real fixture set before going on.

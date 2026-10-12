@@ -71,7 +71,9 @@ The sidebar opens Dashboard, Exams, Check sheets, Review, Results and Settings.
    the reading). Scores update at once and every change is logged.
 5. **Dashboard** shows sheets read, average score, sheets to check, the score
    spread and recent batches. Click any of them to open those sheets.
-   **Results** ranks every sheet with its percentile.
+   **Results** ranks every sheet with right, wrong and blank counts and its
+   percentile, and exports a merit list to Excel (with every answer coloured
+   right or wrong) or one PDF scorecard per student.
 6. **Settings** picks Light, Dark or System theme, an accent colour, text size
    and density. The button at the bottom of the sidebar switches light and dark.
 7. **Save CSV…** writes every page's score and answers for Excel.
