@@ -115,6 +115,9 @@ The sidebar opens Dashboard, Exams, Sheet designer and Settings.
    saves the exam's sheet as a PDF for A4, Letter, Legal, A3 or A5 paper.
    The sheet reads the same at any print size, scaled or "fit to page", as
    long as all four corner circles are on the paper.
+   **Check a printed copy…** reads a scan or phone photo of one printed
+   sheet, blank or with a few bubbles filled, and says whether it reads,
+   before you print the rest.
    **Exam settings** renames or deletes the exam. **Change sheet…** there
    gives the exam another template, for pages filled on a different sheet,
    and reads every page again with it: imported files from the original

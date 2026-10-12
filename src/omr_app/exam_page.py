@@ -12,7 +12,9 @@ from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
                                QScrollArea, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
+from omr_core.reader import read_or_reason
 from omr_core.sheet import PAPERS, render, write_pdf
+from omr_core.sources import read_pages
 from omr_core.students import read_students
 from omr_core.template import parse
 
@@ -147,10 +149,15 @@ class PrintSheet(QWidget):
         self.paper.currentTextChanged.connect(lambda _: self.refresh())
         self.save = QPushButton("Save PDF to print…", objectName="primary")
         self.save.clicked.connect(self.save_pdf)
+        self.try_print = QPushButton("Check a printed copy…")
+        self.try_print.setToolTip("Before printing them all: scan or photograph one printed sheet, blank or with a "
+                                  "few bubbles filled, to see that it reads")
+        self.try_print.clicked.connect(self.check_print)
         top = QHBoxLayout()
         top.addWidget(self.note, 1)
         top.addWidget(QLabel("Paper"))
         top.addWidget(self.paper)
+        top.addWidget(self.try_print)
         top.addWidget(self.save)
         self.preview = QLabel(alignment=Qt.AlignCenter)
         scroll = QScrollArea(widgetResizable=True)
@@ -165,6 +172,7 @@ class PrintSheet(QWidget):
         self.template = d if "print" in d else None  # only sheets New exam made carry what to print
         for w in (self.save, self.paper):
             w.setEnabled(self.template is not None)
+        self.try_print.setEnabled(exam is not None)
         self.preview.clear()
         if exam is None:
             self.note.setText("")
@@ -177,6 +185,18 @@ class PrintSheet(QWidget):
             page = render(self.template, dpi=80, paper=self.paper.currentText())
             image = QImage(page.data, page.shape[1], page.shape[0], page.strides[0], QImage.Format_BGR888).copy()
             self.preview.setPixmap(QPixmap.fromImage(image))
+
+    def check_print(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Scan or photo of one printed sheet", "",
+                                              "Scans (*.pdf *.png *.jpg *.jpeg *.tif *.tiff *.bmp)")
+        if not path:
+            return
+        try:
+            page = next(read_pages(path))
+        except (OSError, ValueError, StopIteration) as e:
+            QMessageBox.warning(self, "Can't open that file", f"{path}\n\n{e or 'it has no pages'}")
+            return
+        QMessageBox.information(self, "Printed copy", print_check(page, self.check.exam.template))
 
     def save_pdf(self):
         exam = self.check.exam
@@ -191,6 +211,28 @@ class PrintSheet(QWidget):
             QMessageBox.warning(self, "Couldn't save", f"{path}\n\n{e}")
             return
         self.window().statusBar().showMessage(f"Saved {path}", 5000)
+
+
+def print_check(page, template) -> str:
+    """What reading one printed copy says about the print: whether it reads, and what it read."""
+    result, problem = read_or_reason(page, template)
+    if result is None:
+        return (f"This copy can't be read: {problem.removeprefix('unreadable: ')}.\n\nCheck that all four corner "
+                "circles are on the paper and printed solid black, and that the page is this exam's sheet. Then "
+                "print and try again before printing the rest.")
+    filled = {q: a for q, a in result.answers.items() if a}
+    lines = ["This copy reads: the corner circles and every bubble were found."]
+    if filled or result.roll_number.strip("?"):
+        lines.append(f"Roll number {result.roll_number or 'none'}, set {result.set_code or 'none'}, "
+                     f"{len(filled)} questions answered: "
+                     + (", ".join(f"{q} {a}" for q, a in list(filled.items())[:10]) or "none")
+                     + (" …" if len(filled) > 10 else "") + ".")
+    else:
+        lines.append("Every bubble reads empty. Fill a few and try again to see them read.")
+    if result.flags:
+        lines.append(f"{len(result.flags)} to check, for example {result.flags[0][0]}: {result.flags[0][1]}. "
+                     "Faint print or a smudge can cause this; compare the copy with the PDF.")
+    return "\n\n".join(lines)
 
 
 class ExamSettings(QWidget):
