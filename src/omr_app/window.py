@@ -8,9 +8,9 @@ from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QPixmap
-from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel,
-                               QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QProgressDialog, QPushButton,
-                               QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
+from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFileDialog, QHBoxLayout, QInputDialog,
+                               QLabel, QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QProgressDialog,
+                               QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
 from omr_core.grading import Section, full_marks, marks_for, parse_key, score
@@ -111,10 +111,18 @@ class CheckPage(QWidget):
         self.filter_label = QLabel(objectName="muted")
         self.show_all = QPushButton("Show all")
         self.show_all.clicked.connect(lambda: self.show_sheets(None))
+        self.move_button = QPushButton("Move to exam…")
+        self.move_button.setToolTip("Move the selected pages to another exam on the same sheet")
+        self.move_button.clicked.connect(self.move_selected)
+        self.delete_button = QPushButton("Delete…")
+        self.delete_button.setToolTip("Delete the selected pages, e.g. a sheet scanned twice or into the wrong exam")
+        self.delete_button.clicked.connect(self.delete_selected)
         filter_bar = QHBoxLayout()
         filter_bar.addWidget(self.filter_label)
         filter_bar.addWidget(self.show_all)
         filter_bar.addStretch()
+        filter_bar.addWidget(self.move_button)
+        filter_bar.addWidget(self.delete_button)
         self.mismatch = QLabel(objectName="error", wordWrap=True)
         self.map_button = QPushButton("Map my printed sheet…")
         self.map_button.clicked.connect(self.map_wanted.emit)
@@ -125,9 +133,11 @@ class CheckPage(QWidget):
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setSelectionMode(QTableWidget.ExtendedSelection)  # Shift or Ctrl to pick several pages
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.itemSelectionChanged.connect(self.show_sheet)
+        self.table.itemSelectionChanged.connect(self._enable)
         table_box = QWidget()
         table_layout = QVBoxLayout(table_box)
         table_layout.setContentsMargins(0, 0, 0, 0)
@@ -169,6 +179,9 @@ class CheckPage(QWidget):
         for w in (self.open_button, self.key_edit, self.correct, self.wrong, self.blank, self.sections_button):
             w.setEnabled(self.exam is not None)
         self.save_button.setEnabled(bool(self.sheets))
+        chosen = bool(self.selected())
+        self.delete_button.setEnabled(chosen)
+        self.move_button.setEnabled(chosen)
 
     def open_exam(self, exam_id: int | None):
         """Show an exam's saved key, marks and sheets; None closes it."""
@@ -399,6 +412,54 @@ class CheckPage(QWidget):
             max(self.page_view.width() - 20, 300), Qt.SmoothTransformation))
         self.review_list.addItems([f"{where}: {why}" for where, why in r.flags] or ["Nothing to check"])
         self.answers_view.setPlainText("   ".join(f"{q}:{r.answers[q] or '·'}" for q in self.questions))
+
+    def selected(self) -> list[int]:
+        """Rows of the selected pages that are shown."""
+        rows = self.table.selectionModel().selectedRows()
+        return sorted(i.row() for i in rows if not self.table.isRowHidden(i.row()))
+
+    def _after_removing(self, rows: list[int], text: str):
+        gone = {self.sheets[r].id for r in rows}
+        self.sheets = [s for s in self.sheets if s.id not in gone]
+        self.table.clearSelection()
+        self.show_sheets(None)
+        self._enable()
+        self.page_view.setText(text)
+        self.answers_view.clear()
+        self.review_list.clear()
+
+    def delete_selected(self):
+        rows = self.selected()
+        pages = f"{len(rows)} page{'s' if len(rows) != 1 else ''}"
+        if not rows or QMessageBox.question(
+                self, "Delete pages", f"Delete {pages} from “{self.exam.name}”, with any corrections made to them? "
+                "This can't be undone; the scan files themselves are kept.",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        self.store.delete_pages([self.sheets[r].id for r in rows])
+        self._after_removing(rows, f"Deleted {pages}")
+
+    def move_selected(self):
+        rows = self.selected()
+        others = [(i, name) for i, name, *_ in self.store.exams()
+                  if i != self.exam.id and self.store.same_sheet(self.exam.id, i)]
+        if not rows:
+            return
+        if not others:
+            QMessageBox.information(self, "Move pages", "No other exam uses this sheet. Pages can only move to an "
+                                    "exam on the same sheet; for another sheet, import the original scans there.")
+            return
+        name, ok = QInputDialog.getItem(self, "Move pages", f"Move {len(rows)} page{'s' if len(rows) != 1 else ''} "
+                                        "to:", [n for _, n in others], 0, False)
+        if not ok:
+            return
+        target = next(i for i, n in others if n == name)
+        try:
+            self.store.move_pages([self.sheets[r].id for r in rows], target)
+        except ValueError as e:
+            QMessageBox.warning(self, "Can't move them", str(e))
+            return
+        self._after_removing(rows, f"Moved {len(rows)} page{'s' if len(rows) != 1 else ''} to “{name}”")
 
     def save_csv(self):
         path, _ = QFileDialog.getSaveFileName(self, "Save results", "results.csv", "CSV (*.csv)")

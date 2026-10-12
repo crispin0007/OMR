@@ -154,3 +154,21 @@ def test_many_pages_with_one_roll_number_list_a_few_and_count_the_rest(tmp_path)
         s.add_page(exam, "b", "a.pdf", n, PageResult("111", "A", {1: "B"}, []))
     assert to_review(s.pages(exam))[0] == (0, "roll number", "same roll number as a.pdf page 2, a.pdf page 3, "
                                                              "a.pdf page 4 and 2 more")
+
+
+def test_pages_can_be_deleted_or_moved_to_an_exam_on_the_same_sheet(tmp_path):
+    s = Store(tmp_path / "omr.db")
+    first, second = s.create_exam("First", TEMPLATE), s.create_exam("Second", TEMPLATE)
+    a = s.add_page(first, "b", "a.pdf", 1, PageResult("111", "A", {1: "B"}, []))
+    b = s.add_page(first, "b", "a.pdf", 2, PageResult("222", "A", {1: "C"}, []))
+    s.correct(a.id, "Q1", "D", "asha")
+    s.move_pages([a.id], second)
+    assert [p.result.answers[1] for p in s.pages(second)] == ["D"]  # moves as corrected
+    s.delete_pages([b.id])
+    assert s.pages(first) == []
+    other = json.loads(TEMPLATE)
+    other["grids"][0]["origin_mm"] = [o + 5 for o in other["grids"][0]["origin_mm"]]
+    third = s.create_exam("Other sheet", json.dumps(other))
+    with pytest.raises(ValueError, match="different sheet"):
+        s.move_pages([a.id], third)
+    assert s.same_sheet(first, second) and not s.same_sheet(first, third)
