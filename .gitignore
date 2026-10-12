@@ -8,3 +8,4 @@ build/
 .pytest_cache/
 *.db
 tests/fixtures/private-*/
+results*.csv
