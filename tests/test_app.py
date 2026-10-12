@@ -666,3 +666,18 @@ def test_first_run_shows_the_steps_and_help_has_the_shortcuts(app, tmp_path, mon
     w.open_exam(w.store.create_exam("Mock", (TEMPLATES / "test-100.json").read_text(encoding="utf-8")))
     w.exams.refresh()
     assert w.exams.start.isHidden() and not w.exams.table.isHidden()
+
+
+def test_ready_made_layouts_fill_the_wizard_and_fit_the_sheet(app, tmp_path):
+    from omr_app import new_exam
+    from omr_core.store import Store
+    z = new_exam.NewExamWizard(None, Store(tmp_path / "omr.db"))
+    for name, (sections, total, options, right, wrong) in new_exam.READY.items():
+        z.ready.setCurrentText(name)
+        assert z.total.value() == (sum(n for _, n in sections) or total) and z.options.value() == options
+        assert [s.name for s in z.read_sections()] == [s for s, _ in sections]
+        assert [(s.correct, s.wrong) for s in z.sheet_sections()] == [(right, wrong)] * len(sections)
+        z.update_preview()
+        assert z.made is not None, (name, z.layout_problem)  # fits one page
+    z.ready.setCurrentText("NEET style: Physics, Chemistry, Botany, Zoology, 45 each, +4 / -1")
+    assert z.total.value() == 180
