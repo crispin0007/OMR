@@ -52,13 +52,12 @@ task before it.
 - [ ] T023 [US5] Designer: load blank scan, click registration marks, draw grids that snap to bubbles
 - [ ] T024 [US5] Template for the Medical Education Commission sheet; test on its real filled scans
 
-## Phase 8: US6 to US8 (P3)
+## Phase 8: US6 and US7 (P3)
 
 - [ ] T025 [US6] Design new sheets from blocks and print to PDF
 - [ ] T026 [P] [US7] Institute, classes and users with roles; student import from Excel
-- [ ] T027 [P] [US8] Trial, machine ID, request code and signed licence check in `src/omr_core/licence.py`; licence generator tool for the seller
 
 ## Phase 9: Release
 
-- [ ] T028 Nuitka build and Inno Setup installer; check against common antivirus
-- [ ] T029 Accuracy and speed report on real scans from three scanner brands; compatibility list
+- [ ] T027 Nuitka build and Inno Setup installer; check against common antivirus
+- [ ] T028 Accuracy and speed report on real scans from three scanner brands; compatibility list

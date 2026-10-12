@@ -7,7 +7,7 @@
 Build the reading pipeline in `omr_core` first and prove it on generated and
 real scanned sheets, then wrap it in the PySide6 app: PDF import, review
 queue, results and export (P1), then live ADF scanning and sheet mapping (P2),
-then the designer, student setup and licensing (P3). Grading is already in
+then the designer and student setup (P3). Grading is already in
 `omr_core/grading.py`.
 
 ## Technical Context
@@ -17,7 +17,7 @@ then the designer, student setup and licensing (P3). Grading is already in
 **Primary Dependencies**: OpenCV (headless) and NumPy for reading;
 pypdfium2 for PDF pages; zxing-cpp for barcodes and QR; SQLAlchemy Core for
 storage; openpyxl and ReportLab for exports; PySide6 for the app; pytwain on
-Windows for live scanning; cryptography (Ed25519) for licences.
+Windows for live scanning.
 
 **Storage**: SQLite file per install (`%LOCALAPPDATA%\OMR\omr.db`), WAL mode,
 one commit per graded page. Page images saved as PNG next to it. SQLAlchemy
@@ -34,7 +34,7 @@ accuracy tests use generated sheets (below) and, once supplied, real scans in
 **Performance Goals**: under 0.3 s per page at 200 DPI on 4 cores; a page
 queue with one reader process per core so the ADF never waits.
 
-**Constraints**: fully offline; no GPL or AGPL dependencies; no graded page
+**Constraints**: fully offline; Apache-2.0, so no GPL or AGPL dependencies; no graded page
 lost on crash.
 
 **Scale/Scope**: up to about 5,000 sheets per exam, 200 questions per sheet.
@@ -43,8 +43,8 @@ lost on crash.
 
 | Principle | How this plan meets it |
 |---|---|
-| I. Offline first | No network calls in phase 1; the licence is checked locally. |
-| II. Core has no UI | Pipeline, storage, grading, exports and licence checks in `omr_core`; scanner and screens in `omr_app`. A CI step imports `omr_core` without PySide6 installed. |
+| I. Offline first | No network calls in phase 1. |
+| II. Core has no UI | Pipeline, storage, grading and exports in `omr_core`; scanner and screens in `omr_app`. A CI step imports `omr_core` without PySide6 installed. |
 | III. One pipeline | Every source produces a grayscale or colour NumPy page and calls `read_page(page, template)`. |
 | IV. Accuracy over guessing | Bubble decision has a grey zone that flags, never picks. Corrections go through one function that writes the audit log. |
 | V. Tested against real sheets | Generated-sheet tests now; real fixture set gates the reader before release. |
@@ -70,8 +70,7 @@ src/omr_core/
 ├── reader.py       # prepare, align, identify, read bubbles, decide
 ├── sources.py      # PDF and image files to pages
 ├── store.py        # SQLite schema and queries, audit log
-├── export.py       # Excel merit list, PDF scorecards
-└── licence.py      # machine ID, request code, verify signed licence
+└── export.py       # Excel merit list, PDF scorecards
 
 src/omr_app/
 ├── __main__.py     # main window, exam list
@@ -135,5 +134,5 @@ answers, so reader tests run in CI before any real scans exist.
 - **pytwain page-by-page transfer** on real drivers (spike first, C# helper
   fallback).
 - **Accuracy on real sheets** is unknown until sample scans arrive.
-- **Nuitka build size and antivirus false positives**: test a signed build
+- **Nuitka build size and antivirus false positives**: test a build
   early in phase 1, not at the end.
