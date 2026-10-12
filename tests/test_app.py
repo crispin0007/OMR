@@ -60,7 +60,7 @@ def test_reads_sheets_and_scores_them(app, tmp_path):
     assert w.results.table.item(0, 1).text() == roll
     assert w.results.table.item(0, 0).text() == "1"
     w.show()
-    for page in ["Dashboard", "Exams", "Sheet designer", "Settings", *w.exam_page.names]:  # every page paints
+    for page in ["Dashboard", "Exams", "Map printed sheet", "Settings", *w.exam_page.names]:  # every page paints
         w.go(page)
         assert not w.grab().isNull()
 
@@ -190,9 +190,16 @@ def test_designer_maps_a_sheet_and_saves_a_template(app, tmp_path, monkeypatch):
     cv2.imwrite(str(blank), scan(draw(t, {}), angle=0.5))
     w = window(tmp_path)
     w.show()
-    w.go("Sheet designer")
+    w.go("Map printed sheet")
     d = w.designer
+    assert d.intro.isVisible() and not d.split.isVisible()  # says what the page is for, and points to New exam
+    from omr_app import exams
+    monkeypatch.setattr(exams.NewExamWizard, "exec", lambda self: False)
+    d.new_exam_wanted.emit()
+    assert w.showing() is w.exams
+    w.go("Map printed sheet")
     d.load_scan(str(blank))
+    assert not d.intro.isVisible() and d.split.isVisible()
     s = d.gray.shape[1] / t.page[0]
     d.mark_clicked(170 * s, 80 * s)  # blank paper, nowhere near a mark
     assert d.error.text() and not d.marks

@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QScrollArea, QV
 
 STEPS = [
     ("Create the exam", "<b>New exam…</b> on Exams asks for the details, sections, questions and marks, and makes "
-                        "the answer sheet. Already print your own sheet? Map it once in <b>Sheet designer</b>."),
+                        "the answer sheet. Already print your own sheet? Map it once in <b>Map printed sheet</b>."),
     ("Print the sheet", "<b>Print sheet</b> saves a PDF for any paper size. <b>Check a printed copy…</b> tells you "
                         "it reads before you print them all."),
     ("Scan the filled sheets", "<b>Scan</b> reads them as the scanner feeds them, or from the folder your scanner "

@@ -4,7 +4,7 @@ The steps ask for the exam's details, its subjects or sections, the questions
 and answers, the marking and the sheet's look, then show everything for a last
 check. The sheet is laid out from those answers, so no separate sheet design is
 needed. A school that already prints its own sheet picks that sheet's template
-(mapped in the Sheet designer) instead.
+(mapped under Map printed sheet) instead.
 """
 
 import json
@@ -113,7 +113,7 @@ class NewExamWizard(QDialog):
                                 "print.", objectName="muted", wordWrap=True))
         layout.addSpacing(12)
         layout.addWidget(self.own_sheet)
-        layout.addWidget(QLabel("For a sheet you already print. Map it once in the Sheet designer, then pick its "
+        layout.addWidget(QLabel("For a sheet you already print. Map it once under Map printed sheet, then pick its "
                                 "template here.", objectName="muted", wordWrap=True))
         self.template_label = QLabel(objectName="muted")
         self.choose = QPushButton("Choose template…")

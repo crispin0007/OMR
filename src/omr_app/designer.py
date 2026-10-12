@@ -1,4 +1,6 @@
-"""Sheet designer page: turn a scan of an existing sheet into a template (US5).
+"""Map printed sheet page (the sheet designer): turn a scan of an existing sheet into a template (US5).
+
+Only for sheets a school already prints elsewhere; New exam makes new sheets itself.
 
 Open a scan, click the four corner marks, then drag a box around each block
 of bubbles. The designer finds the bubbles, fills in rows and columns, and
@@ -84,6 +86,7 @@ class Canvas(QGraphicsView):
 
 class DesignerPage(QWidget):
     saved = Signal(str)  # path of a saved template
+    new_exam_wanted = Signal()
 
     def __init__(self):
         super().__init__()
@@ -102,7 +105,7 @@ class DesignerPage(QWidget):
         self.page.currentTextChanged.connect(lambda _: self.restart())
         self.dropout = QCheckBox("Sheet printed in red or pink (ignore that colour)")
         top = QHBoxLayout()
-        top.addWidget(QLabel("Sheet designer", objectName="title"))
+        top.addWidget(QLabel("Map printed sheet", objectName="title"))
         top.addSpacing(16)
         top.addWidget(open_button)
         top.addWidget(QLabel("Paper"))
@@ -177,10 +180,39 @@ class DesignerPage(QWidget):
         split.addWidget(self.canvas)
         split.addWidget(side)
         split.setSizes([760, 380])
+        self.split = split
+        self.intro = self._intro()
         layout = QVBoxLayout(self)
         layout.addLayout(top)
+        layout.addWidget(self.intro, 1)
         layout.addWidget(split, 1)
         self.restart()
+
+    def _intro(self) -> QWidget:
+        """Before a scan is open: what this page is for, and the way to a new sheet instead."""
+        box, inner = card("")
+        box.setMaximumWidth(720)
+        inner.addWidget(QLabel("<h3>Already print your own answer sheets?</h3>"
+                               "<p>Map one here once, so OMR Checker can read it. Scan a sheet (blank or filled, the "
+                               "whole page, 150 to 300 DPI), open the scan, click its four corner marks, then box "
+                               "each block of bubbles. Save the template and pick it in New exam under "
+                               "<b>Use my own printed sheet</b>.</p>"
+                               "<p>Making a new sheet? You don't need this page: <b>New exam</b> lays out the "
+                               "sheet for you, ready to print.</p>", wordWrap=True, textFormat=Qt.RichText))
+        row = QHBoxLayout()
+        open_scan = QPushButton("Open a scan of my sheet…", objectName="primary")
+        open_scan.clicked.connect(self.open_scan)
+        new = QPushButton("Make a new sheet with New exam…")
+        new.clicked.connect(self.new_exam_wanted.emit)
+        row.addWidget(open_scan)
+        row.addWidget(new)
+        row.addStretch()
+        inner.addLayout(row)
+        outer = QWidget()
+        centred = QHBoxLayout(outer)
+        centred.addWidget(box, 0, Qt.AlignTop)
+        centred.addStretch()
+        return outer
 
     # -- steps -------------------------------------------------------------------------------------------
 
@@ -212,6 +244,8 @@ class DesignerPage(QWidget):
         self.canvas.drag_boxes = False
         if self.gray is not None:
             self.canvas.show_image(self.gray)
+        self.intro.setVisible(self.gray is None)
+        self.split.setVisible(self.gray is not None)
         self._say()
 
     def _say(self):
