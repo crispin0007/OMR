@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths, Qt, QTimer, Signal
-from PySide6.QtGui import QBrush, QColor, QImage, QPixmap
+from PySide6.QtGui import QBrush, QColor, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFileDialog, QHBoxLayout, QInputDialog,
                                QLabel, QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QProgressDialog,
                                QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
@@ -25,6 +25,7 @@ from .dashboard import DashboardPage, ResultsPage
 from .designer import DesignerPage
 from .exam_page import ExamPage, ExamSettings, PrintSheet, StudentsTab
 from .exams import TEMPLATES, ExamsPage  # noqa: F401  (tests find the templates here)
+from .help import HelpDialog
 from .review import ReviewPage
 from .scan import ScanPage
 from .sections import SectionsDialog
@@ -527,6 +528,7 @@ class MainWindow(QMainWindow):
         if db_path is None:
             data = QStandardPaths.writableLocation(QStandardPaths.GenericDataLocation)  # %LOCALAPPDATA% on Windows
             db_path = Path(data) / "OMR" / "omr.db"
+        self.store_path = Path(db_path)
         self.store = Store(db_path)
         self.check = CheckPage(self.store)
         self.exams = ExamsPage(self.store)
@@ -585,6 +587,10 @@ class MainWindow(QMainWindow):
             self.nav_buttons[name] = b
             if name == "Settings":
                 nav.addStretch()
+                help_button = QPushButton("Help", objectName="nav")
+                help_button.setToolTip("Getting started, shortcuts and where your data is (F1)")
+                help_button.clicked.connect(self.show_help)
+                nav.addWidget(help_button)
             nav.addWidget(b)
         self.theme_button = QPushButton(objectName="nav")
         self.theme_button.clicked.connect(self.toggle_theme)
@@ -602,6 +608,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(sidebar)
         layout.addWidget(self.stack, 1)
         self.setCentralWidget(central)
+        for keys, action in (("Ctrl+N", self.new_exam), ("Ctrl+O", self.import_scans), ("F1", self.show_help)):
+            QShortcut(QKeySequence(keys), self, action)
         self.resize(1280, 820)
         self.apply_prefs(self.prefs)
         QApplication.styleHints().colorSchemeChanged.connect(lambda _: self.apply_prefs(self.prefs))  # Windows switched
@@ -652,6 +660,20 @@ class MainWindow(QMainWindow):
             area = self.exams_area.currentWidget()
             return self.exam_page.tabs.currentWidget() if area is self.exam_page else area
         return self.stack.currentWidget()
+
+    def new_exam(self):
+        self.go("Exams")
+        self.exams.new_exam()
+
+    def show_help(self):
+        HelpDialog(self, str(self.store_path.parent)).exec()
+
+    def import_scans(self):
+        if self.check.exam is None:
+            self.go("Exams")
+            return
+        self.go("Scanned sheets")
+        self.check.open_sheets()
 
     def toggle_theme(self):
         """Quick switch between light and dark; Settings has System and the rest."""

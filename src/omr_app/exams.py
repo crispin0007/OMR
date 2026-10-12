@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QMessageBox, QP
 
 from omr_core.store import Store
 
+from .help import steps_html
 from .new_exam import TEMPLATES, USER_TEMPLATES, NewExamWizard  # noqa: F401  (TEMPLATES is used by window.py)
 
 class ExamsPage(QWidget):
@@ -38,6 +39,10 @@ class ExamsPage(QWidget):
         top.addWidget(restore)
         top.addWidget(new)
         self.note = QLabel(objectName="muted")
+        self.start = QLabel(f"<h3>Getting started</h3>{steps_html()}", objectName="card", wordWrap=True,
+                            textFormat=Qt.RichText)
+        self.start.setContentsMargins(20, 12, 20, 12)
+        self.start.setMaximumWidth(760)
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["Exam", "Created", "Sheets", "Students", ""])
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -50,6 +55,8 @@ class ExamsPage(QWidget):
         layout.addLayout(top)
         layout.addWidget(self.note)
         layout.addWidget(self.table, 1)
+        layout.addWidget(self.start, 0, Qt.AlignTop)
+        layout.addStretch()
         self.refresh()
 
     def refresh(self, open_id: int | None = ...):
@@ -59,6 +66,8 @@ class ExamsPage(QWidget):
         self.note.setText("Click an exam to open it: scan, check, set the key and marks, see results and print its "
                           "sheet. Everything is saved as you work."
                           if exams else "Create an exam to start: New exam walks you through it and makes its sheet.")
+        self.table.setVisible(bool(exams))
+        self.start.setVisible(not exams)  # first run: what to do, in order
         self.table.setRowCount(len(exams))
         for row, (id_, name, created, pages, students) in enumerate(exams):
             for col, text in enumerate((name, created.replace("T", "  "), str(pages), str(students or ""),
