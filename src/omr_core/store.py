@@ -14,6 +14,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from .grading import Section, check_sections, sections_from_json, sections_to_json
 from .reader import PageResult
 from .students import Student
 from .template import Template, parse
@@ -27,7 +28,8 @@ CREATE TABLE IF NOT EXISTS exam (
     correct REAL NOT NULL DEFAULT 1,
     wrong REAL NOT NULL DEFAULT 0,
     blank REAL NOT NULL DEFAULT 0,
-    created TEXT NOT NULL
+    created TEXT NOT NULL,
+    sections TEXT NOT NULL DEFAULT '[]'  -- JSON [Section, ...]
 );
 CREATE TABLE IF NOT EXISTS page (
     id INTEGER PRIMARY KEY,
@@ -74,6 +76,7 @@ class Exam:
     wrong: float
     blank: float
     created: str
+    sections: list[Section]
 
 
 @dataclass
@@ -94,6 +97,10 @@ class Store:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.executescript(SCHEMA)
+        columns = [r[1] for r in self.db.execute("PRAGMA table_info(exam)")]
+        if "sections" not in columns:  # a database from before sections
+            with self.db:
+                self.db.execute("ALTER TABLE exam ADD COLUMN sections TEXT NOT NULL DEFAULT '[]'")
 
     def close(self):
         self.db.close()
@@ -115,16 +122,23 @@ class Store:
             "(SELECT COUNT(*) FROM student s WHERE s.exam_id = e.id) FROM exam e ORDER BY e.id DESC").fetchall()
 
     def exam(self, exam_id: int) -> Exam:
-        row = self.db.execute("SELECT id, name, template, answer_key, correct, wrong, blank, created FROM exam "
-                              "WHERE id = ?", (exam_id,)).fetchone()
+        row = self.db.execute("SELECT id, name, template, answer_key, correct, wrong, blank, created, sections "
+                              "FROM exam WHERE id = ?", (exam_id,)).fetchone()
         if row is None:
             raise KeyError(exam_id)
-        return Exam(row[0], row[1], parse(json.loads(row[2])), *row[2:])
+        return Exam(row[0], row[1], parse(json.loads(row[2])), *row[2:8], sections_from_json(json.loads(row[8])))
 
     def save_scheme(self, exam_id: int, answer_key: str, correct: float, wrong: float, blank: float):
         with self.db:
             self.db.execute("UPDATE exam SET answer_key = ?, correct = ?, wrong = ?, blank = ? WHERE id = ?",
                             (answer_key, correct, wrong, blank, exam_id))
+
+    def save_sections(self, exam_id: int, sections: list[Section]):
+        t = self.exam(exam_id).template
+        check_sections(sections, sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows)))
+        with self.db:
+            self.db.execute("UPDATE exam SET sections = ? WHERE id = ?",
+                            (json.dumps(sections_to_json(sections)), exam_id))
 
     def delete_exam(self, exam_id: int):
         with self.db:
