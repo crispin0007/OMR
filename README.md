@@ -141,6 +141,10 @@ Everything is saved as you work: each page as soon as it is read, and the key
 and marks as you type. Exams live in `%LOCALAPPDATA%\OMR\omr.db`; the app
 reopens the last exam.
 
+**Back up…** on Exams saves every exam, with its sheets, corrections and
+students, in one file. **Restore…** adds the exams in such a file, on the same
+PC or a new one; exams already there are left as they are.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
