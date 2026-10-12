@@ -9,10 +9,10 @@ from pathlib import Path
 
 from PySide6.QtCore import QDate, QStandardPaths, Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea,
-                               QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
+                               QScrollArea, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
-from omr_core.sheet import render, write_pdf
+from omr_core.sheet import PAPERS, render, write_pdf
 from omr_core.students import read_students
 
 
@@ -138,10 +138,16 @@ class PrintSheet(QWidget):
         self.check = check
         self.template: dict | None = None
         self.note = QLabel(objectName="muted", wordWrap=True)
+        self.paper = QComboBox()
+        self.paper.addItems(list(PAPERS))
+        self.paper.setToolTip("The sheet is scaled to fit the paper; it reads the same on any of them")
+        self.paper.currentTextChanged.connect(lambda _: self.refresh())
         self.save = QPushButton("Save PDF to print…", objectName="primary")
         self.save.clicked.connect(self.save_pdf)
         top = QHBoxLayout()
         top.addWidget(self.note, 1)
+        top.addWidget(QLabel("Paper"))
+        top.addWidget(self.paper)
         top.addWidget(self.save)
         self.preview = QLabel(alignment=Qt.AlignCenter)
         scroll = QScrollArea(widgetResizable=True)
@@ -154,7 +160,8 @@ class PrintSheet(QWidget):
         exam = self.check.exam
         d = json.loads(exam.template_json) if exam else {}
         self.template = d if "print" in d else None  # only sheets New exam made carry what to print
-        self.save.setEnabled(self.template is not None)
+        for w in (self.save, self.paper):
+            w.setEnabled(self.template is not None)
         self.preview.clear()
         if exam is None:
             self.note.setText("")
@@ -162,8 +169,9 @@ class PrintSheet(QWidget):
             self.note.setText(f"“{exam.template.name}” is a sheet you print yourself, mapped from a scan. Print it "
                               "as you always do; this exam reads it.")
         else:
-            self.note.setText("This exam's sheet. Print it at actual size (100%, not “fit to page”).")
-            page = render(self.template, dpi=80)
+            self.note.setText("This exam's sheet, ready for any paper size. Keep all four corner circles on the "
+                              "paper; scaling or “fit to page” is fine.")
+            page = render(self.template, dpi=80, paper=self.paper.currentText())
             image = QImage(page.data, page.shape[1], page.shape[0], page.strides[0], QImage.Format_BGR888).copy()
             self.preview.setPixmap(QPixmap.fromImage(image))
 
@@ -175,7 +183,7 @@ class PrintSheet(QWidget):
         if not path:
             return
         try:
-            write_pdf(self.template, path)
+            write_pdf(self.template, path, self.paper.currentText())
         except OSError as e:  # e.g. the PDF is open in a viewer
             QMessageBox.warning(self, "Couldn't save", f"{path}\n\n{e}")
             return

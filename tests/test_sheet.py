@@ -6,10 +6,10 @@ import numpy as np
 import pytest
 
 from omr_core.reader import UnreadablePage, read_page
-from omr_core.sheet import SheetSection, SheetSpec, layout, logo_jpeg, render, write_pdf
+from omr_core.sheet import PAPERS, SheetSection, SheetSpec, layout, logo_jpeg, render, write_pdf
 from omr_core.store import Store
 from omr_core.template import load, parse
-from sheets import draw, fill, photo, random_marks, scan
+from sheets import draw, fill, photo, random_marks, reprint, scan
 
 
 @pytest.mark.parametrize("spec", [
@@ -66,6 +66,31 @@ def test_another_layout_is_not_read_with_this_sheet():
     page = photo(draw(other, {}), dim=0.4)
     with pytest.raises(UnreadablePage, match="orientation mark"):
         read_page(page, parse(layout(SheetSpec("Ours", 100))))
+
+
+@pytest.mark.parametrize("paper,scale,stretch,dpi", [
+    ("A4", 0.7, 1, 200), ("A4", 0.85, 1, 150), ("Letter", 0.94, 1, 200), ("Legal", 1.0, 1, 200),
+    ("A3", 1.0, 1, 200), ("A3", 1.414, 1, 150), ("A5", 0.707, 1, 200), ("A4", 0.95, 0.97, 200),
+])
+def test_the_sheet_reads_the_same_at_any_print_size_and_paper(paper, scale, stretch, dpi):
+    d = layout(SheetSpec("Paper", 200, roll_digits=5, sets=4))
+    t = parse(d)
+    marks, answers, roll, set_code = random_marks(t, 4)
+    page = scan(reprint(fill(render(d), t, marks), PAPERS[paper], scale, stretch, dpi), angle=0.5, seed=2)
+    r = read_page(page, t)
+    assert (r.roll_number, r.set_code, r.answers, r.flags) == (roll, set_code, answers, [])
+
+
+@pytest.mark.parametrize("paper", list(PAPERS))
+def test_the_pdf_fits_the_chosen_paper_and_reads(paper, tmp_path):
+    d = layout(SheetSpec("Paper", 100))
+    write_pdf(d, tmp_path / "s.pdf", paper)
+    import pypdfium2 as pdfium
+    pdf = pdfium.PdfDocument(str(tmp_path / "s.pdf"))
+    assert [round(v / 72 * 25.4) for v in pdf[0].get_size()] == [round(v) for v in PAPERS[paper]]
+    pdf.close()
+    r = read_page(render(d, dpi=150, paper=paper), parse(d))
+    assert not any(r.answers.values()) and {why for _, why in r.flags} == {"blank"}  # only roll and set unfilled
 
 
 def test_a_sheet_too_big_for_a_page_is_refused():

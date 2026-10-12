@@ -30,7 +30,9 @@ from reportlab.pdfgen import canvas
 
 from .template import parse
 
-PAGE = (210.0, 297.0)  # shortcut: A4 only; add Letter when a school asks for it
+PAGE = (210.0, 297.0)  # sheets are laid out on A4 and printed scaled to fit other paper
+PAPERS = {"A4": (210.0, 297.0), "Letter": (215.9, 279.4), "Legal": (215.9, 355.6), "A3": (297.0, 420.0),
+          "A5": (148.0, 210.0)}
 MARK = 8.0  # corner target size, mm
 MARKS = [[12, 12], [198, 12], [198, 285], [12, 285]]
 ORIENTATION = [172, 9, 18, 5]  # a black bar near the top-right mark; upside-down pages are found by it
@@ -356,8 +358,13 @@ def _fonts():
         pdfmetrics.registerFont(TTFont(BOLD, str(FONTS / "Poppins-SemiBold.ttf")))
 
 
-def write_pdf(template: dict, out: str | Path | io.BytesIO):
-    """Print a template made by `layout` as an A4 answer sheet."""
+def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4"):
+    """Print a template made by `layout` as an answer sheet on this paper, scaled to fit and centred.
+
+    The reader finds the sheet by its corner marks, so the scale doesn't matter to it.
+    """
+    if paper not in PAPERS:
+        raise ValueError(f"paper must be one of {', '.join(PAPERS)}")
     t = parse(template)
     style = _style(template)
     _fonts()
@@ -366,8 +373,12 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO):
     band = _mix(ink, 0.28)  # heading bands
     stripe = _mix(ink, 0.11)  # every other question row
     w, h = t.page
-    c = canvas.Canvas(out if isinstance(out, io.BytesIO) else str(out), pagesize=(w * mm, h * mm))
+    pw, ph = PAPERS[paper]
+    c = canvas.Canvas(out if isinstance(out, io.BytesIO) else str(out), pagesize=(pw * mm, ph * mm))
     c.setTitle(t.name)
+    fit = min(pw / w, ph / h)
+    c.translate((pw - w * fit) / 2 * mm, (ph - h * fit) / 2 * mm)
+    c.scale(fit, fit)  # from here on, draw in the template's own millimetres
     y = lambda v: (h - v) * mm  # templates measure from the top, PDFs from the bottom
 
     def box(x0, y0, x1, y1, fill=None, stroke=True, width=LINE):
@@ -550,10 +561,10 @@ def _readable(colour: colors.Color) -> colors.Color:
     return colour if grey >= LIGHTEST_LETTER else _mix(colour, (1 - LIGHTEST_LETTER) / (1 - grey))
 
 
-def render(template: dict, dpi: int = 200) -> np.ndarray:
+def render(template: dict, dpi: int = 200, paper: str = "A4") -> np.ndarray:
     """The printed sheet as a BGR image, for the preview and for tests."""
     buf = io.BytesIO()
-    write_pdf(template, buf)
+    write_pdf(template, buf, paper)
     pdf = pdfium.PdfDocument(buf.getvalue())
     try:
         return pdf[0].render(scale=dpi / 72).to_numpy().copy()  # pdfium renders BGR
