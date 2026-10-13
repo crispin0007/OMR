@@ -9,6 +9,9 @@ Sections give a range of questions its own marks, e.g. 4 right and -1 wrong
 for Physics 1 to 50; questions outside every section use the exam's marks.
 A section with partial marking gives part of the correct marks to an answer
 that picks some of a multi-correct question's options and no wrong one.
+Two or more bubbles filled on a single-answer question (one printed for one
+answer, with a one-letter key) are invalid: no marks, not even negative ones;
+the reader flags them for review.
 """
 
 import csv
@@ -38,6 +41,8 @@ def check_sections(sections: list[Section], questions: list[int]) -> None:
         if s.name in names:
             raise ValueError(f"two sections are called {s.name}")
         names.add(s.name)
+        if s.wrong > 0 or s.blank > 0:
+            raise ValueError(f"{s.name}: wrong and blank marks can't be more than 0; use e.g. -0.25 for negative marking")
         if s.first > s.last:
             raise ValueError(f"{s.name}: starts at question {s.first} but ends at {s.last}")
         if s.first not in questions or s.last not in questions:
@@ -62,12 +67,16 @@ def sections_from_json(data: list[dict]) -> list[Section]:
 
 
 def marks_for(questions: list[int], correct: float, wrong: float, blank: float,
-              sections: list[Section] = ()) -> list[tuple[float, float, float, bool]]:
-    """(correct, wrong, blank, partial) marks for each question, from its section or the exam's marks."""
+              sections: list[Section] = (), single: set[int] | None = None) -> list[tuple[float, float, float, bool, bool]]:
+    """(correct, wrong, blank, partial, single) marks for each question, from its section or the exam's marks.
+
+    `single` are the questions printed for one answer only; None means all of them.
+    """
     out = []
     for q in questions:
         s = next((s for s in sections if s.first <= q <= s.last), None)
-        out.append((s.correct, s.wrong, s.blank, s.partial) if s else (correct, wrong, blank, False))
+        out.append(((s.correct, s.wrong, s.blank, s.partial) if s else (correct, wrong, blank, False))
+                   + (single is None or q in single,))
     return out
 
 
@@ -75,14 +84,17 @@ def score(answers: list[str], key: list[str], correct: float = 1.0, wrong: float
           marks: list[tuple] | None = None) -> float:
     """Total marks for one sheet. `wrong` is negative for negative marking, e.g. -1.
 
-    `marks` gives each question its own (correct, wrong, blank, partial), from `marks_for`.
+    `marks` gives each question its own (correct, wrong, blank, partial, single), from `marks_for`.
+    Without `marks` every question is single-answer.
     """
     if len(answers) != len(key):
         raise ValueError(f"sheet has {len(answers)} answers but key has {len(key)}")
-    marks = marks or [(correct, wrong, blank)] * len(key)
+    marks = marks or [(correct, wrong, blank, False, True)] * len(key)
     total = 0.0
-    for answer, right, (c, w, b, *partial) in zip(answers, key, marks):
-        if partial and partial[0] and _part_right(answer, right):
+    for answer, right, (c, w, b, partial, single) in zip(answers, key, marks):
+        if single and len(answer) > 1 and len(right) == 1 and right != BONUS:
+            continue  # invalid: two bubbles where one answer was asked for earns nothing
+        if partial and _part_right(answer, right):
             # shortcut: counted as wrong in right/wrong/blank counts and colours; only the marks are partial
             total += c * len(set(answer)) / len(set(right))
             continue

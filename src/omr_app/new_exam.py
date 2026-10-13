@@ -32,6 +32,20 @@ USER_TEMPLATES = Path(QStandardPaths.writableLocation(QStandardPaths.GenericData
 
 STEPS = ["Start", "Exam details", "Subjects and sections", "Questions and answers", "Marking", "Sheet look",
          "Review and create"]
+# Ready-made layouts for common exams: (sections as (name, questions), questions when there are no sections,
+# options, marks right, marks wrong).
+# shortcut: JEE Main's numeric-answer questions are plain MCQ here until the sheet has numeric grids.
+READY = {
+    "JEE Main style: Physics, Chemistry, Maths, 25 each, +4 / -1": (
+        [("Physics", 25), ("Chemistry", 25), ("Mathematics", 25)], 0, 4, 4, -1),
+    "NEET style: Physics, Chemistry, Botany, Zoology, 45 each, +4 / -1": (
+        [("Physics", 45), ("Chemistry", 45), ("Botany", 45), ("Zoology", 45)], 0, 4, 4, -1),
+    "CEE style: 200 questions in 5 subjects, 1 mark each": (
+        [("Zoology", 40), ("Botany", 40), ("Chemistry", 50), ("Physics", 50), ("MAT", 20)], 0, 4, 1, 0),
+    "Class test: 50 questions, 1 mark each": ([], 50, 4, 1, 0),
+}
+BLANK = "Start blank"
+
 OWN_SHEET_SKIPS = {"Subjects and sections", "Questions and answers", "Sheet look"}  # the printed sheet decides these
 SETS = ["No sets"] + [f"{n} sets (A to {'ABCDEFGH'[n - 1]})" for n in range(2, 9)]
 COLOURS = [("Pink", "#e4007c"), ("Red", "#d32f2f"), ("Orange", "#ef6c00"), ("Green", "#2e7d32"),
@@ -39,8 +53,8 @@ COLOURS = [("Pink", "#e4007c"), ("Red", "#d32f2f"), ("Orange", "#ef6c00"), ("Gre
 OTHER_COLOUR = "Other colour…"
 
 
-def _marks(value: float) -> QDoubleSpinBox:
-    return QDoubleSpinBox(minimum=-100, maximum=100, value=value, decimals=2, singleStep=0.25)
+def _marks(value: float, most: float = 100) -> QDoubleSpinBox:
+    return QDoubleSpinBox(minimum=-100, maximum=most, value=value, decimals=2, singleStep=0.25)
 
 
 class NewExamWizard(QDialog):
@@ -111,6 +125,15 @@ class NewExamWizard(QDialog):
         layout.addWidget(self.make_sheet)
         layout.addWidget(QLabel("Answer a few questions about the exam and the sheet is laid out for you, ready to "
                                 "print.", objectName="muted", wordWrap=True))
+        self.ready = QComboBox()
+        self.ready.addItems([BLANK, *READY])
+        self.ready.setToolTip("Fills in the subjects, questions and marks; change anything on the next steps")
+        self.ready.currentTextChanged.connect(self.use_ready)
+        ready_row = QHBoxLayout()
+        ready_row.addSpacing(24)
+        ready_row.addWidget(QLabel("Start from"))
+        ready_row.addWidget(self.ready, 1)
+        layout.addLayout(ready_row)
         layout.addSpacing(12)
         layout.addWidget(self.own_sheet)
         layout.addWidget(QLabel("For a sheet you already print. Map it once under Map printed sheet, then pick its "
@@ -191,7 +214,7 @@ class NewExamWizard(QDialog):
 
     def _marking(self, layout: QVBoxLayout):
         layout.addWidget(QLabel("Marking", objectName="title"))
-        self.correct, self.wrong, self.blank = _marks(1), _marks(0), _marks(0)
+        self.correct, self.wrong, self.blank = _marks(1), _marks(0, most=0), _marks(0, most=0)
         self.wrong.setToolTip("Negative marking: e.g. -0.25 or -1 for each wrong answer")
         self.partial = QCheckBox("Partial marking: several bubbles may be filled, and picking some of a multi-correct "
                                  "answer (and no wrong option) earns part of its marks")
@@ -321,6 +344,28 @@ class NewExamWizard(QDialog):
             return self.layout_problem or "Fix the choices above first"
         return ""
 
+    def use_ready(self, name: str):
+        """Fill the steps from a ready-made layout; the user can change anything after."""
+        if name not in READY:
+            return
+        sections, total, options, right, wrong = READY[name]
+        self.make_sheet.setChecked(True)
+        self.true_false.setChecked(False)
+        self.options.setValue(options)
+        self.correct.setValue(right)
+        self.wrong.setValue(wrong)
+        self.sections.setRowCount(0)
+        self.section_marks.setRowCount(0)  # new rows take the marks above
+        if total:
+            self.total.setValue(total)
+        for section, count in sections:
+            self.add_section()
+            row = self.sections.rowCount() - 1
+            self.sections.item(row, 0).setText(section)
+            self.sections.item(row, 1).setText(str(count))
+        self._sections_changed()
+        self._fill_section_marks()
+
     # -- sections ------------------------------------------------------------------------------------------
 
     def add_section(self):
@@ -390,7 +435,7 @@ class NewExamWizard(QDialog):
             item.setFlags(Qt.ItemIsEnabled)
             self.section_marks.setItem(r, 0, item)
             self.section_marks.setCellWidget(r, 1, _marks(correct))
-            self.section_marks.setCellWidget(r, 2, _marks(wrong))
+            self.section_marks.setCellWidget(r, 2, _marks(wrong, most=0))
             box = QTableWidgetItem("Partial marks")
             box.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
             box.setCheckState(Qt.Checked if partial else Qt.Unchecked)
