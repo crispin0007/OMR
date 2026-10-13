@@ -602,6 +602,8 @@ class MainWindow(QMainWindow):
             ("Print sheet", self.print_sheet),
             ("Exam settings", self.exam_settings)])
         self.exam_page.back.connect(lambda: self.go("Exams"))
+        self.exam_page.scan_wanted.connect(self.start_scanning)
+        self.dashboard.scan_wanted.connect(self.start_scanning)
         self.exams_area = QStackedWidget()  # the list of exams, or one exam's page
         self.exams_area.addWidget(self.exams)
         self.exams_area.addWidget(self.exam_page)
@@ -725,6 +727,15 @@ class MainWindow(QMainWindow):
 
     def show_help(self):
         HelpDialog(self, str(self.store_path.parent)).exec()
+
+    def start_scanning(self):
+        """The Scan tab, started: from the scanner when there is one, else it says what to do."""
+        if self.check.exam is None:
+            self.go("Exams")
+            return
+        self.go("Scan")
+        if not self.scan.running:
+            self.scan.start_or_explain()
 
     def import_scans(self):
         if self.check.exam is None:

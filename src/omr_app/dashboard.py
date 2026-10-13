@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from math import atan2, degrees
 
-from PySide6.QtCore import QRectF, Qt
+from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (QFileDialog, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
                                QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QToolTip, QVBoxLayout,
@@ -184,6 +184,8 @@ class Histogram(QWidget):
 
 
 class DashboardPage(QWidget):
+    scan_wanted = Signal()
+
     def __init__(self, check):
         super().__init__()
         self.check = check
@@ -200,7 +202,10 @@ class DashboardPage(QWidget):
         grid = QGridLayout(self)
         grid.setSpacing(14)
         title = QLabel("Dashboard", objectName="title")
-        grid.addWidget(title, 0, 0, 1, 4)
+        grid.addWidget(title, 0, 0, 1, 3)
+        scan = QPushButton("▶  Start scanning", objectName="primary")
+        scan.clicked.connect(self.scan_wanted.emit)
+        grid.addWidget(scan, 0, 3, Qt.AlignRight)
         for col, tile in enumerate((self.read, self.average, self.to_check, self.batches)):
             grid.addWidget(tile, 1, col)
         ring_card, ring_layout = card("Read cleanly and to check", self.ring)

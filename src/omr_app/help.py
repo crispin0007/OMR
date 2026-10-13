@@ -8,10 +8,10 @@ from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QScrollArea, QV
 STEPS = [
     ("Create the exam", "<b>New exam…</b> on Exams asks for the details, sections, questions and marks, and makes "
                         "the answer sheet. Already print your own sheet? Map it once in <b>Map printed sheet</b>."),
-    ("Print the sheet", "<b>Print sheet</b> saves a PDF for any paper size. <b>Check a printed copy…</b> tells you "
-                        "it reads before you print them all."),
-    ("Scan the filled sheets", "<b>Scan</b> reads them as the scanner feeds them, or from the folder your scanner "
-                               "saves into. <b>Import scans…</b> reads PDFs, images and phone photos."),
+    ("Print the sheet", "<b>Print sheet</b> prints it or saves a PDF for any paper size. <b>Check a printed "
+                        "copy…</b> tells you it reads before you print them all."),
+    ("Scan the filled sheets", "<b>Start scanning</b> reads them as the scanner feeds them, or from the folder your "
+                               "scanner saves into. <b>Import scans…</b> reads PDFs, images and phone photos."),
     ("Give the answer key", "<b>Answer key</b>: click or type each answer, or import a CSV."),
     ("Check and send results", "<b>Review</b> shows only what needs a person: unclear marks and unreadable pages. "
                                "<b>Results</b> exports Excel, CSV and PDF scorecards."),

@@ -28,6 +28,7 @@ from .theme import tokens
 
 class ExamPage(QWidget):
     back = Signal()
+    scan_wanted = Signal()
 
     def __init__(self, check, tabs: list[tuple[str, QWidget]]):
         super().__init__()
@@ -43,6 +44,10 @@ class ExamPage(QWidget):
         top.addWidget(self.title)
         top.addSpacing(12)
         top.addWidget(self.about, 1)
+        scan = QPushButton("▶  Start scanning", objectName="primary")
+        scan.setToolTip("Scan sheets into this exam from the scanner's feeder")
+        scan.clicked.connect(self.scan_wanted.emit)
+        top.addWidget(scan)
         self.tabs = QTabWidget()
         for name, widget in tabs:
             self.tabs.addTab(widget, name)

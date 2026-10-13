@@ -15,7 +15,8 @@ import numpy as np
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
-                               QLineEdit, QPushButton, QSizePolicy, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+                               QLineEdit, QMessageBox, QPushButton, QSizePolicy, QSplitter, QTableWidget,
+                               QTableWidgetItem, QVBoxLayout, QWidget)
 
 from omr_core.grading import status
 from omr_core.reader import SCALE, PageResult, read_or_reason
@@ -123,8 +124,10 @@ class ScanPage(QWidget):
         self.folder = QLineEdit(placeholderText="Folder the scanner saves PDFs or images into")
         self.choose = QPushButton("Choose…")
         self.choose.clicked.connect(self.choose_folder)
-        self.start_button = QPushButton("Scan", objectName="primary")
-        self.start_button.clicked.connect(self.start)
+        self.start_button = QPushButton("▶  Start scanning", objectName="primary")
+        self.start_button.setStyleSheet("font-size: 13pt; padding: 8px 22px;")
+        self.start_button.clicked.connect(self.start_or_explain)
+        self.ready = QLabel(objectName="muted")  # whether a scanner was found
         self.pause_button = QPushButton("Pause")
         self.pause_button.setToolTip("Hold the feeder after this page, or the files still to read; Resume carries on")
         self.pause_button.clicked.connect(self.toggle_pause)
@@ -135,12 +138,12 @@ class ScanPage(QWidget):
         self.import_button.setToolTip("Read PDFs or images of sheets scanned earlier, shown here as they are read")
         self.import_button.clicked.connect(self.import_files)
         top = QHBoxLayout()
-        top.addWidget(QLabel("Scan from the feeder, watch a folder, or import scan files.", objectName="muted"))
-        top.addStretch()
-        top.addWidget(self.import_button)
         top.addWidget(self.start_button)
         top.addWidget(self.pause_button)
         top.addWidget(self.stop_button)
+        top.addSpacing(12)
+        top.addWidget(self.ready, 1)
+        top.addWidget(self.import_button)
         options = QGridLayout()
         options.addWidget(QLabel("Scanner"), 0, 0)
         options.addWidget(self.source, 0, 1)
@@ -225,6 +228,30 @@ class ScanPage(QWidget):
         for w in (self.folder, self.choose):
             w.setEnabled(folder)
         self.dpi.setEnabled(not folder)
+        self.start_button.setText("▶  Start watching the folder" if folder else "▶  Start scanning")
+        self.ready.setText(f"✓ Scanner ready: {self.source.currentText()}" if not folder
+                           else "No scanner found through Windows" if not self.devices
+                           else "Reading what scanner software saves into a folder")
+
+    def start_or_explain(self):
+        """Start, or say what's missing and offer the other ways in when there's no scanner or folder to use."""
+        folder = self.folder.text().strip()
+        if self.source.currentText() != FOLDER or folder and Path(folder).is_dir():
+            self.start()
+            return
+        box = QMessageBox(QMessageBox.Information, "Start scanning",
+                          ("No scanner was found through Windows. " if not self.devices else "")
+                          + "Connect the scanner and turn it on, then press Find scanners. Or scan with the "
+                          "scanner's own software into a folder and choose that folder here, or import scan files "
+                          "(PDFs or images) you already have.", parent=self)
+        actions = {box.addButton("Import scans…", QMessageBox.AcceptRole): self.import_files,
+                   box.addButton("Choose folder…", QMessageBox.ActionRole): self.choose_folder,
+                   box.addButton("Find scanners", QMessageBox.ActionRole): self.find_scanners}
+        box.addButton(QMessageBox.Cancel)
+        box.exec()
+        chosen = actions.get(box.clickedButton())
+        if chosen:
+            chosen()
 
     def choose_folder(self):
         path = QFileDialog.getExistingDirectory(self, "Folder the scanner saves into", self.folder.text())
@@ -291,7 +318,7 @@ class ScanPage(QWidget):
         when = f"{datetime.now():%d %b %H:%M:%S}"
         if self.source.currentText() == FOLDER:
             folder = Path(self.folder.text())
-            if not folder.is_dir():
+            if not self.folder.text().strip() or not folder.is_dir():  # Path("") is the current folder
                 self.status.setText("Pick the folder your scanner software saves into.")
                 return
             self.batch = f"{folder.name} folder  ·  {when}"
@@ -358,7 +385,7 @@ class ScanPage(QWidget):
         self.add_page(page, self.file_path, n)
 
     def _files_done(self):
-        self.check.fill_table()
+        self.check.show_sheets(None)  # also the count above the table
         if not self.timer.isActive():  # an import, not a watched folder
             self.status.setText(f"Done. {self._summary()}"
                                 + (f" Couldn't read {'; '.join(self.failed)}." if self.failed else ""))
@@ -389,7 +416,7 @@ class ScanPage(QWidget):
             self.feeder.stop()
             self.files.clear()
             self.file_pages = None
-            self.check.fill_table()
+            self.check.show_sheets(None)
             self.status.setText(f"Stopped. {self._summary()}"
                                 + (f" {left} file{'s' if left > 1 else ''} not read." if left else ""))
         self._enable()
@@ -398,13 +425,13 @@ class ScanPage(QWidget):
         self.thread.wait()
         self.thread = None
         self.paused = False
-        self.check.fill_table()
+        self.check.show_sheets(None)  # also the count above the table
         if problem:
             latest = self.check.sheets[-1] if len(self.check.sheets) > self.first else None
             roll = latest.result.roll_number if latest and latest.result else ""
             self.status.setText(f"{problem}. Every page scanned before that is saved"
                                 + (f" (the last sheet read has roll number {roll})" if roll else "")
-                                + ". Put the sheets that weren't scanned back on the feeder and press Scan.")
+                                + ". Put the sheets that weren't scanned back on the feeder and press Start scanning.")
             self.status.setObjectName("error")
         else:
             self.status.setText(f"Feeder empty. {self._summary()}")
@@ -480,7 +507,7 @@ class ScanPage(QWidget):
             files = ready_files(folder, known, self.sizes)
         except OSError as e:
             self.timer.stop()
-            self.status.setText(f"Can't read the folder any more: {e}. Press Scan to watch it again.")
+            self.status.setText(f"Can't read the folder any more: {e}. Press Start watching the folder to try again.")
             self._enable()
             return
         for path in files:

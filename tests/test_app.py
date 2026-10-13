@@ -1118,3 +1118,34 @@ def test_imported_sheets_show_live_with_their_marks_and_can_pause_and_stop(app, 
     s.step()
     s.stop()
     assert s.live.rowCount() == 1 and "2 files not read" in s.status.text() and not s.running
+
+
+def test_start_scanning_is_one_click_from_the_dashboard_and_the_exam_page(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    t = load(TEMPLATES / "test-100.json")
+    marks, _, roll, _ = random_marks(t, 4)
+    monkeypatch.setattr(scanner, "scanners", lambda: [FakeScanner([scan(draw(t, marks))])])
+    w = window(tmp_path)
+    w.scan.find_scanners()
+    assert "Scanner ready: Test scanner" in w.scan.ready.text() and "Start scanning" in w.scan.start_button.text()
+    w.go("Dashboard")
+    w.dashboard.scan_wanted.emit()
+    assert w.showing() is w.scan and w.scan.thread is not None
+    w.scan.thread.wait()
+    for _ in range(5):
+        app.processEvents()
+    assert [p.result.roll_number for p in w.store.pages(w.check.exam.id)] == [roll]
+
+    # No scanner and no folder: it says what to do and offers the other ways in.
+    monkeypatch.setattr(scanner, "scanners", lambda: [])
+    w.scan.find_scanners()
+    assert w.scan.ready.text() == "No scanner found through Windows"
+    w.scan.folder.setText("")
+    asked, imported = [], []
+    monkeypatch.setattr(QMessageBox, "exec", lambda box: asked.append(box.text()))
+    monkeypatch.setattr(QMessageBox, "clickedButton",
+                        lambda box: next(b for b in box.buttons() if b.text() == "Import scans…"))
+    monkeypatch.setattr(w.scan, "import_files", lambda: imported.append(True))
+    w.go("Results")
+    w.exam_page.scan_wanted.emit()
+    assert w.showing() is w.scan and "No scanner was found" in asked[0] and imported == [True]

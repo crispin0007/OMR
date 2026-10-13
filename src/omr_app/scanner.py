@@ -76,7 +76,7 @@ class WiaScanner:
                 except pywintypes.com_error as e:
                     if _code(e) == PAPER_EMPTY:
                         if first:
-                            raise ScanStopped("The feeder is empty. Put the sheets on the feeder and press Scan.") from e
+                            raise ScanStopped("The feeder is empty. Put the sheets on the feeder and press Start scanning.") from e
                         return
                     raise ScanStopped(_problem(e)) from e
                 first = False
