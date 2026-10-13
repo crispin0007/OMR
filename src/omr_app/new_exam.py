@@ -9,6 +9,7 @@ needed. A school that already prints its own sheet picks that sheet's template
 
 import json
 from pathlib import Path
+from typing import NamedTuple
 
 from PySide6.QtCore import QDate, QStandardPaths, Qt, QTime, QTimer
 from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
@@ -32,18 +33,72 @@ USER_TEMPLATES = Path(QStandardPaths.writableLocation(QStandardPaths.GenericData
 
 STEPS = ["Start", "Exam details", "Subjects and sections", "Questions and answers", "Marking", "Sheet look",
          "Review and create"]
-# Ready-made layouts for common exams: (sections as (name, questions) or (name, questions, digits of a numeric
-# answer), questions when there are no sections, options, marks right, marks wrong).
+class Ready(NamedTuple):
+    """A ready-made layout: an exam's question pattern and marking, laid out on our own sheet."""
+    sections: list  # (name, questions), or (name, questions, digits) for numeric answers
+    total: int  # questions when there are no sections
+    options: int
+    right: float
+    wrong: float
+    roll: int = 6
+    sets: int = 4  # 0 for none
+    labels: str = "letters"
+    shape: str = "pill"
+
+
+def _parts(names: str, each: int) -> list:
+    return [(name, each) for name in names.split(", ")]
+
+
+# Patterns of national exams, from their published question counts and marking (see the README). The sheets
+# are ours: no exam's official sheet or artwork is copied, and the wizard says so.
 READY = {
-    "JEE Main style: Physics, Chemistry, Maths, 20 options + 5 numeric each, +4 / -1": (
+    "Nepal · MECEE-BL / CEE pattern: 200 questions, +1 / -0.25": Ready(
+        [("Zoology", 40), ("Botany", 40), ("Chemistry", 50), ("Physics", 50), ("MAT", 20)], 0, 4, 1, -0.25,
+        shape="circle"),
+    "Nepal · KUUMAT pattern: 100 questions, +1 / -0.25": Ready(_parts("Part 1, Part 2, Part 3, Part 4", 25), 0, 4,
+                                                               1, -0.25, shape="circle"),
+    "Nepal · TU CMAT pattern: 100 questions, no negative marking": Ready(
+        _parts("Verbal, Quantitative, Logical reasoning, General awareness", 25), 0, 4, 1, 0, shape="circle"),
+    "Nepal · IOE entrance mock: Maths, Physics, Chemistry, English, 100 questions": Ready(
+        [("Mathematics", 30), ("Physics", 30), ("Chemistry", 25), ("English", 15)], 0, 4, 1, -0.1),
+    "Nepal · Lok Sewa practice: 100 questions, +1 / -0.2": Ready([], 100, 4, 1, -0.2),
+    "India · NEET-UG pattern: 180 questions, options 1-4, +4 / -1": Ready(
+        [("Physics", 45), ("Chemistry", 45), ("Botany", 45), ("Zoology", 45)], 0, 4, 4, -1, roll=9, labels="numbers",
+        shape="circle"),
+    "India · JEE Main mock: 20 options + 5 numeric per subject, +4 / -1": Ready(
         [("Physics", 20), ("Physics numeric", 5, 3), ("Chemistry", 20), ("Chemistry numeric", 5, 3),
-         ("Mathematics", 20), ("Mathematics numeric", 5, 3)], 0, 4, 4, -1),
-    "NEET style: Physics, Chemistry, Botany, Zoology, 45 each, +4 / -1": (
-        [("Physics", 45), ("Chemistry", 45), ("Botany", 45), ("Zoology", 45)], 0, 4, 4, -1),
-    "CEE style: 200 questions in 5 subjects, 1 mark each": (
-        [("Zoology", 40), ("Botany", 40), ("Chemistry", 50), ("Physics", 50), ("MAT", 20)], 0, 4, 1, 0),
-    "Class test: 50 questions, 1 mark each": ([], 50, 4, 1, 0),
+         ("Mathematics", 20), ("Mathematics numeric", 5, 3)], 0, 4, 4, -1, sets=0),
+    "India · UPSC prelims GS pattern: 100 questions, +2 / -0.66": Ready([], 100, 4, 2, -0.66, roll=7,
+                                                                        labels="lower", shape="circle"),
+    "India · UPSC CSAT pattern: 80 questions, +2.5 / -0.83": Ready([], 80, 4, 2.5, -0.83, roll=7, labels="lower",
+                                                                   shape="circle"),
+    "India · NDA Maths pattern: 120 questions, +2.5 / -0.83": Ready([], 120, 4, 2.5, -0.83, roll=7, labels="lower",
+                                                                    shape="circle"),
+    "India · NDA GAT pattern: 150 questions, +4 / -1.33": Ready([], 150, 4, 4, -1.33, roll=7, labels="lower",
+                                                                shape="circle"),
+    "India · CTET pattern: 150 questions in 5 parts, no negative marking": Ready(
+        _parts("Child development, Language I, Language II, Mathematics, Environmental studies", 30), 0, 4, 1, 0,
+        roll=8, shape="circle"),
+    "India · KCET pattern: 60 questions, no negative marking": Ready([], 60, 4, 1, 0, shape="circle"),
+    "India · SSC CGL / CHSL mock: 100 questions, +2 / -0.5": Ready(
+        _parts("Reasoning, General awareness, Quantitative aptitude, English", 25), 0, 4, 2, -0.5),
+    "India · Bank PO / Clerk prelims mock: 100 questions, 5 options, +1 / -0.25": Ready(
+        [("English", 30), ("Quantitative aptitude", 35), ("Reasoning", 35)], 0, 5, 1, -0.25),
+    "India · RRB NTPC mock: 100 questions, +1 / -0.33": Ready(
+        [("General awareness", 40), ("Mathematics", 30), ("Reasoning", 30)], 0, 4, 1, -0.33),
+    "India · CUET mock: 50 questions, +5 / -1": Ready([], 50, 4, 5, -1),
+    "Bangladesh · BCS preliminary pattern: 200 questions, +1 / -0.5": Ready([], 200, 4, 1, -0.5, shape="circle"),
+    "Pakistan · MDCAT pattern: 180 questions, no negative marking": Ready(
+        [("Biology", 81), ("Chemistry", 45), ("Physics", 36), ("English", 9), ("Logical reasoning", 9)], 0, 4, 1, 0,
+        shape="circle"),
+    "Turkey · YKS TYT pattern: 120 questions, 5 options, -0.25": Ready(
+        [("Turkish", 40), ("Social sciences", 20), ("Mathematics", 40), ("Science", 20)], 0, 5, 1, -0.25, roll=9,
+        sets=2, shape="circle"),
+    "Class test: 50 questions, 1 mark each": Ready([], 50, 4, 1, 0, roll=5),
 }
+PATTERN_NOTE = ("Ready-made layouts match an exam's question pattern and marking on this app's own sheet; they are "
+                "not the official answer sheets. Check the marks for your exam.")
 BLANK = "Start blank"
 
 OWN_SHEET_SKIPS = {"Subjects and sections", "Questions and answers", "Sheet look"}  # the printed sheet decides these
@@ -156,6 +211,9 @@ class NewExamWizard(QDialog):
         ready_row.addWidget(QLabel("Start from"))
         ready_row.addWidget(self.ready, 1)
         layout.addLayout(ready_row)
+        note = QLabel(PATTERN_NOTE, objectName="muted", wordWrap=True)
+        note.setContentsMargins(24, 0, 0, 0)
+        layout.addWidget(note)
         layout.addSpacing(12)
         layout.addWidget(self.own_sheet)
         layout.addWidget(QLabel("For a sheet you already print. Map it once under Map printed sheet, then pick its "
@@ -386,10 +444,14 @@ class NewExamWizard(QDialog):
         """Fill the steps from a ready-made layout; the user can change anything after."""
         if name not in READY:
             return
-        sections, total, options, right, wrong = READY[name]
+        sections, total, options, right, wrong, roll, sets, labels, shape = READY[name]
         self.make_sheet.setChecked(True)
         self.true_false.setChecked(False)
         self.options.setValue(options)
+        self.roll.setValue(roll)
+        self.sets.setCurrentIndex(sets - 1 if sets else 0)
+        self.labels.setCurrentIndex(self.labels.findData(labels))
+        self.shape.setCurrentIndex(self.shape.findData(shape))
         self.correct.setValue(right)
         self.wrong.setValue(wrong)
         self.sections.setRowCount(0)

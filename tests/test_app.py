@@ -852,14 +852,16 @@ def test_ready_made_layouts_fill_the_wizard_and_fit_the_sheet(app, tmp_path):
     from omr_app import new_exam
     from omr_core.store import Store
     z = new_exam.NewExamWizard(None, Store(tmp_path / "omr.db"))
-    for name, (sections, total, options, right, wrong) in new_exam.READY.items():
+    for name, (sections, total, options, right, wrong, roll, sets, labels, shape) in new_exam.READY.items():
         z.ready.setCurrentText(name)
         assert z.total.value() == (sum(s[1] for s in sections) or total) and z.options.value() == options
+        assert (z.roll.value(), z.labels.currentData(), z.shape.currentData()) == (roll, labels, shape)
         assert [(s.name, s.digits) for s in z.read_sections()] == [(s[0], (s[2:] or [0])[0]) for s in sections]
         assert [(s.correct, s.wrong) for s in z.sheet_sections()] == [(right, wrong)] * len(sections)
         z.update_preview()
         assert z.made is not None, (name, z.layout_problem)  # fits one page
-    z.ready.setCurrentText(next(n for n in new_exam.READY if n.startswith("JEE")))
+        assert len([g for g in z.made["grids"] if g["kind"] == "set_code"]) == bool(sets)
+    z.ready.setCurrentText(next(n for n in new_exam.READY if "JEE" in n))
     z.update_preview()
     assert [g["first"] for g in z.made["grids"] if g["kind"] == "numeric"] == [*range(21, 26), *range(46, 51),
                                                                                *range(71, 76)]

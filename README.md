@@ -67,8 +67,13 @@ the first exam exists, Exams shows the steps below. **Help** (F1) repeats them
 with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
 
 1. On **Exams**, **New exam…** sets up the exam step by step. **Start from**
-   fills it in from a ready-made layout (JEE Main, NEET or CEE style, or a
-   50-question class test) to change as you like. The steps cover its name,
+   fills it in from a ready-made layout to change as you like: the question
+   pattern and marking of national exams in Nepal (MECEE-BL/CEE, KUUMAT,
+   CMAT, IOE, Lok Sewa practice), India (NEET, JEE Main, UPSC prelims and
+   CSAT, NDA, CTET, KCET, SSC, bank prelims, RRB NTPC, CUET), Bangladesh
+   (BCS), Pakistan (MDCAT) and Turkey (YKS TYT), or a 50-question class
+   test. These are this app's own sheets laid out to each exam's pattern,
+   not the official answer sheets. The steps cover its name,
    class, date, time and duration; its subjects or sections, the question
    numbers each covers and whether it is answered with options or with a
    number (up to 6 digits, e.g. JEE numeric questions, which get a box of
