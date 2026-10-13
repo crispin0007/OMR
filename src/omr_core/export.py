@@ -38,7 +38,7 @@ class Graded:
 
 
 def questions(t: Template) -> list[int]:
-    return sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows))
+    return t.questions()
 
 
 def single_questions(t: Template) -> set[int]:

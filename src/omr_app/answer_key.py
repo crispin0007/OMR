@@ -8,12 +8,14 @@ from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths, Qt
 from PySide6.QtGui import QBrush, QColor
-from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QMessageBox,
-                               QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+                               QMessageBox, QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
+                               QWidget)
 
 from omr_core.grading import BONUS, DROPPED, format_key, key_from_csv, key_from_sheet, key_to_csv, parse_key
 from omr_core.reader import read_or_reason
 from omr_core.sources import read_pages
+from omr_core.template import DIGITS
 
 from .theme import tokens
 
@@ -22,7 +24,8 @@ ALL_SETS = "All sets"
 
 class KeyGrid(QTableWidget):
     """The key for one set. Keys: a letter sets that answer and moves down, Shift+letter adds or removes it
-    (more than one correct option), * marks a bonus, Space or Delete drops the question, Enter moves down."""
+    (more than one correct option), * marks a bonus, Space or Delete drops the question, Enter moves down.
+    On a numeric question a digit or Enter, or a click, asks for the number."""
 
     def __init__(self, tab: "KeyTab"):
         super().__init__(0, 0)
@@ -41,6 +44,8 @@ class KeyGrid(QTableWidget):
         if row < 0 or event.key() in (Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home,
                                       Qt.Key_End, Qt.Key_Tab):
             super().keyPressEvent(event)
+        elif row in self.tab.numeric and (text.isdigit() or event.key() in (Qt.Key_Return, Qt.Key_Enter)):
+            self.tab.ask_number(row, text if text.isdigit() else None)
         elif event.key() in (Qt.Key_Return, Qt.Key_Enter):
             self.down(row)
         elif event.key() in (Qt.Key_Space, Qt.Key_Delete, Qt.Key_Backspace):
@@ -49,7 +54,7 @@ class KeyGrid(QTableWidget):
         elif text == BONUS:
             self.tab.set_answer(row, BONUS)
             self.down(row)
-        elif text and text in self.tab.options:
+        elif text and text in self.tab.options and row not in self.tab.numeric:
             if event.modifiers() & Qt.ShiftModifier:
                 self.tab.toggle(row, text)
             else:
@@ -63,13 +68,15 @@ class KeyGrid(QTableWidget):
 
     def pick(self, row: int, col: int):
         option = col - 2
-        if 0 <= option < len(self.tab.options):
+        if row in self.tab.numeric and 0 <= option < self.tab.bonus_col - 2:
+            self.tab.ask_number(row)
+        elif 0 <= option < len(self.tab.options):
             letter = self.tab.options[option]
             if QApplication.keyboardModifiers() & Qt.ControlModifier:
                 self.tab.toggle(row, letter)
             else:
                 self.tab.set_answer(row, "" if self.tab.answer(row) == letter else letter)
-        elif col == 2 + len(self.tab.options):
+        elif col == self.tab.bonus_col:
             self.tab.set_answer(row, DROPPED if self.tab.answer(row) == BONUS else BONUS)
 
 
@@ -78,7 +85,10 @@ class KeyTab(QWidget):
         super().__init__()
         self.check = check
         self.key_edit = key_edit
-        self.options = ""
+        self.options = ""  # the option letters of every question with options
+        self.per_question: list[str] = []  # each question's options, DIGITS for a numeric one
+        self.numeric: set[int] = set()  # rows of numeric questions
+        self.bonus_col = 2
         self.shown_exam = None  # the exam the set list was made for
         self.sets = QComboBox()
         self.sets.currentIndexChanged.connect(self.refresh)
@@ -104,7 +114,8 @@ class KeyTab(QWidget):
         top.addWidget(self.paste_button)
         self.grid = KeyGrid(self)
         help_text = QLabel("Click the right option or press its letter; the next question is selected. Shift+letter "
-                           "or Ctrl+click adds a second correct option. * is a bonus question; Space drops one.",
+                           "or Ctrl+click adds a second correct option. * is a bonus question; Space drops one. "
+                           "For a numeric question, type the number.",
                            objectName="muted", wordWrap=True)
         key_edit.hide()
         layout = QVBoxLayout(self)
@@ -122,7 +133,7 @@ class KeyTab(QWidget):
     def keys(self) -> dict[str, list[str]]:
         """The keys in the text, or {} when it doesn't read."""
         try:
-            return parse_key(self.key_edit.toPlainText(), len(self.check.questions), self.options)
+            return parse_key(self.key_edit.toPlainText(), len(self.check.questions), self.per_question)
         except ValueError:
             return {}
 
@@ -145,6 +156,20 @@ class KeyTab(QWidget):
         picked = set(now) ^ {letter}
         self.set_answer(row, "".join(o for o in self.options if o in picked))
 
+    def ask_number(self, row: int, typed: str | None = None):
+        now = self.answer(row)
+        start = typed if typed is not None else now if now.isdigit() else ""
+        text, ok = QInputDialog.getText(self, "Answer key", f"Q{self.check.questions[row]}: the right number "
+                                        "(leave it empty to drop the question)", text=start)
+        text = text.strip()
+        if not ok:
+            return
+        if text and not text.isdigit():
+            QMessageBox.warning(self, "Not a number", f"{text} isn't a whole number.")
+            return
+        self.set_answer(row, str(int(text)) if text else DROPPED)
+        self.grid.down(row)
+
     # -- showing it -----------------------------------------------------------------------------------------
 
     def refresh(self):
@@ -154,6 +179,8 @@ class KeyTab(QWidget):
         options = "".join(sorted({o for g in t.grids if g.kind == "questions" for o in g.options})) if t else ""
         sets = next((g.options for g in t.grids if g.kind == "set_code"), "") if t else ""
         self.options = options
+        self.per_question = t.answer_options() if t else []
+        self.numeric = {r for r, o in enumerate(self.per_question) if o == DIGITS}
         keys = self.keys()
         self.sets.blockSignals(True)
         if exam is not self.shown_exam:
@@ -165,9 +192,12 @@ class KeyTab(QWidget):
         self.sets.blockSignals(False)
         self.sets.setVisible(bool(sets))
         questions = self.check.questions
-        if self.grid.columnCount() != len(options) + 3:
-            self.grid.setColumnCount(len(options) + 3)
-            self.grid.setHorizontalHeaderLabels(["Question", "Section", *options, "Bonus"])
+        heads = list(options) or ["Number"]  # a sheet of only numeric questions shows its numbers in one column
+        self.bonus_col = 2 + len(heads)
+        if [self.grid.horizontalHeaderItem(c).text() if self.grid.horizontalHeaderItem(c) else ""
+                for c in range(self.grid.columnCount())] != ["Question", "Section", *heads, "Bonus"]:
+            self.grid.setColumnCount(len(heads) + 3)
+            self.grid.setHorizontalHeaderLabels(["Question", "Section", *heads, "Bonus"])
         self.grid.setRowCount(len(questions))
         key = keys.get(self.set_code()) or [DROPPED] * len(questions)
         sections = self.check.sections
@@ -176,10 +206,14 @@ class KeyTab(QWidget):
             section = next((s.name for s in sections if s.first <= q <= s.last), "")
             for c, text in ((0, str(q)), (1, section)):
                 self._cell(r, c, text, None, None)
-            for i, o in enumerate(options):
+            for i, o in enumerate(heads):
+                if r in self.numeric:  # the number goes in the first answer column
+                    given = key[r].isdigit() and i == 0
+                    self._cell(r, 2 + i, key[r] if given else "", accent if given else None, on if given else None)
+                    continue
                 chosen = key[r] not in (BONUS, DROPPED) and o in key[r]
                 self._cell(r, 2 + i, o, accent if chosen else None, on if chosen else None)
-            self._cell(r, 2 + len(options), "Bonus" if key[r] == BONUS else "", accent if key[r] == BONUS else None,
+            self._cell(r, self.bonus_col, "Bonus" if key[r] == BONUS else "", accent if key[r] == BONUS else None,
                        on if key[r] == BONUS else None)
         answered = sum(a != DROPPED for a in key)
         text = f"{answered} of {len(questions)} questions in the key"
@@ -223,7 +257,7 @@ class KeyTab(QWidget):
         if not path:
             return
         try:
-            keys = key_from_csv(Path(path).read_text(encoding="utf-8-sig"), self.check.questions, self.options)
+            keys = key_from_csv(Path(path).read_text(encoding="utf-8-sig"), self.check.questions, self.per_question)
         except (OSError, UnicodeDecodeError, ValueError) as e:
             QMessageBox.warning(self, "Can't import that key", f"{path}\n\n{e}")
             return

@@ -128,7 +128,7 @@ class Store:
         t = parse(d)  # refuse a template the reader can't use
         # A sheet made in the app carries its sections and marks; the exam starts with them.
         sections = sections_from_json(d.get("sections", []))
-        check_sections(sections, sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows)))
+        check_sections(sections, t.questions())
         with self.db:
             cur = self.db.execute("INSERT INTO exam (name, template, created, sections, details) "
                                   "VALUES (?, ?, ?, ?, ?)",
@@ -157,7 +157,7 @@ class Store:
 
     def save_sections(self, exam_id: int, sections: list[Section]):
         t = self.exam(exam_id).template
-        check_sections(sections, sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows)))
+        check_sections(sections, t.questions())
         with self.db:
             self.db.execute("UPDATE exam SET sections = ? WHERE id = ?",
                             (json.dumps(sections_to_json(sections)), exam_id))
@@ -253,7 +253,7 @@ class Store:
         log keeps them. Raises ValueError for a template the reader can't use or a page left out."""
         d = json.loads(template_json)
         t = parse(d)
-        questions = sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows))
+        questions = t.questions()
         ids = {i for (i,) in self.db.execute("SELECT id FROM page WHERE exam_id = ?", (exam_id,))}
         if set(pages) != ids:
             raise ValueError("every page of the exam must be read again with the new sheet")
@@ -309,8 +309,8 @@ class Store:
     def correct(self, page_id: int, item: str, value: str, user: str) -> StoredPage:
         """Set one answer, roll number digit or set code by hand, clear its flag, and log the change (FR-013).
 
-        `item` is a flag's "where": "Q12", "roll number digit 3" or "set code". Keeping a reading as it is
-        is a correction too: it clears the flag and is logged.
+        `item` is a flag's "where": "Q12", "roll number digit 3" or "set code"; a numeric question takes its
+        digits. Keeping a reading as it is is a correction too: it clears the flag and is logged.
         """
         row = self.db.execute("SELECT p.exam_id, p.roll_number, p.set_code, p.answers, p.flags, e.template "
                               "FROM page p JOIN exam e ON e.id = p.exam_id WHERE p.id = ?", (page_id,)).fetchone()
@@ -323,15 +323,21 @@ class Store:
         t, answers, value = parse(json.loads(template)), json.loads(answers), value.upper()
         if item.startswith("Q") and item[1:].isdigit():
             q = int(item[1:])
-            grid = next((g for g in t.grids if g.kind == "questions" and g.first <= q < g.first + g.rows), None)
+            grid = t.grid_for(q)
             if grid is None:
                 raise ValueError(f"the sheet has no question {q}")
-            if any(c not in grid.options for c in value) or len(set(value)) != len(value):
+            if grid.kind == "numeric":
+                if value and (not value.isdigit() or len(value.lstrip("0") or "0") > grid.cols):
+                    raise ValueError(f"{item} takes a whole number of up to {grid.cols} digits")
+                value = str(int(value)) if value else ""
+                before, answers[str(q)] = answers[str(q)], value
+            elif any(c not in grid.options for c in value) or len(set(value)) != len(value):
                 raise ValueError(f"{value!r} isn't an answer to {item} (options {grid.options})")
-            if len(value) > 1 and not grid.multi:
+            elif len(value) > 1 and not grid.multi:
                 raise ValueError(f"{item} takes one answer")
-            value = "".join(sorted(value))
-            before, answers[str(q)] = answers[str(q)], value
+            else:
+                value = "".join(sorted(value))
+                before, answers[str(q)] = answers[str(q)], value
         elif item.startswith("roll number digit "):
             n = int(item.rsplit(" ", 1)[1]) - 1
             if not 0 <= n < len(roll) or len(value) != 1 or value not in "0123456789":
