@@ -119,3 +119,18 @@ def test_key_from_a_master_sheet_leaves_out_doubtful_marks():
                                    [("Q4", "unclear mark"), ("Q5", "multiple marks"), ("roll number", "blank")],
                                    [1, 2, 3, 4, 5])
     assert key == ["A", "BD", "-", "-", "-"] and doubtful == [4, 5]
+
+
+def test_numeric_answers_are_right_when_the_number_is():
+    from omr_core.template import DIGITS
+    each = ["ABCD", DIGITS, DIGITS]
+    assert parse_key("B42", 2, each[:2]) == {"": ["B", "42"]}  # a number's digits stay together
+    assert parse_key("B, 042, 7", 3, each) == {"": ["B", "42", "7"]}
+    assert score(["B", "042", "5"], ["B", "42", "7"], wrong=-1) == 1  # 042 is 42; 5 isn't 7
+    assert score(["4", ""], ["42", "7"], marks=[(4, -1, 0, True)] * 2) == -1  # no part marks for part of a number
+    with pytest.raises(ValueError, match="4 is not an option"):
+        parse_key("4, 42", 2, each[:2])
+    with pytest.raises(ValueError, match="X is not a number"):
+        parse_key("B, X", 2, each[:2])
+    assert key_from_csv("question,answer\n1,b\n2,042\n", [1, 2], each[:2]) == {"": ["B", "42"]}
+    assert format_key({"": ["B", "42", "-"]}) == "B, 42"

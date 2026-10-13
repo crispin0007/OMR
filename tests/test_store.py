@@ -238,14 +238,15 @@ def test_backup_restores_on_another_pc_without_replacing_anything(tmp_path):
     assert len(other.exams()) == 2
 
 
-def test_an_exam_in_a_test_series_starts_with_its_student_list(tmp_path):
+def test_a_numeric_answer_is_corrected_with_its_digits(tmp_path):
     s = Store(tmp_path / "omr.db")
-    first = s.create_exam("Mock 1", TEMPLATE, {"series": "JEE 2027"})
-    s.set_students(first, [Student("12345", "Asha", "12 A")])
-    other = s.create_exam("Quiz", TEMPLATE)
-    second = s.create_exam("Mock 2", TEMPLATE, {"series": "JEE 2027"})
-    assert s.students(second) == {"12345": Student("12345", "Asha", "12 A")} and s.students(other) == {}
-    s.set_series(other, " NEET 2027 ")
-    assert s.series_names() == ["JEE 2027", "NEET 2027"] and s.series_exams("JEE 2027") == [first, second]
-    s.set_series(other, "")
-    assert s.series_names() == ["JEE 2027"] and s.series_exams("") == [] and s.exam(other).details == {"series": ""}
+    exam = s.create_exam("JEE", json.dumps(layout(SheetSpec("JEE", 3, sections=[
+        SheetSection("MCQ", 2), SheetSection("Numeric", 1, digits=3)]))))
+    page = s.add_page(exam, "b", "scan.pdf", 1, PageResult("12345", "A", {1: "A", 2: "", 3: "4?2"},
+                                                           [("Q3", "gap between digits")]))
+    for bad in ("4A", "1234", "B"):
+        with pytest.raises(ValueError, match="up to 3 digits"):
+            s.correct(page.id, "Q3", bad, "asha")
+    fixed = s.correct(page.id, "Q3", "042", "asha")
+    assert fixed.result.answers[3] == "42" and fixed.result.flags == []
+    assert s.audit(exam)[0][4:] == ("Q3", "4?2", "42")

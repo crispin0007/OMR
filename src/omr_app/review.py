@@ -27,11 +27,13 @@ def region(t: Template, item: str) -> tuple[Grid | None, tuple[float, float, flo
 
     if item.startswith("Q") and item[1:].isdigit():
         q = int(item[1:])
-        for g in t.grids:
-            if g.kind == "questions" and g.first <= q < g.first + g.rows:
-                r = q - g.first
-                around = box(g, max(r - 2, 0), 0, min(r + 2, g.rows - 1), g.cols - 1, 6)
-                return g, around, box(g, r, 0, r, g.cols - 1, 1)
+        g = t.grid_for(q)
+        if g and g.kind == "numeric":
+            return g, box(g, 0, 0, g.rows - 1, g.cols - 1, 6), box(g, 0, 0, g.rows - 1, g.cols - 1, 1)
+        if g:
+            r = q - g.first
+            around = box(g, max(r - 2, 0), 0, min(r + 2, g.rows - 1), g.cols - 1, 6)
+            return g, around, box(g, r, 0, r, g.cols - 1, 1)
     kind = "set_code" if item == "set code" else "roll_number" if item.startswith("roll number") else None
     g = next((g for g in t.grids if g.kind == kind), None)
     if g is None and item == "roll number" and t.barcode:
@@ -146,6 +148,9 @@ class ReviewPage(QWidget):
             current = r.answers[int(item[1:])]
             self.read_as.setText(f"Read as: {current or 'blank'}")
             grid = found[0] if found else None
+            if grid and grid.kind == "numeric":
+                self._number_entry(item, current, grid.cols)
+                return
             options = grid.options if grid else ""
             self._choice_buttons(item, list(options) + [""], keep=current if grid and (grid.multi or
                                                                                         len(current) <= 1) else None)
@@ -169,6 +174,20 @@ class ReviewPage(QWidget):
             self.buttons.addWidget(save)
             self.buttons.addStretch()
             self.help.hide()
+
+    def _number_entry(self, item: str, current: str, digits: int):
+        """A box to type a numeric answer into, as no button per digit can give a number."""
+        edit = QLineEdit(current.replace("?", ""), maxLength=digits, placeholderText="the number filled")
+        save = QPushButton("Save number", objectName="primary")
+        save.clicked.connect(lambda: self.fix(item, edit.text()))
+        edit.returnPressed.connect(save.click)
+        blank = QPushButton("Blank")
+        blank.clicked.connect(lambda: self.fix(item, ""))
+        for w in (edit, save, blank):
+            self.buttons.addWidget(w)
+        self.buttons.addStretch()
+        self.help.hide()
+        edit.setFocus()
 
     def _choice_buttons(self, item: str, choices: list[str], keep: str | None):
         for value in choices:
