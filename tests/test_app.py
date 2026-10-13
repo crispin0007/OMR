@@ -54,6 +54,8 @@ def test_reads_sheets_and_scores_them(app, tmp_path):
     assert cell(6) == str(right)
     c.wrong.setValue(-1)
     assert cell(6) == str(right)  # blanks aren't wrong
+    c.wrong.setValue(0.25)
+    assert c.wrong.value() == 0  # a wrong answer can't earn marks, e.g. from scrolling over the box
     c.table.selectRow(0)
     assert c.review_list.item(0).text() == "Nothing to check"
     assert w.dashboard.read.value.text() == "1" and w.dashboard.average.value.text() == f"{right:.1f}"

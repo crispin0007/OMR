@@ -53,8 +53,8 @@ COLOURS = [("Pink", "#e4007c"), ("Red", "#d32f2f"), ("Orange", "#ef6c00"), ("Gre
 OTHER_COLOUR = "Other colour…"
 
 
-def _marks(value: float) -> QDoubleSpinBox:
-    return QDoubleSpinBox(minimum=-100, maximum=100, value=value, decimals=2, singleStep=0.25)
+def _marks(value: float, most: float = 100) -> QDoubleSpinBox:
+    return QDoubleSpinBox(minimum=-100, maximum=most, value=value, decimals=2, singleStep=0.25)
 
 
 class NewExamWizard(QDialog):
@@ -214,7 +214,7 @@ class NewExamWizard(QDialog):
 
     def _marking(self, layout: QVBoxLayout):
         layout.addWidget(QLabel("Marking", objectName="title"))
-        self.correct, self.wrong, self.blank = _marks(1), _marks(0), _marks(0)
+        self.correct, self.wrong, self.blank = _marks(1), _marks(0, most=0), _marks(0, most=0)
         self.wrong.setToolTip("Negative marking: e.g. -0.25 or -1 for each wrong answer")
         self.partial = QCheckBox("Partial marking: several bubbles may be filled, and picking some of a multi-correct "
                                  "answer (and no wrong option) earns part of its marks")
@@ -435,7 +435,7 @@ class NewExamWizard(QDialog):
             item.setFlags(Qt.ItemIsEnabled)
             self.section_marks.setItem(r, 0, item)
             self.section_marks.setCellWidget(r, 1, _marks(correct))
-            self.section_marks.setCellWidget(r, 2, _marks(wrong))
+            self.section_marks.setCellWidget(r, 2, _marks(wrong, most=0))
             box = QTableWidgetItem("Partial marks")
             box.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
             box.setCheckState(Qt.Checked if partial else Qt.Unchecked)

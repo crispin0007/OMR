@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFile
                                QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
+from omr_core.export import single_questions
 from omr_core.grading import Section, full_marks, marks_for, parse_key, score
 from omr_core.reader import read_or_reason
 from omr_core.sources import read_pages
@@ -88,7 +89,8 @@ class CheckPage(QWidget):
         self.key_status = QLabel(objectName="muted", wordWrap=True)
         self.key_tab = KeyTab(self, self.key_edit, self.key_status)
 
-        self.correct, self.wrong, self.blank = (self._marks(v) for v in (1, 0, 0))
+        self.correct, self.wrong, self.blank = self._marks(1), self._marks(0, most=0), self._marks(0, most=0)
+        self.wrong.setToolTip("Negative marking: e.g. -0.25 or -1 for each wrong answer")
         marks = QHBoxLayout()
         for text, box in (("Correct", self.correct), ("Wrong", self.wrong), ("Blank", self.blank)):
             marks.addWidget(QLabel(text))
@@ -173,8 +175,8 @@ class CheckPage(QWidget):
         self.show_sheets(None)
         self._enable()
 
-    def _marks(self, value: float) -> QDoubleSpinBox:
-        box = QDoubleSpinBox(minimum=-100, maximum=100, value=value, decimals=2, singleStep=0.25)
+    def _marks(self, value: float, most: float = 100) -> QDoubleSpinBox:
+        box = QDoubleSpinBox(minimum=-100, maximum=most, value=value, decimals=2, singleStep=0.25)
         box.valueChanged.connect(self.scheme_changed)
         return box
 
@@ -231,7 +233,8 @@ class CheckPage(QWidget):
 
     @property
     def marks(self) -> list[tuple]:
-        return marks_for(self.questions, self.correct.value(), self.wrong.value(), self.blank.value(), self.sections)
+        return marks_for(self.questions, self.correct.value(), self.wrong.value(), self.blank.value(), self.sections,
+                         single_questions(self.exam.template) if self.exam else None)
 
     def full_marks(self) -> float:
         key = next(iter(self.keys.values()), ["A"] * len(self.questions))  # sets differ only in order
