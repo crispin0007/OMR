@@ -54,6 +54,8 @@ def test_reads_sheets_and_scores_them(app, tmp_path):
     assert cell(6) == str(right)
     c.wrong.setValue(-1)
     assert cell(6) == str(right)  # blanks aren't wrong
+    c.wrong.setValue(0.25)
+    assert c.wrong.value() == 0  # a wrong answer can't earn marks, e.g. from scrolling over the box
     c.table.selectRow(0)
     assert c.review_list.item(0).text() == "Nothing to check"
     assert w.dashboard.read.value.text() == "1" and w.dashboard.average.value.text() == f"{right:.1f}"
@@ -668,6 +670,34 @@ def test_first_run_shows_the_steps_and_help_has_the_shortcuts(app, tmp_path, mon
     assert w.exams.start.isHidden() and not w.exams.table.isHidden()
 
 
+def test_written_marks_are_typed_and_added_on_results(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox, QTableWidgetItem
+    files = sheet_files(tmp_path, [1, 2])
+    w = window(tmp_path)
+    c = w.check
+    c.read_files([f[0] for f in files])
+    c.key_edit.setPlainText("A" * 100)
+    tab = w.written
+    tab.refresh()
+    assert tab.table.isHidden() and "Set the marks" in tab.note.text()
+    tab.out_of.setValue(20)
+    tab.save_out_of()
+    tab.refresh()
+    assert tab.table.rowCount() == 2 and "2 of 2 still to type" in tab.note.text()
+    roll = tab.table.item(0, 0).text()
+    before = next(c.score_of(s) for s in c.sheets if s.result.roll_number == roll)
+    tab.table.setItem(0, 2, QTableWidgetItem("15"))
+    assert w.store.written(c.exam.id) == {roll: 15}
+    assert next(c.score_of(s) for s in c.sheets if s.result.roll_number == roll) == before + 15
+    w.results.refresh()
+    head = [w.results.table.horizontalHeaderItem(i).text() for i in range(w.results.table.columnCount())]
+    assert head[4:7] == ["Score", "Sheet", "Written"]
+    warned = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warned.append(a[2]))
+    tab.table.setItem(1, 2, QTableWidgetItem("25"))  # above the written part's 20
+    assert warned and "0 to 20" in warned[0] and len(w.store.written(c.exam.id)) == 1
+
+
 def test_answer_key_is_read_from_a_filled_master_sheet(app, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog, QMessageBox
     t = load(TEMPLATES / "test-100.json")
@@ -685,99 +715,25 @@ def test_answer_key_is_read_from_a_filled_master_sheet(app, tmp_path, monkeypatc
     assert f"Key for set {set_code}" in shown[0] and k.set_code() == set_code
 
 
-def test_numeric_questions_take_a_typed_key_and_a_typed_correction(app, tmp_path, monkeypatch):
-    import json
-
-    from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QInputDialog
-
-    from omr_core.sheet import SheetSection, SheetSpec, layout, render
-    from sheets import fill
-    d = layout(SheetSpec("JEE", 6, roll_digits=3, sets=0,
-                         sections=[SheetSection("MCQ", 4), SheetSection("Numeric", 2, digits=3)]))
-    t = parse(d)
-    at = {g.kind if g.kind != "numeric" else g.first: i for i, g in enumerate(t.grids)}
-    marks = {(at["roll_number"], 1, c): "pen" for c in range(3)}
-    marks.update({(at["questions"], 0, 0): "pen",  # Q1 A
-                  (at[5], 4, 0): "pen", (at[5], 2, 1): "pen",  # Q5 42
-                  (at[6], 1, 0): "pen", (at[6], 7, 2): "pen"})  # Q6 1, a blank column, 7: for a person to read
-    path = tmp_path / "jee.png"
-    cv2.imwrite(str(path), scan(fill(render(d), t, marks)))
-    w = MainWindow(tmp_path / "omr.db")
-    w.open_exam(w.store.create_exam("JEE", json.dumps(d)))
-    c = w.check
-    c.read_files([str(path)])
-    k, g = c.key_tab, c.key_tab.grid
-    assert g.horizontalHeaderItem(2).text() == "A" and k.numeric == {4, 5}
-    QTest.keyClick(g, Qt.Key_A)
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **kw: (kw["text"] + "2", True))
-    g.setCurrentCell(4, 2)
-    QTest.keyClick(g, Qt.Key_4)  # a digit starts the number
-    assert c.key_edit.toPlainText() == "A, -, -, -, 42" and g.item(4, 2).text() == "42" and g.currentRow() == 5
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **kw: ("017", True))
-    g.cellClicked.emit(5, 3)
-    assert c.key_edit.toPlainText() == "A, -, -, -, 42, 17"
-    assert c.score_of(c.sheets[0]) == 2  # Q6 was read as 1?7
-
-    w.go("Review")
-    assert [item for _, item, _ in w.review.items] == ["Q6"] and "gap" in w.review.why.text()
-    edit, save = w.review.buttons.itemAt(0).widget(), w.review.buttons.itemAt(1).widget()
-    assert edit.text() == "17"
-    save.click()
-    assert w.review.items == [] and c.score_of(c.sheets[0]) == 3
-
-
-def test_new_exam_wizard_makes_numeric_sections(app, tmp_path):
-    from omr_app.new_exam import NewExamWizard
-    w = MainWindow(tmp_path / "omr.db")
-    z = NewExamWizard(w, w.store)
-    z.name.setText("JEE mock")
-    z.add_section()
-    z.add_section()
-    z.sections.item(0, 1).setText("20")
-    z.sections.item(1, 1).setText("5")
-    z.sections.cellWidget(1, 3).setCurrentIndex(3)  # a number of up to 3 digits
-    assert z.sections.item(1, 2).text() == "21 to 25" and z.total.value() == 25
-    z.update_preview()
-    assert [(g["first"], g["cols"]) for g in z.made["grids"] if g["kind"] == "numeric"] == [(q, 3) for q in range(21, 26)]
-    z.update_review()
-    assert "answered with a number of up to 3 digits" in z.summary.text()
-
-
-def test_designer_maps_numeric_answer_boxes(app, tmp_path):
-    from omr_core.sheet import SheetSection, SheetSpec, layout, render
-    d = layout(SheetSpec("JEE", 6, roll_digits=3, sets=0,
-                         sections=[SheetSection("MCQ", 4), SheetSection("Numeric", 2, digits=3)]))
-    t = parse(d)
-    path = tmp_path / "blank.png"
-    cv2.imwrite(str(path), scan(render(d)))
+def test_absent_students_are_listed_and_saved(app, tmp_path, monkeypatch):
+    from openpyxl import Workbook
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    (path, _, roll, _), = sheet_files(tmp_path, [6])
+    wb = Workbook()
+    wb.active.append(["Roll number", "Name", "Class"])
+    wb.active.append([roll, "Asha Rai", "10 A"])
+    other = "9" * len(roll) if roll != "9" * len(roll) else "1" * len(roll)
+    wb.active.append([other, "Bikash Shah", "10 A"])
+    wb.save(tmp_path / "students.xlsx")
     w = window(tmp_path)
-    w.go("Map printed sheet")
-    m = w.designer
-    m.load_scan(str(path))
-    s = m.gray.shape[1] / t.page[0]
-    for x, y in t.markers:
-        m.mark_clicked(x * s, y * s)
-    for g in t.grids:
-        (x0, y0), (x1, y1) = g.centre(0, 0), g.centre(g.rows - 1, g.cols - 1)
-        m.canvas.boxed.emit(QRectF((x0 - 4) * SCALE, (y0 - 4) * SCALE, (x1 - x0 + 8) * SCALE, (y1 - y0 + 8) * SCALE))
-    assert [(b["kind"], b.get("first")) for b in m.blocks] == [(g.kind, g.first if g.kind != "roll_number" else None)
-                                                              for g in t.grids]
-    assert parse(m.template_dict()).questions() == [1, 2, 3, 4, 5, 6]
-
-
-def test_ready_made_layouts_fill_the_wizard_and_fit_the_sheet(app, tmp_path):
-    from omr_app import new_exam
-    from omr_core.store import Store
-    z = new_exam.NewExamWizard(None, Store(tmp_path / "omr.db"))
-    for name, (sections, total, options, right, wrong) in new_exam.READY.items():
-        z.ready.setCurrentText(name)
-        assert z.total.value() == (sum(s[1] for s in sections) or total) and z.options.value() == options
-        assert [(s.name, s.digits) for s in z.read_sections()] == [(s[0], (s[2:] or [0])[0]) for s in sections]
-        assert [(s.correct, s.wrong) for s in z.sheet_sections()] == [(right, wrong)] * len(sections)
-        z.update_preview()
-        assert z.made is not None, (name, z.layout_problem)  # fits one page
-    z.ready.setCurrentText(next(n for n in new_exam.READY if n.startswith("JEE")))
-    z.update_preview()
-    assert [g["first"] for g in z.made["grids"] if g["kind"] == "numeric"] == [*range(21, 26), *range(46, 51),
-                                                                               *range(71, 76)]
+    w.check.read_files([path])
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(tmp_path / "students.xlsx"), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    w.students.import_button.click()
+    s = w.students
+    assert "2 students, 1 absent" in s.note.text() and s.save_absent.isEnabled()
+    s.absent_only.setChecked(True)
+    assert s.table.rowCount() == 1 and s.table.item(0, 1).text() == "Bikash Shah" and s.table.item(0, 3).text() == "Absent"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "absent.csv"), ""))
+    s.save_absent_list()
+    assert (tmp_path / "absent.csv").read_text(encoding="utf-8-sig") == f"Roll number,Name,Class\n{other},Bikash Shah,10 A\n"

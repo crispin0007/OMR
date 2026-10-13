@@ -286,16 +286,22 @@ class ResultsPage(QWidget):
         c = self.check
         try:
             self.graded = grade(c.exam.template, c.sheets, c.key_edit.toPlainText(), c.correct.value(),
-                                c.wrong.value(), c.blank.value(), c.students, c.sections) if c.exam else []
+                                c.wrong.value(), c.blank.value(), c.students, c.sections,
+                                c.written if c.exam.written_out_of else None) if c.exam else []
         except ValueError:
             self.graded = []  # the key doesn't fit yet; the Answer key tab says why
         self.note.setText("Ranked by score; equal scores share a rank. Double-click a row to open the sheet."
                           if self.graded else "Type the answer key on the Answer key tab to see results.")
+        missing = sum(g.written is None for g in self.graded) if c.exam and c.exam.written_out_of else 0
+        if missing:
+            self.note.setText(self.note.text() + f" {missing} students have no written marks yet; type them on the "
+                              "Written marks tab.")
         self.excel.setEnabled(bool(self.graded))
         self.pdf.setEnabled(bool(self.graded))
         self.table.setSortingEnabled(False)
         names = [s.name for s in c.sections]
-        columns = self.COLUMNS[:5] + names + self.COLUMNS[5:]
+        split = ["Sheet", "Written"] if c.exam and c.exam.written_out_of else []
+        columns = self.COLUMNS[:5] + split + names + self.COLUMNS[5:]
         self.table.setColumnCount(len(columns))
         self.table.setHorizontalHeaderLabels(columns)
         self.table.setRowCount(len(self.graded))
@@ -304,7 +310,7 @@ class ResultsPage(QWidget):
         for row, g in enumerate(self.graded):
             r = g.page.result
             values = [g.rank, r.roll_number, g.student.name if g.student else "", r.set_code, g.score,
-                      *g.sections.values(), g.right, g.wrong, g.blank, round(g.percentile, 1),
+                      *([g.omr, "" if g.written is None else g.written] if split else []), *g.sections.values(), g.right, g.wrong, g.blank, round(g.percentile, 1),
                       "yes" if g.to_check else "", c.file_name(g.page), g.page.page]
             for col, v in enumerate(values):
                 item = QTableWidgetItem()
