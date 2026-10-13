@@ -39,6 +39,11 @@ def questions(t: Template) -> list[int]:
     return sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows))
 
 
+def single_questions(t: Template) -> set[int]:
+    """Questions printed for one answer only, where two filled bubbles are invalid."""
+    return {g.first + r for g in t.grids if g.kind == "questions" and not g.multi for r in range(g.rows)}
+
+
 def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float, wrong: float,
           blank: float, students: dict[str, Student] | None = None, sections: list[Section] = ()) -> list[Graded]:
     """Every page that can be scored, best first, with rank and percentile.
@@ -49,7 +54,7 @@ def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float,
     qs = questions(t)
     options = "".join(sorted({o for g in t.grids if g.kind == "questions" for o in g.options}))
     keys = parse_key(answer_key, len(qs), options)
-    marks = marks_for(qs, correct, wrong, blank, sections)
+    marks = marks_for(qs, correct, wrong, blank, sections, single_questions(t))
     students = students or {}
     flagged = {i for i, _, _ in to_review(pages, students)}
     out = []
