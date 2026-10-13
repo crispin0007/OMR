@@ -43,6 +43,16 @@ def test_every_bubble_shape_reads_back_pen_and_pencil(shape):
     assert (r.roll_number, r.set_code, r.answers, r.flags) == (roll, set_code, answers, [])
 
 
+@pytest.mark.parametrize("labels", ["lower", "numbers"])
+def test_options_printed_as_numbers_or_small_letters_read_as_letters(labels):
+    d = layout(SheetSpec("Labels", 100, roll_digits=6, sets=4, labels=labels, bubble_shape="circle"))
+    t = parse(d)
+    assert d["print"]["labels"] == labels and {g.options for g in t.grids if g.kind == "questions"} == {"ABCD"}
+    marks, answers, roll, set_code = random_marks(t, 5)
+    r = read_page(scan(fill(render(d), t, marks), angle=-0.7, seed=4), t)
+    assert (r.roll_number, r.set_code, r.answers, r.flags) == (roll, set_code, answers, [])
+
+
 CEE = [SheetSection("Zoology", 40), SheetSection("Botany", 40), SheetSection("Chemistry", 50),
        SheetSection("Physics", 50), SheetSection("MAT", 20)]
 
@@ -174,6 +184,7 @@ def test_heading_logo_and_instructions_are_printed(tmp_path):
     ({"logo_jpeg": "aGVsbG8="}, "logo"),
     ({"instructions": "one line"}, "text"),
     ({"bubble_shape": "star"}, "bubbles can be"),
+    ({"labels": "roman"}, "option labels can be"),
 ])
 def test_bad_print_choices_in_a_template_are_refused(change, why, tmp_path):
     d = layout(SheetSpec("X", 10))

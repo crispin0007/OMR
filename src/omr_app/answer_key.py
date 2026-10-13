@@ -4,6 +4,7 @@ The key is kept as text in the format `parse_key` reads, so the grid, the
 pasted text and the CSV files are three ways to edit the same key.
 """
 
+import json
 from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths, Qt
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QHBoxLayout
 
 from omr_core.grading import BONUS, DROPPED, format_key, key_from_csv, key_from_sheet, key_to_csv, parse_key
 from omr_core.reader import read_or_reason
+from omr_core.sheet import LABELS
 from omr_core.sources import read_pages
 from omr_core.template import DIGITS
 
@@ -41,6 +43,8 @@ class KeyGrid(QTableWidget):
     def keyPressEvent(self, event):
         row = self.currentRow()
         text = event.text().upper()
+        if row not in self.tab.numeric:
+            text = self.tab.printed.get(event.text(), text)  # 1 or a, on a sheet printed that way
         if row < 0 or event.key() in (Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Home,
                                       Qt.Key_End, Qt.Key_Tab):
             super().keyPressEvent(event)
@@ -86,6 +90,7 @@ class KeyTab(QWidget):
         self.check = check
         self.key_edit = key_edit
         self.options = ""  # the option letters of every question with options
+        self.printed: dict[str, str] = {}  # label printed in a bubble to its option letter, e.g. "1": "A"
         self.per_question: list[str] = []  # each question's options, DIGITS for a numeric one
         self.numeric: set[int] = set()  # rows of numeric questions
         self.bonus_col = 2
@@ -179,6 +184,8 @@ class KeyTab(QWidget):
         options = "".join(sorted({o for g in t.grids if g.kind == "questions" for o in g.options})) if t else ""
         sets = next((g.options for g in t.grids if g.kind == "set_code"), "") if t else ""
         self.options = options
+        labels = LABELS[json.loads(exam.template_json).get("print", {}).get("labels", "letters")] if exam else ""
+        self.printed = {p: o for o, p in zip("ABCDEFGH", labels) if o in options and p != o}
         self.per_question = t.answer_options() if t else []
         self.numeric = {r for r, o in enumerate(self.per_question) if o == DIGITS}
         keys = self.keys()
@@ -192,7 +199,8 @@ class KeyTab(QWidget):
         self.sets.blockSignals(False)
         self.sets.setVisible(bool(sets))
         questions = self.check.questions
-        heads = list(options) or ["Number"]  # a sheet of only numeric questions shows its numbers in one column
+        heads = [o + (f" ({p})" if (p := next((k for k, v in self.printed.items() if v == o), "")) else "")
+                 for o in options] or ["Number"]  # e.g. "A (1)"; a sheet of only numeric questions: one column
         self.bonus_col = 2 + len(heads)
         if [self.grid.horizontalHeaderItem(c).text() if self.grid.horizontalHeaderItem(c) else ""
                 for c in range(self.grid.columnCount())] != ["Question", "Section", *heads, "Bonus"]:
@@ -206,7 +214,7 @@ class KeyTab(QWidget):
             section = next((s.name for s in sections if s.first <= q <= s.last), "")
             for c, text in ((0, str(q)), (1, section)):
                 self._cell(r, c, text, None, None)
-            for i, o in enumerate(heads):
+            for i, o in enumerate(list(options) or ["Number"]):
                 if r in self.numeric:  # the number goes in the first answer column
                     given = key[r].isdigit() and i == 0
                     self._cell(r, 2 + i, key[r] if given else "", accent if given else None, on if given else None)

@@ -40,6 +40,7 @@ LEFT, RIGHT, BOTTOM = 15.0, 195.0, 278.0  # printable area inside the marks
 BUBBLE = (3.8, 2.1)  # pill width and height, mm; every grid uses the same size
 # Printed bubble shapes and their width and height, mm. Each fits the pill's 3.8 x 2.1 footprint the pitches are
 # made for, but the circle, which is a little taller so it isn't too small to fill.
+LABELS = {"letters": "ABCDEFGH", "lower": "abcdefgh", "numbers": "12345678"}  # printed in option bubbles
 SHAPES = {"pill": BUBBLE, "oval": BUBBLE, "rounded": BUBBLE, "rectangle": BUBBLE, "circle": (2.4, 2.4)}
 LINE = 0.35  # outline width, mm
 MAX_ROLL_DIGITS = 9  # more leaves too little room for the instructions beside them
@@ -112,6 +113,7 @@ class SheetSpec:
     logo: bytes = b""  # JPEG from `logo_jpeg`, or nothing
     true_false: bool = False  # two options printed T and F
     bubble_shape: str = "pill"  # one of SHAPES
+    labels: str = "letters"  # one of LABELS: what option bubbles show; answers are still A, B, C... in the app
 
 
 def layout(spec: SheetSpec) -> dict:
@@ -139,7 +141,8 @@ def layout(spec: SheetSpec) -> dict:
     if any(not 0 <= s.digits <= MAX_NUMBER_DIGITS for s in sections):
         raise ValueError(f"numeric answers can have 1 to {MAX_NUMBER_DIGITS} digits")
     style = {"colour": spec.colour.lower(), "heading": spec.heading.strip(),
-             "instructions": [i.strip() for i in spec.instructions if i.strip()], "bubble_shape": spec.bubble_shape}
+             "instructions": [i.strip() for i in spec.instructions if i.strip()], "bubble_shape": spec.bubble_shape,
+             "labels": spec.labels}
     if spec.logo:
         style["logo_jpeg"] = base64.b64encode(spec.logo).decode("ascii")
     _check_style(style)
@@ -184,6 +187,8 @@ def logo_jpeg(data: bytes) -> bytes:
 
 
 def _check_style(style: dict):
+    if style.get("labels", "letters") not in LABELS:
+        raise ValueError(f"option labels can be {', '.join(LABELS)}")
     if style.get("bubble_shape", "pill") not in SHAPES:
         raise ValueError(f"bubbles can be {', '.join(SHAPES)}")
     if not COLOUR.match(str(style.get("colour", ""))):
@@ -445,6 +450,8 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4"):
         text((x0 + x1) / 2, y0 + BAND / 2 + size * 0.12, title, size, BOLD, align="centre")
 
     shape = style.get("bubble_shape", "pill")
+    printed = dict(zip("ABCDEFGH", LABELS[style.get("labels", "letters")]))
+    shown = lambda option: printed.get(option, option)  # True or false stays T and F
 
     def pill(cx, cy, letter="", filled=None):
         bw, bh = t.bubble
@@ -534,7 +541,7 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4"):
     ey = y1 - 3.7
     for k, (letter, mark) in enumerate((("A", ""), ("B", "cross"), ("C", "tick"), ("D", "half"))):
         cx = x0 + quarter + (k - 1.5) * (bw + 2.5)
-        pill(cx, ey, "" if mark == "half" else letter)
+        pill(cx, ey, "" if mark == "half" else shown(letter))
         c.setStrokeColor(colors.black)
         c.setLineWidth(0.35 * mm)
         if mark == "cross":
@@ -551,7 +558,7 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4"):
             c.circle((cx - bw / 5) * mm, y(ey), bh * 0.42 * mm, stroke=0, fill=1)
     for k, letter in enumerate("ABCD"):
         cx = x1 - quarter + (k - 1.5) * (bw + 2.5)
-        pill(cx, ey, "" if k == 2 else letter, colors.black if k == 2 else None)
+        pill(cx, ey, "" if k == 2 else shown(letter), colors.black if k == 2 else None)
 
     # Signatures and the question set.
     for (sx0, sy0, sx1, sy1), label in zip(hd["signatures"], ("Signature of invigilator", "Signature of student")):
@@ -595,7 +602,7 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4"):
             cy = g.centre(r, 0)[1]
             text(x0 + 1, cy + 1.2, str(g.first + r), 8.5 if pitch >= 4.2 else 7.5, BOLD)
             for col in range(g.cols):
-                pill(g.centre(r, col)[0], cy, g.options[col])
+                pill(g.centre(r, col)[0], cy, shown(g.options[col]))
     for g in (g for g in t.grids if g.kind == "numeric"):
         x0, y0 = g.origin[0] - g.pitch[0] / 2 - 1.5, g.origin[1] - NUMBER_ROW0
         x1 = x0 + g.cols * g.pitch[0] + 3

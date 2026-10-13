@@ -225,7 +225,11 @@ class NewExamWizard(QDialog):
         self.options.setToolTip("Up to 8 options fit on one A4 sheet")
         self.true_false = QCheckBox("True or false questions (bubbles T and F)")
         self.true_false.toggled.connect(lambda on: (self.options.setValue(2) if on else None,
-                                                    self.options.setEnabled(not on)))
+                                                    self.options.setEnabled(not on), self.labels.setEnabled(not on)))
+        self.labels = QComboBox()
+        for name, value in (("A, B, C, D…", "letters"), ("a, b, c, d…", "lower"), ("1, 2, 3, 4…", "numbers")):
+            self.labels.addItem(name, value)
+        self.labels.setToolTip("What the bubbles show; the answer key and results still use A, B, C, D")
         self.roll = QSpinBox(minimum=0, maximum=MAX_ROLL_DIGITS, value=5, specialValueText="No roll number")
         self.sets = QComboBox()
         self.sets.addItems(SETS)
@@ -233,6 +237,7 @@ class NewExamWizard(QDialog):
         form = QFormLayout()
         form.addRow("Options per question", self.options)
         form.addRow("", self.true_false)
+        form.addRow("Options shown as", self.labels)
         form.addRow("Roll number digits", self.roll)
         form.addRow("Question paper sets", self.sets)
         layout.addLayout(form)
@@ -507,7 +512,7 @@ class NewExamWizard(QDialog):
                          self.sets.currentIndex() and self.sets.currentIndex() + 1, sections,
                          self.colour.currentData() or COLOURS[0][1], self.heading.text(),
                          self.instructions.toPlainText().splitlines(), self.logo, self.true_false.isChecked(),
-                         self.shape.currentData())
+                         self.shape.currentData(), self.labels.currentData())
 
     def update_preview(self):
         self.layout_problem = ""

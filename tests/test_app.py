@@ -803,10 +803,27 @@ def test_new_exam_wizard_makes_numeric_sections(app, tmp_path):
     z.update_preview()
     assert [(g["first"], g["cols"]) for g in z.made["grids"] if g["kind"] == "numeric"] == [(q, 3) for q in range(21, 26)]
     z.shape.setCurrentIndex(z.shape.findData("circle"))
+    z.labels.setCurrentIndex(z.labels.findData("numbers"))
     z.update_preview()
     assert z.made["print"]["bubble_shape"] == "circle" and z.made["bubble_mm"] == [2.4, 2.4]
+    assert z.made["print"]["labels"] == "numbers"
     z.update_review()
     assert "answered with a number of up to 3 digits" in z.summary.text()
+
+
+def test_a_sheet_printed_1_to_4_takes_its_key_by_those_numbers(app, tmp_path):
+    import json
+
+    from PySide6.QtTest import QTest
+
+    from omr_core.sheet import SheetSpec, layout
+    w = MainWindow(tmp_path / "omr.db")
+    w.open_exam(w.store.create_exam("NEET", json.dumps(layout(SheetSpec("NEET", 10, sets=0, labels="numbers")))))
+    k, g = w.check.key_tab, w.check.key_tab.grid
+    assert [g.horizontalHeaderItem(c).text() for c in range(2, 6)] == ["A (1)", "B (2)", "C (3)", "D (4)"]
+    QTest.keyClick(g, Qt.Key_2)
+    QTest.keyClick(g, Qt.Key_D)
+    assert w.check.key_edit.toPlainText() == "BD" and g.item(0, 3).text() == "B"
 
 
 def test_designer_maps_numeric_answer_boxes(app, tmp_path):
