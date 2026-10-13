@@ -10,8 +10,8 @@ import json
 from pathlib import Path
 
 from PySide6.QtCore import QDate, QStandardPaths, Qt, Signal
-from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
+from PySide6.QtGui import QColor, QImage, QPixmap
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
                                QScrollArea, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from omr_core.reader import read_or_reason
