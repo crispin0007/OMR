@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QHeaderVi
 
 from omr_core.grading import Section, check_sections
 
-COLUMNS = ["Section", "From question", "To question", "Correct", "Wrong", "Blank", "Partial marks"]
+COLUMNS = ["Section", "From question", "To question", "Correct", "Minus for wrong", "Minus for blank", "Partial marks"]
 
 
 class SectionsDialog(QDialog):
@@ -21,7 +21,7 @@ class SectionsDialog(QDialog):
         self.table.verticalHeader().hide()
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         for s in sections:
-            self._add_row([s.name, s.first, s.last, s.correct, s.wrong, s.blank], s.partial)
+            self._add_row([s.name, s.first, s.last, s.correct, -s.wrong or 0.0, -s.blank or 0.0], s.partial)
         add = QPushButton("Add section")
         add.clicked.connect(self.add)
         remove = QPushButton("Remove section")
@@ -59,7 +59,8 @@ class SectionsDialog(QDialog):
         rows = self.read_rows(check=False)
         start = max((s.last for s in rows), default=self.questions[0] - 1) + 1
         start = next((q for q in self.questions if q >= start), self.questions[-1])
-        self._add_row([f"Section {len(rows) + 1}", start, self.questions[-1], *self.marks])
+        correct, wrong, blank = self.marks
+        self._add_row([f"Section {len(rows) + 1}", start, self.questions[-1], correct, -wrong or 0.0, -blank or 0.0])
 
     def read_rows(self, check: bool = True) -> list[Section]:
         out = []
@@ -67,7 +68,9 @@ class SectionsDialog(QDialog):
             text = [(self.table.item(r, c).text() if self.table.item(r, c) else "").strip() for c in range(6)]
             partial = self.table.item(r, 6) is not None and self.table.item(r, 6).checkState() == Qt.Checked
             try:
-                out.append(Section(text[0], int(text[1]), int(text[2]), *(float(t or 0) for t in text[3:]), partial))
+                correct, wrong, blank = (float(t or 0) for t in text[3:])
+                # marks taken off, so 1 and -1 both take off a mark
+                out.append(Section(text[0], int(text[1]), int(text[2]), correct, -abs(wrong), -abs(blank), partial))
             except ValueError:
                 if check:
                     raise ValueError(f"row {r + 1}: questions must be whole numbers and marks numbers") from None

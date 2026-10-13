@@ -27,6 +27,7 @@ from .designer import DesignerPage
 from .exam_page import ExamPage, ExamSettings, PrintSheet, StudentsTab
 from .exams import TEMPLATES, ExamsPage  # noqa: F401  (tests find the templates here)
 from .help import HelpDialog
+from .new_exam import Deduction
 from .review import ReviewPage
 from .scan import ScanPage
 from .sections import SectionsDialog
@@ -89,8 +90,8 @@ class CheckPage(QWidget):
         self.key_status = QLabel(objectName="muted", wordWrap=True)
         self.key_tab = KeyTab(self, self.key_edit, self.key_status)
 
-        self.correct, self.wrong, self.blank = self._marks(1), self._marks(0, most=0), self._marks(0, most=0)
-        self.wrong.setToolTip("Negative marking: e.g. -0.25 or -1 for each wrong answer")
+        self.correct, self.wrong, self.blank = (self._marks(b) for b in (
+            QDoubleSpinBox(minimum=-100, maximum=100, value=1, decimals=2, singleStep=0.25), Deduction(), Deduction()))
         marks = QHBoxLayout()
         for text, box in (("Correct", self.correct), ("Wrong", self.wrong), ("Blank", self.blank)):
             marks.addWidget(QLabel(text))
@@ -175,8 +176,7 @@ class CheckPage(QWidget):
         self.show_sheets(None)
         self._enable()
 
-    def _marks(self, value: float, most: float = 100) -> QDoubleSpinBox:
-        box = QDoubleSpinBox(minimum=-100, maximum=most, value=value, decimals=2, singleStep=0.25)
+    def _marks(self, box: QDoubleSpinBox) -> QDoubleSpinBox:
         box.valueChanged.connect(self.scheme_changed)
         return box
 

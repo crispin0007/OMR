@@ -103,7 +103,7 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    from a master sheet filled with the right answers: its set code picks the
    set, and any unclear or doubled mark is left for you to click. Scores appear as you go. A key shorter than the sheet
    counts only those questions. **Marks and sections** sets marks for
-   correct, wrong (e.g. -0.25) and blank answers; **Sections…** gives ranges
+   correct, wrong (type the marks taken off, e.g. 0.25) and blank answers; **Sections…** gives ranges
    of questions their own name and marks (e.g. Physics 1 to 30, 4 right, -1
    wrong), and results then show a score per section.
 5. **Review** lists everything the reader wasn't sure about, unreadable
