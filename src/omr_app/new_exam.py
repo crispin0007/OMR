@@ -51,6 +51,8 @@ SETS = ["No sets"] + [f"{n} sets (A to {'ABCDEFGH'[n - 1]})" for n in range(2, 9
 COLOURS = [("Pink", "#e4007c"), ("Red", "#d32f2f"), ("Orange", "#ef6c00"), ("Green", "#2e7d32"),
            ("Teal", "#00838f"), ("Blue", "#1565c0"), ("Purple", "#6a1b9a"), ("Black", "#000000")]
 OTHER_COLOUR = "Other colour…"
+BUBBLE_SHAPES = [("Pill", "pill"), ("Oval", "oval"), ("Circle", "circle"), ("Rounded rectangle", "rounded"),
+                 ("Rectangle", "rectangle")]
 ANSWERED_WITH = ["Options"] + [f"Number, up to {n} digit{'s' if n > 1 else ''}" for n in range(1, MAX_NUMBER_DIGITS + 1)]
 
 
@@ -279,11 +281,17 @@ class NewExamWizard(QDialog):
         logo_row.addWidget(self.logo_label, 1)
         logo_row.addWidget(logo)
         logo_row.addWidget(no_logo)
+        self.shape = QComboBox()
+        for name, value in BUBBLE_SHAPES:
+            self.shape.addItem(name, value)
+        self.shape.setToolTip("Every shape reads the same; pick the one your students know")
+        self.shape.currentIndexChanged.connect(self.timer.start)
         self.instructions = QPlainTextEdit("\n".join(DEFAULT_INSTRUCTIONS))
         self.instructions.setToolTip("One instruction per line; they are numbered for you")
         form = QFormLayout()
         form.addRow("Heading", self.heading)
         form.addRow("Colour", self.colour)
+        form.addRow("Bubbles", self.shape)
         form.addRow("Logo", logo_row)
         form.addRow("Instructions", self.instructions)
         left = QWidget()
@@ -498,7 +506,8 @@ class NewExamWizard(QDialog):
                          self.options.value(), self.roll.value(),
                          self.sets.currentIndex() and self.sets.currentIndex() + 1, sections,
                          self.colour.currentData() or COLOURS[0][1], self.heading.text(),
-                         self.instructions.toPlainText().splitlines(), self.logo, self.true_false.isChecked())
+                         self.instructions.toPlainText().splitlines(), self.logo, self.true_false.isChecked(),
+                         self.shape.currentData())
 
     def update_preview(self):
         self.layout_problem = ""

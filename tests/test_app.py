@@ -802,6 +802,9 @@ def test_new_exam_wizard_makes_numeric_sections(app, tmp_path):
     assert z.sections.item(1, 2).text() == "21 to 25" and z.total.value() == 25
     z.update_preview()
     assert [(g["first"], g["cols"]) for g in z.made["grids"] if g["kind"] == "numeric"] == [(q, 3) for q in range(21, 26)]
+    z.shape.setCurrentIndex(z.shape.findData("circle"))
+    z.update_preview()
+    assert z.made["print"]["bubble_shape"] == "circle" and z.made["bubble_mm"] == [2.4, 2.4]
     z.update_review()
     assert "answered with a number of up to 3 digits" in z.summary.text()
 

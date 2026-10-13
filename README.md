@@ -75,8 +75,9 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    digit bubbles each at the foot of the sheet); options per question (2 to 8, or true or
    false), roll number digits and question paper sets; marks for right,
    wrong (negative marking) and blank answers, per section, with partial
-   marking for multi-correct questions; and the sheet's colour, heading,
-   logo and instructions. The last step shows a summary and the sheet, and
+   marking for multi-correct questions; and the sheet's colour, bubble
+   shape (pill, oval, circle, rounded or rectangle), heading, logo and
+   instructions. The last step shows a summary and the sheet, and
    **Create exam** makes the exam with its sheet ready to print. For a sheet
    you already print, pick **Use my own printed sheet** and its template
    (see Map printed sheet). Click an exam to open its page.

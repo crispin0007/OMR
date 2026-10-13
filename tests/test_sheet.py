@@ -33,6 +33,16 @@ def test_printed_sheet_reads_back_exactly(spec):
     assert (r.roll_number, r.set_code, r.answers, r.flags) == (roll, set_code, answers, [])
 
 
+@pytest.mark.parametrize("shape", ["pill", "oval", "circle", "rounded", "rectangle"])
+def test_every_bubble_shape_reads_back_pen_and_pencil(shape):
+    d = layout(SheetSpec("Shapes", 200, roll_digits=6, sets=4, bubble_shape=shape))
+    t = parse(d)
+    marks, answers, roll, set_code = random_marks(t, 11)
+    marks = {k: "pencil" if n % 4 == 0 else v for n, (k, v) in enumerate(marks.items())}
+    r = read_page(scan(fill(render(d), t, marks), angle=0.8, seed=2), t)
+    assert (r.roll_number, r.set_code, r.answers, r.flags) == (roll, set_code, answers, [])
+
+
 CEE = [SheetSection("Zoology", 40), SheetSection("Botany", 40), SheetSection("Chemistry", 50),
        SheetSection("Physics", 50), SheetSection("MAT", 20)]
 
@@ -163,6 +173,7 @@ def test_heading_logo_and_instructions_are_printed(tmp_path):
     ({"logo_jpeg": "not base64!"}, "logo"),
     ({"logo_jpeg": "aGVsbG8="}, "logo"),
     ({"instructions": "one line"}, "text"),
+    ({"bubble_shape": "star"}, "bubbles can be"),
 ])
 def test_bad_print_choices_in_a_template_are_refused(change, why, tmp_path):
     d = layout(SheetSpec("X", 10))

@@ -38,6 +38,9 @@ MARKS = [[12, 12], [198, 12], [198, 285], [12, 285]]
 ORIENTATION = [172, 9, 18, 5]  # a black bar near the top-right mark; upside-down pages are found by it
 LEFT, RIGHT, BOTTOM = 15.0, 195.0, 278.0  # printable area inside the marks
 BUBBLE = (3.8, 2.1)  # pill width and height, mm; every grid uses the same size
+# Printed bubble shapes and their width and height, mm. Each fits the pill's 3.8 x 2.1 footprint the pitches are
+# made for, but the circle, which is a little taller so it isn't too small to fill.
+SHAPES = {"pill": BUBBLE, "oval": BUBBLE, "rounded": BUBBLE, "rectangle": BUBBLE, "circle": (2.4, 2.4)}
 LINE = 0.35  # outline width, mm
 MAX_ROLL_DIGITS = 9  # more leaves too little room for the instructions beside them
 LIGHTEST_LETTER = 0.32  # bubble letters are at least this light (0 black, 1 white) in grey, whatever the colour
@@ -108,6 +111,7 @@ class SheetSpec:
     instructions: list[str] = field(default_factory=lambda: list(DEFAULT_INSTRUCTIONS))
     logo: bytes = b""  # JPEG from `logo_jpeg`, or nothing
     true_false: bool = False  # two options printed T and F
+    bubble_shape: str = "pill"  # one of SHAPES
 
 
 def layout(spec: SheetSpec) -> dict:
@@ -135,7 +139,7 @@ def layout(spec: SheetSpec) -> dict:
     if any(not 0 <= s.digits <= MAX_NUMBER_DIGITS for s in sections):
         raise ValueError(f"numeric answers can have 1 to {MAX_NUMBER_DIGITS} digits")
     style = {"colour": spec.colour.lower(), "heading": spec.heading.strip(),
-             "instructions": [i.strip() for i in spec.instructions if i.strip()]}
+             "instructions": [i.strip() for i in spec.instructions if i.strip()], "bubble_shape": spec.bubble_shape}
     if spec.logo:
         style["logo_jpeg"] = base64.b64encode(spec.logo).decode("ascii")
     _check_style(style)
@@ -150,7 +154,7 @@ def layout(spec: SheetSpec) -> dict:
     grids += numeric
     d = {"name": spec.name.strip(), "version": 1, "page_mm": list(PAGE),
          "markers": {"shape": "ring", "size_mm": MARK, "centres_mm": MARKS},
-         "orientation_mm": ORIENTATION, "bubble_mm": list(BUBBLE), "grids": grids, "print": style}
+         "orientation_mm": ORIENTATION, "bubble_mm": list(SHAPES[spec.bubble_shape]), "grids": grids, "print": style}
     if spec.sections:
         first = 1
         d["sections"] = []
@@ -180,6 +184,8 @@ def logo_jpeg(data: bytes) -> bytes:
 
 
 def _check_style(style: dict):
+    if style.get("bubble_shape", "pill") not in SHAPES:
+        raise ValueError(f"bubbles can be {', '.join(SHAPES)}")
     if not COLOUR.match(str(style.get("colour", ""))):
         raise ValueError("the colour must look like #e4007c")
     if not isinstance(style.get("heading"), str) or not isinstance(style.get("instructions"), list) or not all(
@@ -438,14 +444,21 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4"):
         box(x0, y0, x1, y0 + BAND, fill=band)
         text((x0 + x1) / 2, y0 + BAND / 2 + size * 0.12, title, size, BOLD, align="centre")
 
+    shape = style.get("bubble_shape", "pill")
+
     def pill(cx, cy, letter="", filled=None):
         bw, bh = t.bubble
         c.setLineWidth(LINE * mm)
         c.setStrokeColor(ink)
         c.setFillColor(filled or colors.white)
-        c.roundRect((cx - bw / 2) * mm, y(cy + bh / 2), bw * mm, bh * mm, bh / 2 * mm, stroke=1, fill=1)
+        if shape in ("oval", "circle"):
+            c.ellipse((cx - bw / 2) * mm, y(cy + bh / 2), (cx + bw / 2) * mm, y(cy - bh / 2), stroke=1, fill=1)
+        else:
+            radius = {"pill": bh / 2, "rounded": bh / 4, "rectangle": 0}[shape]
+            c.roundRect((cx - bw / 2) * mm, y(cy + bh / 2), bw * mm, bh * mm, radius * mm, stroke=1, fill=1)
         if letter:
-            text(cx, cy + bh * 0.27, letter, bh * 2.4, BOLD, letters, "centre")
+            size = bh * (1.5 if shape == "circle" else 2.4)  # inside a circle the letter needs room around it
+            text(cx, cy + size * 0.11, letter, size, BOLD, letters, "centre")
 
     # Corner targets and the orientation bar stay black so they read on any print colour.
     c.setFillColor(colors.black)
