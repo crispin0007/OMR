@@ -38,12 +38,24 @@ only one is allowed, it doesn't pick one for the student. It puts that question 
 
 1. Download `OMR-Setup-<version>.exe` from the project's
    [Releases page](https://github.com/crispin0007/omr/releases) when a release is published.
-2. Double-click it and follow the steps. It needs nothing else: no Python, no internet.
-3. Open **OMR Checker** from the Start menu.
+2. Double-click it and follow the steps: **Next** on the welcome page, accept the licence, keep the
+   suggested folder, and tick **Create a desktop shortcut** if you want one. It needs nothing else:
+   no Python, no internet.
+3. Leave **Start OMR Checker now** ticked on the last page and press **Finish**. Later, open it from
+   the Start menu.
 4. Connect your scanner with its USB cable and switch it on. If Windows can scan with it (try the
    Windows **Scan** app or **Windows Fax and Scan**), OMR Checker will find it.
 
 The app works fully **offline**. Nothing is uploaded anywhere.
+
+**Updating:** run the new version's setup file. Your exams and settings are kept.
+
+**Removing:** Windows Settings > Apps > OMR Checker > Uninstall. It asks whether to delete your exams
+too. Press **No** to keep them (for example, before reinstalling).
+
+**No installing allowed on this PC?** Use the portable zip, `OMR-Portable-<version>.zip`: unzip it to
+a USB stick or a folder you can write to and run `OMR.exe`. Its exams stay in the `data` folder
+beside it.
 
 ## Finding your way around
 

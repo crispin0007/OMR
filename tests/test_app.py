@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QRectF, QSettings, Qt  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QRectF, QSettings, Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from omr_app import designer, scanner, theme  # noqa: E402
@@ -23,6 +23,21 @@ from sheets import draw, random_marks, scan  # noqa: E402
 def app(tmp_path):
     QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, str(tmp_path))  # keep the user's settings out of it
     return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture(autouse=True)
+def close_windows():
+    """Close what a test opened while the app still exists: a window left open until Python exits is torn
+    down after Qt, its scanner thread or database half gone, and the test run crashed on closing."""
+    yield
+    app = QApplication.instance()
+    if app is None:
+        return
+    for w in app.topLevelWidgets():
+        w.close()  # MainWindow stops its scanner thread and closes the database
+        w.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    app.processEvents()
 
 
 def window(tmp_path) -> MainWindow:
@@ -1116,6 +1131,25 @@ def test_csv_columns_are_picked_ordered_and_remembered_per_exam(app, tmp_path, m
     assert ("Rank", True) in seen[1]  # columns left out of the last choice come back ticked at the end
 
 
+def test_cut_off_corner_shows_why_live_and_on_review(app, tmp_path):
+    import json
+
+    from omr_core.sheet import SheetSpec, layout, render
+    from omr_core.template import parse as parse_template
+    from sheets import fill
+
+    spec = layout(SheetSpec("Mock test", 200, options=4, roll_digits=6, sets=4))
+    t = parse_template(spec)
+    path = tmp_path / "cut.png"
+    cv2.imwrite(str(path), scan(fill(render(spec), t, random_marks(t, 1)[0]), 6, seed=1))  # a corner mark half lost
+    w = MainWindow(tmp_path / "omr.db")
+    w.open_exam(w.store.create_exam("Cut", json.dumps(spec)))
+    w.scan.read_files([str(path)])
+    drain(w.scan)
+    assert w.scan.latest.text().startswith("Can't read this page: a corner mark is cut off at the edge of the scan.")
+    assert w.review.items and w.review.why.text() == "unreadable: a corner mark is cut off at the edge of the scan"
+
+
 def test_imported_sheets_show_live_with_their_marks_and_can_pause_and_stop(app, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog
 
@@ -1192,3 +1226,16 @@ def test_start_scanning_is_one_click_from_the_dashboard_and_the_exam_page(app, t
     w.go("Results")
     w.exam_page.scan_wanted.emit()
     assert w.showing() is w.scan and "No scanner was found" in asked[0] and imported == [True]
+
+
+def test_portable_copy_keeps_its_data_beside_it(tmp_path, monkeypatch):
+    import sys
+
+    from omr_app.paths import data_dir, portable_dir
+
+    assert portable_dir() is None  # run from source
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "OMR.exe"))
+    assert portable_dir() is None and data_dir().name == "OMR"  # installed: %LOCALAPPDATA%\OMR
+    (tmp_path / "portable.txt").write_text("")
+    assert portable_dir() == data_dir() == tmp_path / "data"

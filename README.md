@@ -144,10 +144,18 @@ All screenshots use sheets generated for testing; the names and marks are made u
 1. Download `OMR-Setup-<version>.exe` from the
    [Releases page](https://github.com/crispin0007/omr/releases) when a release is published, or
    build it yourself as described in [packaging/README.md](packaging/README.md).
-2. Run it and open **OMR Checker** from the Start menu. Nothing else is needed: Python and every
-   library are inside.
+2. Run it. The setup wizard shows the licence, lets you pick the folder and a desktop shortcut, and
+   can start OMR Checker when it finishes. Nothing else is needed: Python and every library are
+   inside. Windows 10 or 11, 64-bit.
 3. Connect your scanner. If Windows can scan with it (Windows Fax and Scan, or the scanner's own
    app), OMR Checker will find it.
+
+Installing a newer version over the old one keeps every exam and setting. Uninstalling (Settings >
+Apps) asks whether to delete your exams too; the answer is No unless you choose Yes.
+
+**Portable copy:** `OMR-Portable-<version>.zip` needs no installing. Unzip it anywhere you can
+write to, such as a USB stick, and run `OMR.exe`. It keeps its exams and settings in a `data`
+folder beside it, so the whole folder moves to another PC.
 
 ### From source (Windows or Linux)
 
@@ -204,13 +212,15 @@ Measured on our own test sheets with known answers (no private data), on one CPU
 | Clean scan, 200 DPI | 100% | 0 |
 | Fed crooked (3–6°), dim print, heavy JPEG compression | 100% | 0 |
 | Phone photo (angled, shadowed) | 100% | 0 |
+| Fed crooked and cropped so a corner mark is cut off | 100% of the half that reads; the rest refused with the reason | 0 |
 | Real marking: pencil, half-filled and erased marks | 95.9%; every other mark sent to Review | 0 |
 | Two real scanned 200-question sheets (kept private) | 200/200 photocopy, 199/200 phone photo (the one miss flagged) | 0 |
 
 - **Speed:** about **250 sheets a minute** read and saved on one core, usually faster than the
   scanner can feed. Scanning speed is set by your scanner.
-- **Known limit:** a sheet whose corner circle is cut off or folded can be misread. Keep all four
-  corner circles on the paper. A check that refuses such pages is planned.
+- **Cut or folded corners:** a page whose corner mark is cut off, or whose bubbles don't line up
+  with its corner marks, is refused with that reason and kept under Review, never read shifted.
+  Keep all four corner marks on the paper.
 
 ## FAQ
 

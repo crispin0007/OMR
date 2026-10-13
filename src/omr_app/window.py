@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QStandardPaths, Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFileDialog, QHBoxLayout, QInputDialog,
                                QLabel, QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QProgressDialog,
@@ -28,6 +28,7 @@ from .exam_page import ExamPage, ExamSettings, PrintSheet, StudentsTab, WrittenT
 from .exam_templates import TemplatesPage
 from .exams import TEMPLATES, ExamsPage  # noqa: F401  (tests find the templates here)
 from .help import HelpDialog
+from .paths import data_dir
 from .new_exam import Deduction
 from .review import ReviewPage
 from .scan import ScanPage
@@ -581,8 +582,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(APP)
         self.prefs = theme.load_prefs()
         if db_path is None:
-            data = QStandardPaths.writableLocation(QStandardPaths.GenericDataLocation)  # %LOCALAPPDATA% on Windows
-            db_path = Path(data) / "OMR" / "omr.db"
+            db_path = data_dir() / "omr.db"
         self.store_path = Path(db_path)
         self.store = Store(db_path)
         self.check = CheckPage(self.store)

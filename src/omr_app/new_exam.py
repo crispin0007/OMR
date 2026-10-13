@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import NamedTuple
 
-from PySide6.QtCore import QDate, QStandardPaths, Qt, QTime, QTimer
+from PySide6.QtCore import QDate, Qt, QTime, QTimer
 from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QColorDialog, QComboBox, QDateEdit, QDialog,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
@@ -23,13 +23,15 @@ from omr_core.sheet import (DEFAULT_HEADING, DEFAULT_INSTRUCTIONS, LABELS, MAX_N
 from omr_core.store import Store
 from omr_core.template import load
 
+from .paths import data_dir
+
 
 # The bundled templates: next to src/ in a source checkout, next to the packages in the installed app.
 TEMPLATES = next((p for p in (Path(__file__).resolve().parents[2] / "templates",
                               Path(__file__).resolve().parents[1] / "templates") if p.is_dir()),
                  Path(__file__).resolve().parents[2] / "templates")
 # Templates mapped in the sheet designer: %LOCALAPPDATA%\OMR\templates on Windows, next to the database.
-USER_TEMPLATES = Path(QStandardPaths.writableLocation(QStandardPaths.GenericDataLocation)) / "OMR" / "templates"
+USER_TEMPLATES = data_dir() / "templates"
 
 STEPS = ["Start", "Exam details", "Subjects and sections", "Questions and answers", "Marking", "Sheet look",
          "Review and create"]
