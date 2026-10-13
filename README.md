@@ -94,8 +94,14 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
 2. **Scan** reads sheets as the scanner feeds them. Pick the scanner,
    resolution (200 DPI is right for most sheets) and whether to scan both
    sides (blank backs are skipped), then press **Scan**. Each sheet is read
-   and saved the moment it arrives; the counters and the latest sheet update
-   as the stack feeds. A jam or double feed stops the run with every earlier
+   and saved the moment it arrives, and shown live: the sheet with every
+   filled bubble ringed (green right, red wrong, blue before the key is in)
+   and anything to check boxed in orange, its roll number, set and score, a
+   growing list of the sheets read (click one to see it again), and running
+   counts of sheets read, to check, repeated roll numbers and sheets a
+   minute. **Pause** holds the feeder after the current page; **Resume**
+   carries on. **Import scans…** (Ctrl+O) and a watched folder show the same
+   live view, a page at a time. A jam or double feed stops the run with every earlier
    sheet saved; put the rest back and press Scan again. Scanners are found
    through Windows (WIA). If yours isn't listed, scan with its own software
    into a folder and pick **A folder my scanner software saves into**; each

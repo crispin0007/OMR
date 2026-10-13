@@ -730,8 +730,9 @@ class MainWindow(QMainWindow):
         if self.check.exam is None:
             self.go("Exams")
             return
-        self.go("Scanned sheets")
-        self.check.open_sheets()
+        self.go("Scan")  # read there, each sheet shown as it is read
+        if not self.scan.running:
+            self.scan.import_files()
 
     def toggle_theme(self):
         """Quick switch between light and dark; Settings has System and the rest."""

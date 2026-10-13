@@ -256,6 +256,12 @@ class FakeScanner:
             raise scanner.ScanStopped(self.problem)
 
 
+def drain(page):
+    """Read every file waiting on the Scan page, as its timer would."""
+    while page.reading_files:
+        page.step()
+
+
 def run_scan(app, page):
     page.start()
     page.thread.wait()
@@ -303,8 +309,10 @@ def test_scanning_from_a_folder(app, tmp_path, monkeypatch):
     s.poll_folder()  # sizes noted, nothing read yet
     assert s.read.value.text() == "0"
     s.poll_folder()
-    assert s.read.value.text() == "2" and "broken.png" in s.status.text()
+    drain(s)
+    assert s.read.value.text() == "2" and "broken.png" in s.status.text() and s.live.rowCount() == 2
     s.poll_folder()  # nothing read twice, the broken file isn't retried
+    drain(s)
     assert len(w.store.pages(w.check.exam.id)) == 2
     assert sorted(p.result.roll_number for p in w.store.pages(w.check.exam.id)) == sorted(f[2] for f in files)
     s.stop()
@@ -1063,3 +1071,50 @@ def test_numbered_sheets_print_and_their_numbers_show_where_sheets_are_listed(ap
     w.results.excel.click()
     merit = list(load_workbook(tmp_path / "merit.xlsx")["Merit list"].values)
     assert merit[1][-1] == "Sheet no." and {r[-1] for r in merit[2:]} == {"W-0007", "W-0008", "W-0010"}
+
+
+def test_imported_sheets_show_live_with_their_marks_and_can_pause_and_stop(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+
+    from omr_app.scan import RIGHT, WRONG, marked_sheet
+    from omr_core.reader import SCALE
+    files = sheet_files(tmp_path, [7, 8, 9, 7])  # the last is sheet 7 again: the same roll number twice
+    w = window(tmp_path)
+    s, c = w.scan, w.check
+    path, answers, roll, set_code = files[0]
+    c.key_edit.setPlainText(f"{set_code}: " + "".join(answers[q] or "A" for q in c.questions))
+    monkeypatch.setattr(QFileDialog, "getOpenFileNames", lambda *a, **k: ([f[0] for f in files], ""))
+    w.import_scans()  # Ctrl+O reads on the Scan tab
+    assert w.showing() is s and s.reading_files and s.pause_button.isEnabled()
+    s.step()
+    assert s.live.rowCount() == 1 and s.live.item(0, 1).text() == roll and not s.latest.pixmap().isNull()
+    assert roll in s.latest_text.text() and "Score" in s.latest_text.text()
+    s.toggle_pause()
+    s.step()  # paused: nothing more is read
+    assert s.live.rowCount() == 1 and s.pause_button.text() == "Resume"
+    s.toggle_pause()
+    drain(s)
+    assert s.live.rowCount() == 4 and s.read.value.text() == "4" and s.same_roll.value.text() == "2"
+    assert s.status.text().startswith("Done.") and not s.running and s.speed.value.text() != "–"
+    assert [s.live.item(r, 1).text() for r in range(4)] == [f[2] for f in files]
+    s.live.cellClicked.emit(1, 0)  # an earlier sheet comes back on the live view
+    assert files[1][2] in s.latest_text.text()
+
+    # The marks drawn: a ring in green on a right answer, in red on a wrong one.
+    t = c.exam.template
+    stored = c.sheets[0]
+    q = next(q for q in c.questions if answers[q])
+    g = t.grid_for(q)
+    x, y = g.centre(q - g.first, g.options.index(answers[q]))
+    radius = round(max(t.bubble) / 2 * SCALE) + 3
+    on_ring = (round(y * SCALE), round(x * SCALE) + radius)
+    image = w.store.image(stored.id)
+    assert tuple(marked_sheet(image, t, stored.result, {q: answers[q]})[on_ring]) == RIGHT
+    other = next(o for o in g.options if o != answers[q])
+    assert tuple(marked_sheet(image, t, stored.result, {q: other})[on_ring]) == WRONG
+
+    # Stopping part-way keeps what was read and says what wasn't.
+    s.read_files([f[0] for f in files[:3]])
+    s.step()
+    s.stop()
+    assert s.live.rowCount() == 1 and "2 files not read" in s.status.text() and not s.running
