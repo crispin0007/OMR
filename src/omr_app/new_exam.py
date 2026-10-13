@@ -53,8 +53,27 @@ COLOURS = [("Pink", "#e4007c"), ("Red", "#d32f2f"), ("Orange", "#ef6c00"), ("Gre
 OTHER_COLOUR = "Other colour…"
 
 
-def _marks(value: float, most: float = 100) -> QDoubleSpinBox:
-    return QDoubleSpinBox(minimum=-100, maximum=most, value=value, decimals=2, singleStep=0.25)
+def _marks(value: float) -> QDoubleSpinBox:
+    return QDoubleSpinBox(minimum=-100, maximum=100, value=value, decimals=2, singleStep=0.25)
+
+
+class Deduction(QDoubleSpinBox):
+    """Marks taken off, typed as a plain number: 0.25 shows as −0.25 and value() is -0.25.
+
+    People read "negative marking" as already negative, so the sign is shown, never typed.
+    A stored positive mark (a bonus for a wrong answer, never meant) loads as 0.
+    """
+
+    def __init__(self, value: float = 0.0):
+        super().__init__(minimum=0, maximum=100, decimals=2, singleStep=0.25, prefix="−")
+        self.setValue(value)
+        self.setToolTip("Marks taken off; type 0.25 to take off a quarter mark, 0 for no negative marking")
+
+    def value(self) -> float:
+        return -super().value() or 0.0  # no -0.0
+
+    def setValue(self, value: float):
+        super().setValue(max(-value, 0))
 
 
 class NewExamWizard(QDialog):
@@ -214,8 +233,7 @@ class NewExamWizard(QDialog):
 
     def _marking(self, layout: QVBoxLayout):
         layout.addWidget(QLabel("Marking", objectName="title"))
-        self.correct, self.wrong, self.blank = _marks(1), _marks(0, most=0), _marks(0, most=0)
-        self.wrong.setToolTip("Negative marking: e.g. -0.25 or -1 for each wrong answer")
+        self.correct, self.wrong, self.blank = _marks(1), Deduction(), Deduction()
         self.partial = QCheckBox("Partial marking: several bubbles may be filled, and picking some of a multi-correct "
                                  "answer (and no wrong option) earns part of its marks")
         marks = QHBoxLayout()
@@ -435,7 +453,7 @@ class NewExamWizard(QDialog):
             item.setFlags(Qt.ItemIsEnabled)
             self.section_marks.setItem(r, 0, item)
             self.section_marks.setCellWidget(r, 1, _marks(correct))
-            self.section_marks.setCellWidget(r, 2, _marks(wrong, most=0))
+            self.section_marks.setCellWidget(r, 2, Deduction(wrong))
             box = QTableWidgetItem("Partial marks")
             box.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
             box.setCheckState(Qt.Checked if partial else Qt.Unchecked)
@@ -443,8 +461,8 @@ class NewExamWizard(QDialog):
         self.section_marks.setVisible(bool(rows))
         self.partial.setVisible(not rows and not self.own_sheet.isChecked())
         self.marking_note.setText(
-            "Each subject or section has its own marks. Use a negative number for negative marking."
-            if rows else "Use a negative number for wrong answers for negative marking, e.g. -0.25. You can change "
+            "Each subject or section has its own marks. For negative marking, type the marks taken off, e.g. 1."
+            if rows else "For negative marking, type the marks taken off for a wrong answer, e.g. 0.25. You can change "
             "marks later on the exam's Marks and sections tab.")
 
     def sheet_sections(self) -> list[SheetSection]:

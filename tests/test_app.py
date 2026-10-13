@@ -42,6 +42,7 @@ def sheet_files(tmp_path, seeds):
 
 
 def test_reads_sheets_and_scores_them(app, tmp_path):
+    from PySide6.QtTest import QTest
     (path, answers, roll, set_code), = sheet_files(tmp_path, [3])
     w = window(tmp_path)
     c = w.check
@@ -55,7 +56,11 @@ def test_reads_sheets_and_scores_them(app, tmp_path):
     c.wrong.setValue(-1)
     assert cell(6) == str(right)  # blanks aren't wrong
     c.wrong.setValue(0.25)
-    assert c.wrong.value() == 0  # a wrong answer can't earn marks, e.g. from scrolling over the box
+    assert c.wrong.value() == 0  # a stored bonus for wrong answers, never meant, loads as no negative marking
+    c.wrong.selectAll()
+    QTest.keyClicks(c.wrong, "0.25")  # people type the marks taken off; the box shows the minus
+    c.wrong.interpretText()
+    assert c.wrong.value() == -0.25 and c.wrong.text() == "−0.25"
     c.table.selectRow(0)
     assert c.review_list.item(0).text() == "Nothing to check"
     assert w.dashboard.read.value.text() == "1" and w.dashboard.average.value.text() == f"{right:.1f}"
@@ -514,12 +519,13 @@ def test_sections_and_a_short_key(app, tmp_path, monkeypatch):
         dialog.table.item(0, 0).setText("Physics")
         dialog.table.item(0, 2).setText("30")
         dialog.table.item(0, 3).setText("4")
+        dialog.table.item(0, 4).setText("1")  # minus 1 for wrong
         dialog.add()  # starts at 31
         return dialog.table.item(1, 1).text() == "31" and dialog.accept() is None
     monkeypatch.setattr(sections.SectionsDialog, "exec", fill)
     w.go("Marks and sections")
     c.sections_button.click()  # the real button, so a missing import or a broken dialog fails here
-    assert [s.name for s in w.store.exam(c.exam.id).sections] == ["Physics", "Section 2"]
+    assert [(s.name, s.wrong) for s in w.store.exam(c.exam.id).sections] == [("Physics", -1), ("Section 2", 0)]
     assert "Physics: questions 1 to 30" in c.sections_label.text()
     physics = sum(1 for q in c.questions[:30] if answers[q])
     assert c.table.item(0, 6).text() == str(4 * physics + right - physics)
