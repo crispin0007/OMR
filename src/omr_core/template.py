@@ -10,6 +10,7 @@ top-left corner, measured on the printed sheet:
                   "centres_mm": [[x, y], ...]},          # TL, TR, BR, BL
       "orientation_mm": [x, y, w, h],                   # optional: an area always printed black
       "barcode_mm": [x, y, w, h],                       # optional: a barcode or QR code holding the roll number
+      "serial_mm": [x, y, w, h],                        # optional: a barcode with the sheet's own printed number
       "bubble_mm": [w, h],
       "dropout": "red",                                 # optional: drop pink or red print
       "grids": [{"kind": "questions", "first": 1, "options": "ABCD",
@@ -63,6 +64,7 @@ class Template:
     orientation: tuple[float, float, float, float] | None = None
     dropout: str | None = None
     barcode: tuple[float, float, float, float] | None = None
+    serial: tuple[float, float, float, float] | None = None
 
     def questions(self) -> list[int]:
         """Every question number on the sheet, in order."""
@@ -104,6 +106,7 @@ def parse(d: dict) -> Template:
         orientation=tuple(_number(v, "orientation_mm") for v in d["orientation_mm"]) if "orientation_mm" in d else None,
         dropout=d.get("dropout"),
         barcode=_area(d["barcode_mm"], "barcode_mm", (w, h)) if "barcode_mm" in d else None,
+        serial=_area(d["serial_mm"], "serial_mm", (w, h)) if "serial_mm" in d else None,
     )
     kinds = [g.kind for g in t.grids]
     if "questions" not in kinds and "numeric" not in kinds:

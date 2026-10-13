@@ -44,6 +44,7 @@ class Ready(NamedTuple):
     sets: int = 4  # 0 for none
     labels: str = "letters"
     shape: str = "pill"
+    track: bool = False  # a sheet number printed on every sheet
 
 
 def _parts(names: str, each: int) -> list:
@@ -115,7 +116,7 @@ def ready_from_json(text: str) -> Ready:
               and isinstance(r.roll, int) and 0 <= r.roll <= MAX_ROLL_DIGITS
               and isinstance(r.sets, int) and r.sets in (0, *range(2, 9))
               and all(isinstance(m, (int, float)) for m in (r.right, r.wrong))
-              and r.labels in LABELS and r.shape in SHAPES)
+              and r.labels in LABELS and r.shape in SHAPES and isinstance(r.track, bool))
     except (TypeError, ValueError):  # not JSON, not an object, or missing or unknown fields
         ok = False
     if not ok:
@@ -127,7 +128,7 @@ def spec_of(name: str, r: Ready) -> SheetSpec:
     """The sheet a ready-made layout prints, with the default look."""
     sections = [SheetSection(s[0], s[1], r.right, r.wrong, digits=s[2] if len(s) > 2 else 0) for s in r.sections]
     return SheetSpec(name, sum(s.questions for s in sections) or r.total, r.options, r.roll, r.sets, sections,
-                     bubble_shape=r.shape, labels=r.labels)
+                     bubble_shape=r.shape, labels=r.labels, track=r.track)
 
 
 def saved_templates(store: Store) -> tuple[dict[str, Ready], list[str]]:
@@ -389,12 +390,17 @@ class NewExamWizard(QDialog):
             self.shape.addItem(name, value)
         self.shape.setToolTip("Every shape reads the same; pick the one your students know")
         self.shape.currentIndexChanged.connect(self.timer.start)
+        self.track = QCheckBox("Print a sheet number on every sheet")
+        self.track.setToolTip("Each printed sheet gets its own number (0001, 0002…), read back when it is scanned, "
+                              "so every paper sheet can be traced and missing or repeated sheets show")
+        self.track.toggled.connect(self.timer.start)
         self.instructions = QPlainTextEdit("\n".join(DEFAULT_INSTRUCTIONS))
         self.instructions.setToolTip("One instruction per line; they are numbered for you")
         form = QFormLayout()
         form.addRow("Heading", self.heading)
         form.addRow("Colour", self.colour)
         form.addRow("Bubbles", self.shape)
+        form.addRow("Sheet number", self.track)
         form.addRow("Logo", logo_row)
         form.addRow("Instructions", self.instructions)
         left = QWidget()
@@ -484,7 +490,7 @@ class NewExamWizard(QDialog):
         """Fill the steps from a ready-made layout; the user can change anything after."""
         if name not in self.patterns:
             return
-        sections, total, options, right, wrong, roll, sets, labels, shape = self.patterns[name]
+        sections, total, options, right, wrong, roll, sets, labels, shape, track = self.patterns[name]
         self.make_sheet.setChecked(True)
         self.true_false.setChecked(False)
         self.options.setValue(options)
@@ -492,6 +498,7 @@ class NewExamWizard(QDialog):
         self.sets.setCurrentIndex(sets - 1 if sets else 0)
         self.labels.setCurrentIndex(self.labels.findData(labels))
         self.shape.setCurrentIndex(self.shape.findData(shape))
+        self.track.setChecked(track)
         self.correct.setValue(right)
         self.wrong.setValue(wrong)
         self.sections.setRowCount(0)
@@ -614,7 +621,7 @@ class NewExamWizard(QDialog):
                          self.sets.currentIndex() and self.sets.currentIndex() + 1, sections,
                          self.colour.currentData() or COLOURS[0][1], self.heading.text(),
                          self.instructions.toPlainText().splitlines(), self.logo, self.true_false.isChecked(),
-                         self.shape.currentData(), self.labels.currentData())
+                         self.shape.currentData(), self.labels.currentData(), self.track.isChecked())
 
     def update_preview(self):
         self.layout_problem = ""
@@ -663,6 +670,8 @@ class NewExamWizard(QDialog):
                              f"{self.blank.value():g} blank")
             lines.append(f"Roll number: {spec.roll_digits} digits" if spec.roll_digits else "No roll number")
             lines.append(SETS[self.sets.currentIndex()])
+            if spec.track:
+                lines.append("A sheet number on every sheet, chosen when printing")
             if self.made is None:
                 lines.append(f"<span style='color:#c62828'>{self.layout_problem}</span>")
         lines.append("<br>The answer key goes in on the exam's Answer key tab.")

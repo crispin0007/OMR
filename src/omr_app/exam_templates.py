@@ -8,15 +8,16 @@ import json
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import (QComboBox, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QListWidget,
-                               QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QSpinBox, QTableWidget,
-                               QTableWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+                               QListWidget, QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QSpinBox,
+                               QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from omr_core.sheet import MAX_ROLL_DIGITS, layout, render
 from omr_core.store import Store
 
 from .new_exam import (ANSWERED_WITH, BLANK, BUBBLE_SHAPES, PATTERN_NOTE, READY, SETS, Deduction, Ready, _marks,
                        saved_templates, spec_of)
+from .printing import PrintBar
 
 LABEL_NAMES = (("A, B, C, D…", "letters"), ("a, b, c, d…", "lower"), ("1, 2, 3, 4…", "numbers"))
 MINE = "My templates"
@@ -63,6 +64,8 @@ class TemplatesPage(QWidget):
         self.shape = QComboBox()
         for name, value in BUBBLE_SHAPES:
             self.shape.addItem(name, value)
+        self.track = QCheckBox("Print a sheet number on every sheet")
+        self.track.toggled.connect(self.timer.start)
         self.right, self.wrong = _marks(1), Deduction()
         marks = QHBoxLayout()
         marks.addWidget(self.right)
@@ -78,6 +81,7 @@ class TemplatesPage(QWidget):
         form.addRow("Roll number digits", self.roll)
         form.addRow("Question paper sets", self.sets)
         form.addRow("Bubbles", self.shape)
+        form.addRow("Sheet number", self.track)
         form.addRow("Marks: correct", marks)
         for box in (self.total, self.options, self.roll, self.right, self.wrong):
             box.valueChanged.connect(self.timer.start)
@@ -102,6 +106,9 @@ class TemplatesPage(QWidget):
                   self.delete_button):
             buttons.addWidget(b)
         buttons.addStretch()
+        self.bar = PrintBar()
+        self.bar.changed.connect(self.update_preview)
+        buttons.addWidget(self.bar)
         self.error = QLabel(objectName="error", wordWrap=True)
 
         editor = QWidget()
@@ -181,7 +188,9 @@ class TemplatesPage(QWidget):
     # -- the editor ----------------------------------------------------------------------------------------
 
     def fill(self, r: Ready):
-        for box in (self.total, self.options, self.roll, self.right, self.wrong, self.labels, self.sets, self.shape):
+        boxes = (self.total, self.options, self.roll, self.right, self.wrong, self.labels, self.sets, self.shape,
+                 self.track)
+        for box in boxes:
             box.blockSignals(True)
         self.total.setValue(r.total or 100)
         self.options.setValue(r.options)
@@ -191,7 +200,8 @@ class TemplatesPage(QWidget):
         self.shape.setCurrentIndex(self.shape.findData(r.shape))
         self.right.setValue(r.right)
         self.wrong.setValue(r.wrong)
-        for box in (self.total, self.options, self.roll, self.right, self.wrong, self.labels, self.sets, self.shape):
+        self.track.setChecked(r.track)
+        for box in boxes:
             box.blockSignals(False)
         self.sections.setRowCount(0)
         for name, count, *digits in r.sections:
@@ -239,7 +249,7 @@ class TemplatesPage(QWidget):
         sets = self.sets.currentIndex()
         return Ready(sections, 0 if sections else self.total.value(), self.options.value(), self.right.value(),
                      self.wrong.value(), self.roll.value(), sets + 1 if sets else 0, self.labels.currentData(),
-                     self.shape.currentData())
+                     self.shape.currentData(), self.track.isChecked())
 
     def edited(self) -> bool:
         try:
@@ -260,10 +270,11 @@ class TemplatesPage(QWidget):
 
     def update_preview(self):
         checked = self.checked()
+        self.bar.set_template(checked and checked[1], self.current.split(":")[0])
         if checked is None:
             self.preview.clear()
             return
-        page = render(checked[1], dpi=40)
+        page = render(checked[1], dpi=40, paper=self.bar.paper.currentText(), number=self.bar.first_number())
         image = QImage(page.data, page.shape[1], page.shape[0], page.strides[0], QImage.Format_BGR888).copy()
         self.preview.setPixmap(QPixmap.fromImage(image))
 

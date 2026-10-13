@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS page (
     answers TEXT,                    -- JSON {question: letters}
     flags TEXT,                      -- JSON [[where, why], ...]
     problem TEXT NOT NULL DEFAULT '',
-    image BLOB                       -- aligned page as PNG, for review
+    image BLOB,                      -- aligned page as PNG, for review
+    serial TEXT NOT NULL DEFAULT ''  -- the sheet number printed on the sheet, '?' if unreadable
 );
 CREATE INDEX IF NOT EXISTS page_exam ON page(exam_id);
 CREATE TABLE IF NOT EXISTS audit (
@@ -120,6 +121,9 @@ class Store:
             if column not in columns:
                 with self.db:
                     self.db.execute(f"ALTER TABLE exam ADD COLUMN {column} {kind}")
+        if "serial" not in [r[1] for r in self.db.execute("PRAGMA table_info(page)")]:
+            with self.db:
+                self.db.execute("ALTER TABLE page ADD COLUMN serial TEXT NOT NULL DEFAULT ''")
 
     def close(self):
         self.db.close()
@@ -243,8 +247,8 @@ class Store:
                                                            (old,)).fetchall():
                             page = self.db.execute(
                                 "INSERT INTO page (exam_id, batch, file, page_no, read_at, roll_number, set_code, "
-                                "answers, flags, problem, image) SELECT ?, batch, file, page_no, read_at, roll_number, "
-                                "set_code, answers, flags, problem, image FROM b.page WHERE id = ?",
+                                "answers, flags, problem, image, serial) SELECT ?, batch, file, page_no, read_at, "
+                                "roll_number, set_code, answers, flags, problem, image, serial FROM b.page WHERE id = ?",
                                 (exam, old_page)).lastrowid
                             self.db.execute("INSERT INTO audit (page_id, at, user, item, before, after) SELECT ?, at, "
                                             "user, item, before, after FROM b.audit WHERE page_id = ? ORDER BY id",
@@ -327,8 +331,9 @@ class Store:
             for page_id, (result, problem) in pages.items():
                 values, image = _row(result)
                 # An unreadable page keeps the image it had, to try yet another sheet with.
-                self.db.execute("UPDATE page SET roll_number = ?, set_code = ?, answers = ?, flags = ?, problem = ?, "
-                                "image = COALESCE(?, image) WHERE id = ?", (*values, problem, image, page_id))
+                self.db.execute("UPDATE page SET roll_number = ?, set_code = ?, answers = ?, flags = ?, serial = ?, "
+                                "problem = ?, image = COALESCE(?, image) WHERE id = ?",
+                                (*values, problem, image, page_id))
 
     def add_page(self, exam_id: int, batch: str, file: str, page_no: int, result: PageResult | None,
                  problem: str = "", scan: np.ndarray | None = None) -> StoredPage:
@@ -341,7 +346,7 @@ class Store:
         with self.db:
             cur = self.db.execute(
                 "INSERT INTO page (exam_id, batch, file, page_no, read_at, roll_number, set_code, answers, flags, "
-                "problem, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "serial, problem, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (exam_id, batch, file, page_no, read_at, *values, problem, image))
         return StoredPage(cur.lastrowid, batch, file, page_no, read_at, result, problem)
 
@@ -354,13 +359,13 @@ class Store:
 
     def _pages(self, where: str, arg: int) -> list[StoredPage]:
         rows = self.db.execute(
-            "SELECT id, batch, file, page_no, read_at, roll_number, set_code, answers, flags, problem FROM page "
-            f"WHERE {where} ORDER BY id", (arg,)).fetchall()
+            "SELECT id, batch, file, page_no, read_at, roll_number, set_code, answers, flags, problem, serial FROM "
+            f"page WHERE {where} ORDER BY id", (arg,)).fetchall()
         out = []
-        for id_, batch, file, page_no, read_at, roll, set_code, answers, flags, problem in rows:
+        for id_, batch, file, page_no, read_at, roll, set_code, answers, flags, problem, serial in rows:
             result = None if roll is None else PageResult(
                 roll, set_code, {int(q): a for q, a in json.loads(answers).items()},
-                [tuple(f) for f in json.loads(flags)])
+                [tuple(f) for f in json.loads(flags)], serial=serial)
             out.append(StoredPage(id_, batch, file, page_no, read_at, result, problem))
         return out
 
@@ -478,10 +483,10 @@ def _png(image: np.ndarray) -> bytes | None:
 
 
 def _row(result: PageResult | None) -> tuple[tuple, bytes | None]:
-    """(roll number, set code, answers, flags) as stored, and the aligned image as PNG."""
+    """(roll number, set code, answers, flags, sheet number) as stored, and the aligned image as PNG."""
     if result is None:
-        return (None,) * 4, None
-    return ((result.roll_number, result.set_code, json.dumps(result.answers), json.dumps(result.flags)),
+        return (None,) * 4 + ("",), None
+    return ((result.roll_number, result.set_code, json.dumps(result.answers), json.dumps(result.flags), result.serial),
             None if result.aligned is None else _png(result.aligned))
 
 
@@ -509,3 +514,29 @@ def to_review(pages: list[StoredPage], students: dict[str, Student] | None = Non
         elif students and "?" not in p.result.roll_number and p.result.roll_number not in students:
             out.append((i, "roll number", "not on the student list"))
     return out
+
+
+def sheet_number_problems(pages: list[StoredPage]) -> str:
+    """What the printed sheet numbers say about the pages: numbers on more than one page, numbers missing between
+    the lowest and highest read, and pages whose number can't be read. "" when there's nothing to say."""
+    seen: dict[str, int] = {}
+    for p in pages:
+        if p.result and p.result.serial:
+            seen[p.result.serial] = seen.get(p.result.serial, 0) + 1
+    unreadable = seen.pop("?", 0)
+    twice = [n for n, count in seen.items() if count > 1]
+    runs: dict[tuple[str, int], set[int]] = {}  # (prefix, digits) to the numbers read
+    for n in seen:
+        digits = len(n) - len(n.rstrip("0123456789"))
+        if digits:
+            runs.setdefault((n[:-digits], digits), set()).add(int(n[-digits:]))
+    missing = [f"{prefix}{k:0{digits}d}" for (prefix, digits), got in runs.items()
+               for k in range(min(got), max(got) + 1) if k not in got]
+    out = []
+    for names, what in ((twice, "on more than one page"), (missing, "not scanned")):
+        if names:
+            listed = ", ".join(names[:8]) + (f" and {len(names) - 8} more" if len(names) > 8 else "")
+            out.append(f"Sheet number{'s' if len(names) > 1 else ''} {listed} {what}.")
+    if unreadable:
+        out.append(f"{unreadable} page{'s' if unreadable > 1 else ''} with a sheet number that can't be read.")
+    return " ".join(out)

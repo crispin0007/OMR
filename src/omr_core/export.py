@@ -136,15 +136,16 @@ def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Grad
     ws["A1"].font = Font(bold=True, size=14)
     section_names = list(graded[0].sections) if graded else []
     split = ["Sheet", "Written"] if has_written(graded) else []
+    numbered = ["Sheet no."] if t.serial else []
     head = ["Rank", "Roll number", "Name", "Class", "Set", "Score", *split, *section_names, "Right", "Wrong", "Blank",
-            "Percentile", "To check", "File", "Page"]
+            "Percentile", "To check", "File", "Page", *numbered]
     ws.append(head)
     for g in graded:
         r = g.page.result
         s = g.student
         ws.append([g.rank, r.roll_number, s.name if s else "", s.class_name if s else "", r.set_code, g.score,
                    *([g.omr, g.written] if split else []), *g.sections.values(), g.right, g.wrong, g.blank, round(g.percentile, 1),
-                   "yes" if g.to_check else "", Path(g.page.file).name, g.page.page])
+                   "yes" if g.to_check else "", Path(g.page.file).name, g.page.page, *(r.serial for _ in numbered)])
     answers = wb.create_sheet("Answers")
     answers.append(["Roll number", "Name", "Set", *(f"Q{q}" for q in qs)])
     fills = {"right": PatternFill("solid", fgColor="C6EFCE"), "wrong": PatternFill("solid", fgColor="FFC7CE")}

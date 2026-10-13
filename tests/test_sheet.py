@@ -259,3 +259,36 @@ def test_numeric_answers_that_dont_fit_are_refused():
         layout(SheetSpec("Big", 10, sections=[SheetSection("N", 10, digits=7)]))
     with pytest.raises(ValueError, match="don't fit"):
         layout(SheetSpec("Many", 100, sections=[SheetSection("MCQ", 60), SheetSection("N", 40, digits=4)]))
+
+
+def test_numbered_copies_print_in_one_pdf_and_each_number_reads_back(tmp_path):
+    import pypdfium2 as pdfium
+
+    from omr_core.sheet import sheet_numbers
+    d = layout(SheetSpec("Numbered", 200, roll_digits=6, sets=4, track=True))
+    t = parse(d)
+    numbers = sheet_numbers("A-", 98, 3)
+    assert numbers == ["A-0098", "A-0099", "A-0100"]
+    write_pdf(d, tmp_path / "s.pdf", "A4", numbers)
+    pdf = pdfium.PdfDocument(str(tmp_path / "s.pdf"))
+    pages = [pdf[k].render(scale=200 / 72).to_numpy().copy() for k in range(len(pdf))]
+    pdf.close()
+    assert len(pages) == 3
+    marks, answers, roll, set_code = random_marks(t, 5)
+    for k, (page, number) in enumerate(zip(pages, numbers)):
+        r = read_page(scan(fill(page, t, marks), angle=0.5 + k, seed=k), t)  # the barcode doesn't upset the bubbles
+        assert (r.serial, r.roll_number, r.set_code, r.answers, r.flags) == (number, roll, set_code, answers, [])
+    longest = sheet_numbers("2026-", 999_999, 1)[0]  # the longest number allowed still reads, tilted and on a phone
+    assert read_page(scan(render(d, number=longest), angle=3, seed=4), t).serial == longest
+    assert read_page(photo(render(d, number=longest), seed=4), t).serial == longest
+    assert read_page(scan(render(d)), t).serial == "?"  # printed without a number: nothing to read, nothing guessed
+    plain = layout(SheetSpec("Plain", 50))
+    assert "serial_mm" not in plain and read_page(render(plain), parse(plain)).serial == ""
+
+
+@pytest.mark.parametrize("prefix, first, copies", [("A B", 1, 1), ("TOOLONG", 1, 1), ("NP-26/", 1, 1), ("", -1, 1),
+                                                   ("", 1, 0), ("", 1, 10_001), ("", 999_999, 2)])
+def test_sheet_numbers_that_cant_print_or_read_are_refused(prefix, first, copies):
+    from omr_core.sheet import sheet_numbers
+    with pytest.raises(ValueError):
+        sheet_numbers(prefix, first, copies)

@@ -32,6 +32,7 @@ class PageResult:
     answers: dict[int, str] = field(default_factory=dict)
     flags: list[tuple[str, str]] = field(default_factory=list)  # (where, why)
     aligned: np.ndarray | None = None  # page in template coordinates, for the review screen
+    serial: str = ""  # the sheet number printed on the sheet, "?" when it can't be read; "" for sheets without one
 
 
 def read_page(page: np.ndarray, template: Template) -> PageResult:
@@ -64,6 +65,8 @@ def read_page(page: np.ndarray, template: Template) -> PageResult:
             result.set_code = _single(result, filled[0], unclear[0], grid.options, "set code")
     if template.barcode:
         _identify(result, _barcode(warped, template.barcode), any(g.kind == "roll_number" for g in template.grids))
+    if template.serial:
+        result.serial = _barcode(warped, template.serial) or "?"
     return result
 
 

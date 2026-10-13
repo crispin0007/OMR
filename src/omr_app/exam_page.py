@@ -16,12 +16,13 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog
                                QVBoxLayout, QWidget)
 
 from omr_core.reader import read_or_reason
-from omr_core.sheet import PAPERS, render, write_pdf
+from omr_core.sheet import render
 from omr_core.sources import read_pages
 from omr_core.students import absent, read_students
 from omr_core.template import parse
 
 from .new_exam import TEMPLATES, USER_TEMPLATES
+from .printing import PrintBar
 from .theme import tokens
 
 
@@ -315,35 +316,29 @@ class PrintSheet(QWidget):
         self.check = check
         self.template: dict | None = None
         self.note = QLabel(objectName="muted", wordWrap=True)
-        self.paper = QComboBox()
-        self.paper.addItems(list(PAPERS))
-        self.paper.setToolTip("The sheet is scaled to fit the paper; it reads the same on any of them")
-        self.paper.currentTextChanged.connect(lambda _: self.refresh())
-        self.save = QPushButton("Save PDF to print…", objectName="primary")
-        self.save.clicked.connect(self.save_pdf)
+        self.bar = PrintBar()
+        self.bar.changed.connect(self.refresh)
+        self.save = self.bar.save
         self.try_print = QPushButton("Check a printed copy…")
         self.try_print.setToolTip("Before printing them all: scan or photograph one printed sheet, blank or with a "
                                   "few bubbles filled, to see that it reads")
         self.try_print.clicked.connect(self.check_print)
         top = QHBoxLayout()
         top.addWidget(self.note, 1)
-        top.addWidget(QLabel("Paper"))
-        top.addWidget(self.paper)
         top.addWidget(self.try_print)
-        top.addWidget(self.save)
         self.preview = QLabel(alignment=Qt.AlignCenter)
         scroll = QScrollArea(widgetResizable=True)
         scroll.setWidget(self.preview)
         layout = QVBoxLayout(self)
         layout.addLayout(top)
+        layout.addWidget(self.bar)
         layout.addWidget(scroll, 1)
 
     def refresh(self):
         exam = self.check.exam
         d = json.loads(exam.template_json) if exam else {}
         self.template = d if "print" in d else None  # only sheets New exam made carry what to print
-        for w in (self.save, self.paper):
-            w.setEnabled(self.template is not None)
+        self.bar.set_template(self.template, exam.name if exam else "")
         self.try_print.setEnabled(exam is not None)
         self.preview.clear()
         if exam is None:
@@ -353,8 +348,11 @@ class PrintSheet(QWidget):
                               "as you always do; this exam reads it.")
         else:
             self.note.setText("This exam's sheet, ready for any paper size. Keep all four corner circles on the "
-                              "paper; scaling or “fit to page” is fine.")
-            page = render(self.template, dpi=80, paper=self.paper.currentText())
+                              "paper; scaling or “fit to page” is fine."
+                              + (" Each sheet gets its own number, read back when it is scanned."
+                                 if "serial_mm" in self.template else ""))
+            page = render(self.template, dpi=80, paper=self.bar.paper.currentText(),
+                          number=self.bar.first_number())
             image = QImage(page.data, page.shape[1], page.shape[0], page.strides[0], QImage.Format_BGR888).copy()
             self.preview.setPixmap(QPixmap.fromImage(image))
 
@@ -369,20 +367,6 @@ class PrintSheet(QWidget):
             QMessageBox.warning(self, "Can't open that file", f"{path}\n\n{e or 'it has no pages'}")
             return
         QMessageBox.information(self, "Printed copy", print_check(page, self.check.exam.template))
-
-    def save_pdf(self):
-        exam = self.check.exam
-        docs = Path(QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
-        path, _ = QFileDialog.getSaveFileName(self, "Save sheet PDF", str(docs / f"{exam.name} sheet.pdf"),
-                                              "PDF (*.pdf)")
-        if not path:
-            return
-        try:
-            write_pdf(self.template, path, self.paper.currentText())
-        except OSError as e:  # e.g. the PDF is open in a viewer
-            QMessageBox.warning(self, "Couldn't save", f"{path}\n\n{e}")
-            return
-        self.window().statusBar().showMessage(f"Saved {path}", 5000)
 
 
 def print_check(page, template) -> str:

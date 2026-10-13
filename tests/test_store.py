@@ -217,6 +217,7 @@ def test_backup_restores_on_another_pc_without_replacing_anything(tmp_path):
                                                          np.zeros((4, 4), np.uint8)))
     s.correct(page.id, "Q1", "B", "teacher")
     s.set_students(exam, [Student("12", "Asha", "10A")])
+    s.add_page(exam, "b", "a.pdf", 2, PageResult("13", "A", {1: "A"}, [], serial="0007"))
     s.save_template("Weekly NEET", "{}")
     s.backup(tmp_path / "backup.db")
     s.backup(tmp_path / "backup.db")  # again, over the last one
@@ -229,7 +230,8 @@ def test_backup_restores_on_another_pc_without_replacing_anything(tmp_path):
     (new_id, *_), = [e for e in other.exams() if e[1] == "Mock"]
     e = other.exam(new_id)
     assert (e.answer_key, e.correct, e.wrong) == ("ABCD", 4, -1) and len(other.exams()) == 2
-    p, = other.pages(new_id)
+    p, numbered = other.pages(new_id)
+    assert (p.result.serial, numbered.result.serial) == ("", "0007")
     assert p.result.answers == {1: "B"} and p.result.flags == [] and np.array_equal(other.image(p.id), np.zeros((4, 4)))
     assert [a[4:] for a in other.audit(new_id)] == [("Q1", "A", "B")]
     assert other.students(new_id)["12"].name == "Asha"
@@ -281,3 +283,36 @@ def test_templates_are_saved_renamed_and_deleted(tmp_path):
         s.save_template(" ", "{}")
     s.delete_template("Class test")
     assert s.templates() == {"Weekly": '{"a": 1}'}
+
+
+def test_sheet_numbers_are_kept_and_a_database_from_before_them_opens(tmp_path):
+    from omr_core.store import SCHEMA
+    s = Store(tmp_path / "omr.db")
+    exam = s.create_exam("Mock", TEMPLATE)
+    s.add_page(exam, "b", "a.pdf", 1, PageResult("12", "A", {1: "A"}, [], serial="A-0001"))
+    s.add_page(exam, "b", "a.pdf", 2, None, "unreadable: no corner marks")
+    assert [p.result and p.result.serial for p in Store(tmp_path / "omr.db").pages(exam)] == ["A-0001", None]
+
+    old = sqlite3.connect(tmp_path / "old.db")
+    before = SCHEMA[:SCHEMA.index("image BLOB,")] + "image BLOB);" + SCHEMA[SCHEMA.index("CREATE INDEX"):]
+    old.executescript(before)
+    old.execute("INSERT INTO exam (name, template, created) VALUES ('Old', ?, '2026-01-01')", (TEMPLATE,))
+    old.execute("INSERT INTO page (exam_id, batch, file, page_no, read_at, roll_number, set_code, answers, flags) "
+                "VALUES (1, 'b', 'a.pdf', 1, '2026-01-01', '12', 'A', '{\"1\": \"A\"}', '[]')")
+    old.commit()
+    old.close()
+    assert Store(tmp_path / "old.db").pages(1)[0].result.serial == ""
+
+
+def test_repeated_missing_and_unreadable_sheet_numbers_are_named():
+    from omr_core.store import StoredPage, sheet_number_problems
+
+    def pages(*serials):
+        return [StoredPage(k, "b", "a.pdf", k, "", None if n is None else PageResult("1", serial=n), "")
+                for k, n in enumerate(serials)]
+    assert sheet_number_problems(pages("0001", "0002", "0003", None)) == ""
+    assert sheet_number_problems(pages("", "")) == ""  # a sheet without numbers
+    assert sheet_number_problems(pages("A-0001", "A-0004", "A-0004", "?", "B-0010", "B-0012")) == (
+        "Sheet number A-0004 on more than one page. Sheet numbers A-0002, A-0003, B-0011 not scanned. "
+        "1 page with a sheet number that can't be read.")
+    assert "and 2 more not scanned" in sheet_number_problems(pages("0001", "0012"))

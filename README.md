@@ -86,7 +86,7 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    wrong (negative marking) and blank answers, per section, with partial
    marking for multi-correct questions; and the sheet's colour, bubble
    shape (pill, oval, circle, rounded or rectangle), heading, logo and
-   instructions. The last step shows a summary and the sheet, and
+   instructions, and whether every sheet gets its own sheet number. The last step shows a summary and the sheet, and
    **Create exam** makes the exam with its sheet ready to print. For a sheet
    you already print, pick **Use my own printed sheet** and its template
    (see Map printed sheet). Click an exam to open its page.
@@ -139,7 +139,15 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    right or wrong, and an item analysis: per question the share right, wrong
    and blank, the most chosen wrong answer and how well it separates strong
    from weak students) or one PDF scorecard per student. **Print sheet**
-   saves the exam's sheet as a PDF for A4, Letter, Legal, A3 or A5 paper.
+   prints the exam's sheet (**Print…**) or saves it as a PDF (**Save as
+   PDF…**) for A4, Letter, Legal, A3 or A5 paper; Templates has the same two
+   buttons for a blank sheet of any template. A sheet with sheet numbers
+   prints as many copies as you ask for, numbered from where you choose with
+   an optional prefix (A-0001, A-0002…). Each number is printed as text and
+   as a barcode, read back when the sheet is scanned and shown on Scanned
+   sheets, Results, the CSV and the Excel merit list; numbers on more than
+   one page, numbers missing between the lowest and highest scanned, and
+   numbers that can't be read are listed above the scanned sheets.
    The sheet reads the same at any print size, scaled or "fit to page", as
    long as all four corner circles are on the paper.
    **Check a printed copy…** reads a scan or phone photo of one printed

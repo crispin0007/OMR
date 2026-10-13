@@ -67,7 +67,7 @@ def test_reads_sheets_and_scores_them(app, tmp_path):
     assert w.results.table.item(0, 1).text() == roll
     assert w.results.table.item(0, 0).text() == "1"
     w.show()
-    for page in ["Dashboard", "Exams", "Map printed sheet", "Settings", *w.exam_page.names]:  # every page paints
+    for page in ["Dashboard", "Exams", "Templates", "Map printed sheet", "Settings", *w.exam_page.names]:  # all paint
         w.go(page)
         assert not w.grab().isNull()
 
@@ -852,7 +852,7 @@ def test_ready_made_layouts_fill_the_wizard_and_fit_the_sheet(app, tmp_path):
     from omr_app import new_exam
     from omr_core.store import Store
     z = new_exam.NewExamWizard(None, Store(tmp_path / "omr.db"))
-    for name, (sections, total, options, right, wrong, roll, sets, labels, shape) in new_exam.READY.items():
+    for name, (sections, total, options, right, wrong, roll, sets, labels, shape, _) in new_exam.READY.items():
         z.ready.setCurrentText(name)
         assert z.total.value() == (sum(s[1] for s in sections) or total) and z.options.value() == options
         assert (z.roll.value(), z.labels.currentData(), z.shape.currentData()) == (roll, labels, shape)
@@ -955,6 +955,9 @@ def test_templates_page_saves_edits_as_a_new_template_and_never_changes_a_built_
 
     p.sections.item(0, 1).setText("50")
     p.wrong.setValue(-0.5)
+    p.track.setChecked(True)
+    p.update_preview()
+    assert p.bar.numbering.isVisibleTo(p.bar) and p.bar.save.isEnabled()  # numbered copies print from here too
     names = iter([(neet, True), ("NEET mock, Physics 50", True)])  # a built-in's name is refused, then a new one
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: next(names))
     monkeypatch.setattr(QMessageBox, "warning", lambda *a: None)
@@ -962,7 +965,7 @@ def test_templates_page_saves_edits_as_a_new_template_and_never_changes_a_built_
     assert p.current == "NEET mock, Physics 50" and p.save_button.isVisibleTo(p)
     assert new_exam.READY[neet].sections[0] == ("Physics", 45)  # the built-in is untouched
     mine = new_exam.saved_templates(w.store)[0]["NEET mock, Physics 50"]
-    assert mine.sections[0] == ("Physics", 50) and mine.wrong == -0.5 and mine.labels == "numbers"
+    assert mine.sections[0] == ("Physics", 50) and mine.wrong == -0.5 and mine.labels == "numbers" and mine.track
 
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("Weekly NEET", True))
     p.rename()
@@ -990,9 +993,68 @@ def test_a_saved_template_is_checked_before_use():
         assert ready_from_json(json.dumps(r._asdict())) == r._replace(sections=[tuple(s) for s in r.sections])
     good = Ready([("Physics", 45)], 0, 4, 4, -1)._asdict()
     for bad in ({"options": 9}, {"roll": 20}, {"sets": 1}, {"labels": "roman"}, {"shape": "star"},
-                {"sections": [["", 5]]}, {"sections": [["A", 0]]}, {"sections": []}, {"total": "100"}):
+                {"sections": [["", 5]]}, {"sections": [["A", 0]]}, {"sections": []}, {"total": "100"},
+                {"track": "yes"}):
         with pytest.raises(ValueError):
             ready_from_json(json.dumps({**good, **bad}))
     for text in ("[]", "{}", "nonsense", json.dumps({**good, "extra": 1})):
         with pytest.raises(ValueError):
             ready_from_json(text)
+
+
+def test_numbered_sheets_print_and_their_numbers_show_where_sheets_are_listed(app, tmp_path, monkeypatch):
+    import csv
+    import json
+
+    import pypdfium2 as pdfium
+    from PySide6.QtPrintSupport import QPrinter
+    from PySide6.QtWidgets import QFileDialog
+
+    from omr_core.sheet import SheetSpec, layout
+    w = MainWindow(tmp_path / "omr.db")
+    w.open_exam(w.store.create_exam("Weekly", json.dumps(layout(SheetSpec("Weekly", 30, roll_digits=4, sets=0,
+                                                                           track=True)))))
+    bar = w.print_sheet.bar
+    assert bar.numbering.isVisibleTo(bar)
+    bar.prefix.setText("W-")
+    bar.first.setValue(7)
+    bar.copies.setValue(4)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "sheets.pdf"), ""))
+    bar.save.click()
+    pdf = pdfium.PdfDocument(str(tmp_path / "sheets.pdf"))
+    pages = [pdf[k].render(scale=200 / 72).to_numpy().copy() for k in range(len(pdf))]
+    pdf.close()
+    assert len(pages) == 4
+    printer = QPrinter(QPrinter.HighResolution)
+    printer.setOutputFormat(QPrinter.PdfFormat)
+    printer.setOutputFileName(str(tmp_path / "printed.pdf"))
+    bar.paint(printer, bar.numbers()[:2])  # what Print… sends once the printer is chosen
+    printed = pdfium.PdfDocument(str(tmp_path / "printed.pdf"))
+    assert len(printed) == 2
+    printed.close()
+
+    files = []
+    for k in (0, 1, 1, 3):  # W-0008 scanned twice, W-0009 never
+        files.append(str(tmp_path / f"scan{len(files)}.png"))
+        cv2.imwrite(files[-1], scan(pages[k], angle=0.5, seed=k))
+    c = w.check
+    c.read_files(files)
+    column = c.table.columnCount() - 1
+    assert not c.table.isColumnHidden(column)
+    assert [c.table.item(r, column).text() for r in range(4)] == ["W-0007", "W-0008", "W-0008", "W-0010"]
+    assert c.sheet_numbers.text() == "Sheet number W-0008 on more than one page. Sheet number W-0009 not scanned."
+    c.key_edit.setPlainText("A" * 30)
+    results = w.results.table
+    assert results.horizontalHeaderItem(results.columnCount() - 1).text() == "Sheet no."
+    assert {results.item(r, results.columnCount() - 1).text() for r in range(4)} == {"W-0007", "W-0008", "W-0010"}
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "results.csv"), ""))
+    c.save_csv()
+    rows = list(csv.reader(open(tmp_path / "results.csv", encoding="utf-8-sig")))
+    assert rows[0][-1] == "sheet_number" and rows[1][-1] == "W-0007"
+    from openpyxl import load_workbook
+    from PySide6.QtWidgets import QMessageBox
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)  # blank roll numbers to check
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "merit.xlsx"), ""))
+    w.results.excel.click()
+    merit = list(load_workbook(tmp_path / "merit.xlsx")["Merit list"].values)
+    assert merit[1][-1] == "Sheet no." and {r[-1] for r in merit[2:]} == {"W-0007", "W-0008", "W-0010"}

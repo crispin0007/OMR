@@ -21,6 +21,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pypdfium2 as pdfium
+from reportlab.graphics.barcode.code128 import Code128
 from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader, simpleSplit
@@ -56,6 +57,10 @@ ROLL_ROW0, ROLL_PITCH = 55.0, 3.6  # first digit row's centre and the pitch betw
 SIDE = 57.0  # width of the signatures and question set column on the right
 GAP = 2.5  # between boxes
 INSTRUCTION_TOP, INSTRUCTION_BOTTOM = 54.0, BLOCK_BOTTOM - 12.5  # the instruction lines go between these
+SERIAL_BOX = (RIGHT - SIDE, BLOCK_TOP, RIGHT, BLOCK_TOP + 11)  # the sheet number, above the signatures
+SERIAL_PREFIX = re.compile(r"^[A-Za-z0-9/-]{0,6}$")
+MIN_BAR = 0.37  # mm; scanned at 200 DPI, thinner barcode bars stopped reading in tests
+MAX_SHEETS = 10_000  # numbered copies in one PDF
 INSTRUCTION_SIZES = [7.0, 6.5, 6.0]  # points; smaller only when the lines don't fit otherwise
 
 # Question columns.
@@ -114,6 +119,7 @@ class SheetSpec:
     true_false: bool = False  # two options printed T and F
     bubble_shape: str = "pill"  # one of SHAPES
     labels: str = "letters"  # one of LABELS: what option bubbles show; answers are still A, B, C... in the app
+    track: bool = False  # print a sheet number on every copy, as text and a barcode the reader reads back
 
 
 def layout(spec: SheetSpec) -> dict:
@@ -158,6 +164,9 @@ def layout(spec: SheetSpec) -> dict:
     d = {"name": spec.name.strip(), "version": 1, "page_mm": list(PAGE),
          "markers": {"shape": "ring", "size_mm": MARK, "centres_mm": MARKS},
          "orientation_mm": ORIENTATION, "bubble_mm": list(SHAPES[spec.bubble_shape]), "grids": grids, "print": style}
+    if spec.track:
+        x0, y0, x1, y1 = SERIAL_BOX
+        d["serial_mm"] = [x0 + 1, y0 + 0.5, x1 - x0 - 2, 8.0]  # the barcode with its quiet zones, not the text
     if spec.sections:
         first = 1
         d["sections"] = []
@@ -184,6 +193,29 @@ def logo_jpeg(data: bytes) -> bytes:
     if scale < 1:
         image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     return cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 90])[1].tobytes()
+
+
+def sheet_numbers(prefix: str, first: int, copies: int) -> list[str]:
+    """Numbers for `copies` sheets from `first`, e.g. A-0001, A-0002: at least 4 digits, all the same width."""
+    if not SERIAL_PREFIX.match(prefix):
+        raise ValueError("the sheet number prefix can be up to 6 letters, digits, - or /")
+    if not 0 <= first or not 1 <= copies <= MAX_SHEETS or first + copies - 1 > 999_999:
+        raise ValueError(f"print 1 to {MAX_SHEETS:,} sheets, numbered up to 999999")
+    width = max(4, len(str(first + copies - 1)))
+    numbers = [f"{prefix}{n:0{width}d}" for n in range(first, first + copies)]
+    if _bar_mm(numbers[-1]) < MIN_BAR:
+        raise ValueError("that sheet number is too long for its barcode to read; use a shorter prefix")
+    return numbers
+
+
+def _bar_mm(number: str) -> float:
+    """The barcode's bar width for this number: as wide as fits the sheet number box, up to 0.5 mm."""
+    modules = _code128(number, 1).width  # quiet zones included
+    return min(0.5, (SERIAL_BOX[2] - SERIAL_BOX[0] - 2) / modules)
+
+
+def _code128(number: str, bar: float) -> Code128:
+    return Code128(number, barWidth=bar, barHeight=6 * mm, quiet=1, lquiet=10 * bar, rquiet=10 * bar)
 
 
 def _check_style(style: dict):
@@ -410,8 +442,9 @@ def _fonts():
         pdfmetrics.registerFont(TTFont(BOLD, str(FONTS / "Poppins-SemiBold.ttf")))
 
 
-def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4"):
-    """Print a template made by `layout` as an answer sheet on this paper, scaled to fit and centred.
+def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4", numbers: list[str] = ()):
+    """Print a template made by `layout` as an answer sheet on this paper, scaled to fit and centred: one page
+    per sheet number when the sheet has one (`numbers`), or one page with the number left blank.
 
     The reader finds the sheet by its corner marks, so the scale doesn't matter to it.
     """
@@ -429,8 +462,7 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4"):
     c = canvas.Canvas(out if isinstance(out, io.BytesIO) else str(out), pagesize=(pw * mm, ph * mm))
     c.setTitle(t.name)
     fit = min(pw / w, ph / h)
-    c.translate((pw - w * fit) / 2 * mm, (ph - h * fit) / 2 * mm)
-    c.scale(fit, fit)  # from here on, draw in the template's own millimetres
+    c.beginForm("sheet", 0, 0, w * mm, h * mm)  # drawn once, in the template's own millimetres; numbers go on top
     y = lambda v: (h - v) * mm  # templates measure from the top, PDFs from the bottom
 
     def box(x0, y0, x1, y1, fill=None, stroke=True, width=LINE):
@@ -615,7 +647,22 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4"):
                 pill(cx, g.centre(r, col)[1], str(r))
     text(w / 2, h - 5, "Fill one bubble fully with a dark pen. Do not fold the sheet or mark the corners.", 7,
          colour=ink, align="centre")
-    c.showPage()
+    c.endForm()
+
+    for number in numbers if t.serial else [""]:
+        c.translate((pw - w * fit) / 2 * mm, (ph - h * fit) / 2 * mm)
+        c.scale(fit, fit)
+        c.doForm("sheet")
+        if t.serial:
+            x0, y0, x1, y1 = SERIAL_BOX
+            box(x0, y0, x1, y1)
+            if number:
+                bars = _code128(number, _bar_mm(number) * mm)
+                c.setFillColor(colors.black)
+                bars.drawOn(c, ((x0 + x1) / 2 - bars.width / mm / 2) * mm, y(y0 + 7))
+            text((x0 + x1) / 2, y1 - 1.3, f"Sheet No. {number}" if number else "Sheet No.", 7, BOLD,
+                 align="centre")
+        c.showPage()
     c.save()
 
 
@@ -633,10 +680,10 @@ def _readable(colour: colors.Color) -> colors.Color:
     return colour if grey >= LIGHTEST_LETTER else _mix(colour, (1 - LIGHTEST_LETTER) / (1 - grey))
 
 
-def render(template: dict, dpi: int = 200, paper: str = "A4") -> np.ndarray:
+def render(template: dict, dpi: int = 200, paper: str = "A4", number: str = "") -> np.ndarray:
     """The printed sheet as a BGR image, for the preview and for tests."""
     buf = io.BytesIO()
-    write_pdf(template, buf, paper)
+    write_pdf(template, buf, paper, [number])
     pdf = pdfium.PdfDocument(buf.getvalue())
     try:
         return pdf[0].render(scale=dpi / 72).to_numpy().copy()  # pdfium renders BGR

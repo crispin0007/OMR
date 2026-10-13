@@ -17,7 +17,7 @@ from omr_core.export import single_questions
 from omr_core.grading import Section, format_topics, full_marks, marks_for, parse_key, parse_topics, score
 from omr_core.reader import read_or_reason
 from omr_core.sources import read_pages
-from omr_core.store import Exam, Store, StoredPage, to_review
+from omr_core.store import Exam, Store, StoredPage, sheet_number_problems, to_review
 from omr_core.students import Student
 
 from . import theme
@@ -35,7 +35,7 @@ from .sections import SectionsDialog
 
 APP = "OMR Checker"
 
-COLUMNS = ["File", "Page", "Roll number", "Name", "Set", "Answered", "Score", "Review"]
+COLUMNS = ["File", "Page", "Roll number", "Name", "Set", "Answered", "Score", "Review", "Sheet no."]
 
 
 @dataclass
@@ -162,6 +162,8 @@ class CheckPage(QWidget):
         table_layout = QVBoxLayout(table_box)
         table_layout.setContentsMargins(0, 0, 0, 0)
         table_layout.addLayout(mismatch_bar)
+        self.sheet_numbers = QLabel(objectName="error", wordWrap=True)  # repeated, missing or unreadable ones
+        table_layout.addWidget(self.sheet_numbers)
         table_layout.addLayout(filter_bar)
         table_layout.addWidget(self.table, 1)
 
@@ -433,7 +435,7 @@ class CheckPage(QWidget):
             cells = [self.file_name(sheet), str(sheet.page), r.roll_number if r else "", self.name_of(sheet),
                      r.set_code if r else "",
                      f"{sum(1 for q in self.questions if r.answers[q])}/{len(self.questions)}" if r else "",
-                     self._score_text(sheet), review]
+                     self._score_text(sheet), review, r.serial if r else ""]
             for col, text in enumerate(cells):
                 item = QTableWidgetItem(text)
                 if review:
@@ -449,6 +451,10 @@ class CheckPage(QWidget):
             "Change sheet; every page is read again." if unreadable else "")
         for w in (self.mismatch, self.map_button):
             w.setVisible(bool(unreadable))
+        numbered = bool(self.exam and self.exam.template.serial)
+        self.table.setColumnHidden(COLUMNS.index("Sheet no."), not numbered)
+        self.sheet_numbers.setText(sheet_number_problems(self.sheets) if numbered else "")
+        self.sheet_numbers.setVisible(bool(self.sheet_numbers.text()))
         self.table.resizeColumnsToContents()
         self.changed.emit()
 
@@ -545,13 +551,15 @@ class CheckPage(QWidget):
         try:
             with open(path, "w", newline="", encoding="utf-8-sig") as f:  # the BOM lets Excel open it as UTF-8
                 w = csv.writer(f)
+                numbered = self.exam.template.serial is not None
                 w.writerow(["file", "page", "roll_number", "set_code", "score", *(f"Q{q}" for q in self.questions),
-                            "review"])
+                            "review", *(["sheet_number"] if numbered else [])])
                 for s in self.sheets:
                     r = s.result
                     w.writerow([s.file, s.page, r.roll_number if r else "", r.set_code if r else "",
                                 self._score_text(s), *(r.answers[q] if r else "" for q in self.questions),
-                                s.problem or "; ".join(f"{a}: {b}" for a, b in (r.flags if r else []))])
+                                s.problem or "; ".join(f"{a}: {b}" for a, b in (r.flags if r else [])),
+                                *([r.serial if r else ""] if numbered else [])])
         except OSError as e:
             QMessageBox.warning(self, "Couldn't save", str(e))
             return

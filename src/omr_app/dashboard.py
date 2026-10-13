@@ -301,7 +301,8 @@ class ResultsPage(QWidget):
         self.table.setSortingEnabled(False)
         names = [s.name for s in c.sections]
         split = ["Sheet", "Written"] if c.exam and c.exam.written_out_of else []
-        columns = self.COLUMNS[:5] + split + names + self.COLUMNS[5:]
+        numbered = ["Sheet no."] if c.exam and c.exam.template.serial else []
+        columns = self.COLUMNS[:5] + split + names + self.COLUMNS[5:] + numbered
         self.table.setColumnCount(len(columns))
         self.table.setHorizontalHeaderLabels(columns)
         self.table.setRowCount(len(self.graded))
@@ -311,7 +312,7 @@ class ResultsPage(QWidget):
             r = g.page.result
             values = [g.rank, r.roll_number, g.student.name if g.student else "", r.set_code, g.score,
                       *([g.omr, "" if g.written is None else g.written] if split else []), *g.sections.values(), g.right, g.wrong, g.blank, round(g.percentile, 1),
-                      "yes" if g.to_check else "", c.file_name(g.page), g.page.page]
+                      "yes" if g.to_check else "", c.file_name(g.page), g.page.page, *(r.serial for _ in numbered)]
             for col, v in enumerate(values):
                 item = QTableWidgetItem()
                 item.setData(Qt.DisplayRole, v)
