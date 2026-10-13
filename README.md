@@ -113,6 +113,8 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    **Students** imports an Excel file with roll number, name and class
    columns; names then show everywhere, roll numbers not on the list go to
    Review, and rows that can't be used are listed, not imported.
+   It also marks who is absent (on the list, no sheet read); **Show only
+   absent** and **Save absent list…** give that list as a CSV.
    **Results** ranks every sheet with right, wrong and blank counts and its
    percentile, and exports a merit list to Excel (with every answer coloured
    right or wrong, and an item analysis: per question the share right, wrong

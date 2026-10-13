@@ -65,3 +65,8 @@ def read_students(path: str | Path, digits: int | None) -> tuple[list[Student], 
             seen[number] = n
             students.append(Student(number, who, str(cell(cls) or "").strip()))
     return students, problems
+
+
+def absent(students: dict[str, Student], read_rolls: set[str]) -> list[Student]:
+    """Students on the list with no sheet read for their roll number, by roll number."""
+    return sorted((s for r, s in students.items() if r not in read_rolls), key=lambda s: s.roll_number)
