@@ -70,3 +70,10 @@ def test_barcode_roll_numbers_are_text(tmp_path):
     students, problems = read_students(path, None)
     assert [s.roll_number for s in students] == ["S-0042", "42"]
     assert problems == ["row 4: roll number 'S 7' has spaces"]
+
+
+def test_absent_students_have_no_sheet_read():
+    from omr_core.students import absent
+    students = {r: Student(r, n) for r, n in (("003", "C"), ("001", "A"), ("002", "B"))}
+    assert [s.roll_number for s in absent(students, {"002", "999"})] == ["001", "003"]
+    assert absent({}, {"001"}) == []

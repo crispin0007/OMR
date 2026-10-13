@@ -29,7 +29,7 @@ from .theme import tokens
 
 PAGES = {"A4 (210 × 297 mm)": (210.0, 297.0), "Letter (216 × 279 mm)": (215.9, 279.4)}
 CORNERS = ["top-left", "top-right", "bottom-right", "bottom-left"]
-KINDS = {"Questions": "questions", "Roll number": "roll_number", "Set code": "set_code"}
+KINDS = {"Questions": "questions", "Roll number": "roll_number", "Set code": "set_code", "Numeric answer": "numeric"}
 
 
 class Canvas(QGraphicsView):
@@ -305,21 +305,27 @@ class DesignerPage(QWidget):
         kinds = [b["kind"] for b in self.blocks]
         if rows == 10 and "roll_number" not in kinds and cols <= 12:
             kind = "roll_number"
+        elif rows == 10 and cols <= 6:  # a second block of digit columns: one question answered with a number
+            kind = "numeric"
         elif rows == 1 and "set_code" not in kinds:
             kind = "set_code"
         else:
             kind = "questions"
         block = {"kind": kind, "origin_mm": list(origin), "pitch_mm": list(pitch), "rows": rows, "cols": cols}
-        if kind != "roll_number":
+        if kind not in ("roll_number", "numeric"):
             block["options"] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[:cols]
-        if kind == "questions":
-            block["first"] = 1 + max((b["first"] + b["rows"] - 1 for b in self.blocks if b["kind"] == "questions"),
-                                     default=0)
+        if kind in ("questions", "numeric"):
+            block["first"] = self._next_question()
         self.blocks.append(block)
         self.sizes.append(size)
         self.block_list.addItem("")
         self.block_list.setCurrentRow(len(self.blocks) - 1)
         self._redraw()
+
+    def _next_question(self) -> int:
+        return 1 + max((n for b in self.blocks for n in (
+            range(b["first"], b["first"] + b["rows"]) if b["kind"] == "questions" else
+            [b["first"]] if b["kind"] == "numeric" else [])), default=0)
 
     def show_block(self, row: int):
         self.editor.setEnabled(row >= 0)
@@ -333,8 +339,8 @@ class DesignerPage(QWidget):
         self.options.setText(b.get("options", ""))
         self.rows.setValue(b["rows"])
         self.cols.setValue(b["cols"])
-        self.first.setEnabled(b["kind"] == "questions")
-        self.options.setEnabled(b["kind"] != "roll_number")
+        self.first.setEnabled(b["kind"] in ("questions", "numeric"))
+        self.options.setEnabled(b["kind"] not in ("roll_number", "numeric"))
         for w in (self.kind, self.first, self.options, self.rows, self.cols):
             w.blockSignals(False)
 
@@ -347,9 +353,9 @@ class DesignerPage(QWidget):
         b["rows"], b["cols"] = self.rows.value(), self.cols.value()
         b.pop("first", None)
         b.pop("options", None)
-        if b["kind"] != "roll_number":
+        if b["kind"] not in ("roll_number", "numeric"):
             b["options"] = self.options.text().strip().upper() or "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[:b["cols"]]
-        if b["kind"] == "questions":
+        if b["kind"] in ("questions", "numeric"):
             b["first"] = self.first.value()
         self.show_block(row)
         self._redraw()
@@ -367,7 +373,8 @@ class DesignerPage(QWidget):
         for i, b in enumerate(self.blocks):
             label = {"questions": lambda: f"Questions {b['first']} to {b['first'] + b['rows'] - 1}",
                      "roll_number": lambda: f"Roll number, {b['cols']} digits",
-                     "set_code": lambda: f"Set code {b.get('options', '')}"}[b["kind"]]()
+                     "set_code": lambda: f"Set code {b.get('options', '')}",
+                     "numeric": lambda: f"Question {b['first']}, a number of {b['cols']} digits"}[b["kind"]]()
             self.block_list.item(i).setText(f"{label}   ({b['rows']} × {b['cols']})")
         self.canvas.show_image(self.aligned) if self.aligned is not None else None
         if self.barcode:
@@ -387,7 +394,7 @@ class DesignerPage(QWidget):
     def template_dict(self) -> dict:
         if len(self.marks) < 4:
             raise ValueError("click the four corner marks first")
-        if not any(b["kind"] == "questions" for b in self.blocks):
+        if not any(b["kind"] in ("questions", "numeric") for b in self.blocks):
             raise ValueError("box at least one block of questions")
         shapes = [m[3] for m in self.marks]
         d = {

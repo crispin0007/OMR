@@ -236,3 +236,17 @@ def test_backup_restores_on_another_pc_without_replacing_anything(tmp_path):
     with pytest.raises(sqlite3.DatabaseError):
         other.restore(tmp_path / "notes.txt")
     assert len(other.exams()) == 2
+
+
+def test_a_numeric_answer_is_corrected_with_its_digits(tmp_path):
+    s = Store(tmp_path / "omr.db")
+    exam = s.create_exam("JEE", json.dumps(layout(SheetSpec("JEE", 3, sections=[
+        SheetSection("MCQ", 2), SheetSection("Numeric", 1, digits=3)]))))
+    page = s.add_page(exam, "b", "scan.pdf", 1, PageResult("12345", "A", {1: "A", 2: "", 3: "4?2"},
+                                                           [("Q3", "gap between digits")]))
+    for bad in ("4A", "1234", "B"):
+        with pytest.raises(ValueError, match="up to 3 digits"):
+            s.correct(page.id, "Q3", bad, "asha")
+    fixed = s.correct(page.id, "Q3", "042", "asha")
+    assert fixed.result.answers[3] == "42" and fixed.result.flags == []
+    assert s.audit(exam)[0][4:] == ("Q3", "4?2", "42")

@@ -23,7 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError) as e:
         print(f"can't use template: {e}", file=sys.stderr)
         return 2
-    questions = sorted(g.first + r for g in template.grids if g.kind == "questions" for r in range(g.rows))
+    questions = template.questions()
     rows, failed = [], 0
     for path in args.files:
         try:

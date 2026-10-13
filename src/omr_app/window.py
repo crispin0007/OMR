@@ -24,7 +24,7 @@ from . import theme
 from .answer_key import KeyTab
 from .dashboard import DashboardPage, ResultsPage
 from .designer import DesignerPage
-from .exam_page import ExamPage, ExamSettings, PrintSheet, StudentsTab
+from .exam_page import ExamPage, ExamSettings, PrintSheet, StudentsTab, WrittenTab
 from .exams import TEMPLATES, ExamsPage  # noqa: F401  (tests find the templates here)
 from .help import HelpDialog
 from .review import ReviewPage
@@ -64,6 +64,7 @@ class CheckPage(QWidget):
         self.questions: list[int] = []
         self.sheets: list[StoredPage] = []
         self.students: dict[str, Student] = {}
+        self.written: dict[str, float] = {}  # typed written marks by roll number
         self.keys: dict[str, list[str]] = {}
         self.sections: list[Section] = []
         self.topics: dict[int, str] = {}  # question: topic
@@ -205,15 +206,16 @@ class CheckPage(QWidget):
         """Show an exam's saved key, marks and sheets; None closes it."""
         self.exam = None  # keeps the loading below from saving the scheme back
         if exam_id is None:
-            self.questions, self.sheets, self.students, self.sections, self.topics = [], [], {}, [], {}
+            self.questions, self.sheets, self.students, self.sections, self.written = [], [], {}, [], {}
             self.template_label.setText("Open or create an exam on the Exams page")
             self.key_edit.clear()
         else:
             exam = self.store.exam(exam_id)
             t = exam.template
-            self.questions = sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows))
+            self.questions = t.questions()
             self.sheets = self.store.pages(exam_id)
             self.students = self.store.students(exam_id)
+            self.written = self.store.written(exam_id)
             self.sections = exam.sections
             self.topics = self.store.topics(exam_id)
             self.template_label.setText(f"{exam.name}  ·  {t.name}, {len(self.questions)} questions")
@@ -252,7 +254,7 @@ class CheckPage(QWidget):
 
     def full_marks(self) -> float:
         key = next(iter(self.keys.values()), ["A"] * len(self.questions))  # sets differ only in order
-        return full_marks(key, self.marks)
+        return full_marks(key, self.marks) + (self.exam.written_out_of if self.exam else 0)
 
     def edit_sections(self):
         dialog = SectionsDialog(self, self.sections, self.questions,
@@ -381,10 +383,8 @@ class CheckPage(QWidget):
             self.key_tab.refresh()
             self.fill_table()
             return
-        t = self.exam.template
-        options = "".join(sorted({o for g in t.grids if g.kind == "questions" for o in g.options}))
         try:
-            self.keys = parse_key(self.key_edit.toPlainText(), len(self.questions), options)
+            self.keys = parse_key(self.key_edit.toPlainText(), len(self.questions), self.exam.template.answer_options())
             text = (f"Key for {', '.join('set ' + s if s else 'all sets' for s in self.keys)}"
                     if self.keys else "Click the right answers below, or import a CSV, to see scores")
             counted = max((sum(k != "-" for k in key) for key in self.keys.values()), default=len(self.questions))
@@ -405,7 +405,8 @@ class CheckPage(QWidget):
         key = r and self.keys.get(r.set_code, self.keys.get(""))
         if not key:
             return None
-        return score([r.answers[q] for q in self.questions], key, marks=self.marks)
+        written = self.written.get(r.roll_number, 0) if self.exam.written_out_of else 0
+        return score([r.answers[q] for q in self.questions], key, marks=self.marks) + written
 
     def _score_text(self, sheet: StoredPage) -> str:
         s = self.score_of(sheet)
@@ -578,6 +579,8 @@ class MainWindow(QMainWindow):
         self.check.changed.connect(self.scan._enable)
         self.students = StudentsTab(self.check)
         self.students.changed.connect(self.reload_students)
+        self.written = WrittenTab(self.check)
+        self.written.changed.connect(self.check.fill_table)  # rescores; Results and the Dashboard follow
         self.print_sheet = PrintSheet(self.check)
         self.exam_settings = ExamSettings(self.check)
         self.exam_settings.changed.connect(lambda: self.open_exam(self.check.exam.id))
@@ -585,7 +588,8 @@ class MainWindow(QMainWindow):
         self.exam_page = ExamPage(self.check, [
             ("Scan", self.scan), ("Scanned sheets", self.check), ("Review", self.review),
             ("Answer key", self.check.key_tab), ("Marks and sections", self.check.marks_tab),
-            ("Students", self.students), ("Results", self.results), ("Print sheet", self.print_sheet),
+            ("Students", self.students), ("Written marks", self.written), ("Results", self.results),
+            ("Print sheet", self.print_sheet),
             ("Exam settings", self.exam_settings)])
         self.exam_page.back.connect(lambda: self.go("Exams"))
         self.exams_area = QStackedWidget()  # the list of exams, or one exam's page
@@ -664,6 +668,7 @@ class MainWindow(QMainWindow):
         self.exams.refresh(exam_id)
         self.exam_page.refresh()
         self.students.refresh()
+        self.written.refresh()
         self.print_sheet.refresh()
         self.exam_settings.refresh()
         theme.settings().setValue("last_exam", exam_id or "")

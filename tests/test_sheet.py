@@ -196,3 +196,44 @@ def test_bad_sections_in_a_template_are_refused(tmp_path):
     d["sections"][0]["correct"] = "four"
     with pytest.raises(ValueError):
         Store(tmp_path / "omr.db").create_exam("Mock", json.dumps(d))
+
+
+JEE = [s for name in ("Physics", "Chemistry", "Maths")
+       for s in (SheetSection(name, 20, 4, -1), SheetSection(f"{name} numeric", 5, 4, -1, digits=3))]
+
+
+def test_numeric_questions_get_digit_boxes_and_read_back():
+    d = layout(SheetSpec("JEE", 75, roll_digits=8, sets=4, sections=JEE))
+    t = parse(d)
+    numeric = [g.first for g in t.grids if g.kind == "numeric"]
+    assert numeric == [*range(21, 26), *range(46, 51), *range(71, 76)] and t.questions() == list(range(1, 76))
+    assert d["sections"][1] == {"name": "Physics numeric", "first": 21, "last": 25, "correct": 4, "wrong": -1,
+                                "blank": 0.0, "partial": False}
+    for seed in (5, 6):
+        marks, answers, roll, set_code = random_marks(t, seed)
+        page = fill(render(d), t, marks)
+        for image in (scan(page, angle=0.6, seed=seed), photo(page, seed=seed)):
+            r = read_page(image, t)
+            assert (r.roll_number, r.set_code, r.answers, r.flags) == (roll, set_code, answers, [])
+
+
+def test_a_doubtful_number_is_flagged_not_guessed():
+    d = layout(SheetSpec("JEE", 75, roll_digits=8, sets=4, sections=JEE))
+    t = parse(d)
+    at = {g.first: i for i, g in enumerate(t.grids) if g.kind == "numeric"}
+    marks = {(at[21], 4, 0): "pen", (at[21], 2, 2): "pen",  # 4, a blank column, 2
+             (at[22], 3, 0): "pen", (at[22], 5, 0): "pen",  # two digits in one column
+             (at[23], 0, 0): "pen", (at[23], 0, 1): "pen", (at[23], 7, 2): "pen",  # 007
+             (at[24], 9, 1): "pen", (at[24], 1, 2): "pen",  # right-aligned 91
+             (at[25], 6, 1): "half"}
+    r = read_page(scan(fill(render(d), t, marks), seed=2), t)
+    assert {q: r.answers[q] for q in range(21, 26)} == {21: "4?2", 22: "?", 23: "7", 24: "91", 25: ""}
+    assert [f for f in r.flags if f[0] in {"Q21", "Q22", "Q23", "Q24", "Q25"}] == [
+        ("Q21", "gap between digits"), ("Q22", "multiple marks"), ("Q25", "unclear mark")]
+
+
+def test_numeric_answers_that_dont_fit_are_refused():
+    with pytest.raises(ValueError, match="1 to 6 digits"):
+        layout(SheetSpec("Big", 10, sections=[SheetSection("N", 10, digits=7)]))
+    with pytest.raises(ValueError, match="don't fit"):
+        layout(SheetSpec("Many", 100, sections=[SheetSection("MCQ", 60), SheetSection("N", 40, digits=4)]))

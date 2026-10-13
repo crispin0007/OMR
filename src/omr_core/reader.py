@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 import zxingcpp
 
-from .template import Grid, Template
+from .template import DIGITS, Grid, Template
 
 SCALE = 8  # pixels per mm in the aligned page, about 203 DPI
 MIN_MARKER_SCORE = 0.3
@@ -54,6 +54,8 @@ def read_page(page: np.ndarray, template: Template) -> PageResult:
                     result.flags.append((f"Q{q}", "unclear mark"))
                 elif len(result.answers[q]) > 1 and not grid.multi:
                     result.flags.append((f"Q{q}", "multiple marks"))
+        elif grid.kind == "numeric":
+            result.answers[grid.first] = _number(result, filled, unclear, f"Q{grid.first}")
         elif grid.kind == "roll_number":
             result.roll_number = "".join(
                 _single(result, filled[:, c], unclear[:, c], "0123456789", f"roll number digit {c + 1}")
@@ -89,6 +91,25 @@ def _identify(result: PageResult, code: str, has_grid: bool):
             result.flags.append(("roll number", "barcode not readable"))
     elif code and code != result.roll_number and "?" not in result.roll_number:
         result.flags.append(("roll number", f"barcode says {code}"))
+
+
+def _number(result: PageResult, filled, unclear, where: str) -> str:
+    """A numeric answer from its digit columns: the digits filled, read left to right, blank columns on either
+    side left out. A column that isn't one clear digit, or a blank column between digits, shows as '?' and is
+    flagged, as the number can't be known without a person."""
+    columns = ["".join(d for d, f in zip(DIGITS, filled[:, c]) if f) for c in range(filled.shape[1])]
+    while columns and not columns[-1]:
+        columns.pop()
+    while columns and not columns[0]:
+        columns.pop(0)
+    digits = "".join(c if len(c) == 1 else "?" for c in columns)
+    if unclear.any():
+        result.flags.append((where, "unclear mark"))
+    elif any(len(c) > 1 for c in columns):
+        result.flags.append((where, "multiple marks"))
+    elif "?" in digits:
+        result.flags.append((where, "gap between digits"))
+    return digits if "?" in digits or not digits else str(int(digits))
 
 
 def _single(result: PageResult, filled, unclear, labels: str, where: str) -> str:
