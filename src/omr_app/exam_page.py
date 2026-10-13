@@ -4,6 +4,8 @@ Scanning, the sheets read, review, the answer key, marks and sections,
 students, results, the printable sheet and the exam's settings all live here.
 """
 
+import csv
+import io
 import json
 from pathlib import Path
 
@@ -15,10 +17,11 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QInputDialog
 from omr_core.reader import read_or_reason
 from omr_core.sheet import PAPERS, render, write_pdf
 from omr_core.sources import read_pages
-from omr_core.students import read_students
+from omr_core.students import absent, read_students
 from omr_core.template import parse
 
 from .new_exam import TEMPLATES, USER_TEMPLATES
+from .theme import tokens
 
 
 class ExamPage(QWidget):
@@ -81,14 +84,18 @@ class StudentsTab(QWidget):
         self.import_button = QPushButton("Import students…", objectName="primary")
         self.import_button.setToolTip("An Excel file with roll number, name and (optionally) class columns")
         self.import_button.clicked.connect(self.import_students)
-        self.copy_button = QPushButton("Use the list of another exam…")
-        self.copy_button.clicked.connect(self.copy_students)
+        self.absent_only = QCheckBox("Show only absent")
+        self.absent_only.toggled.connect(lambda _: self.refresh())
+        self.save_absent = QPushButton("Save absent list…")
+        self.save_absent.setToolTip("Students on the list with no sheet read, as a CSV for Excel")
+        self.save_absent.clicked.connect(self.save_absent_list)
         top = QHBoxLayout()
         top.addWidget(self.note, 1)
-        top.addWidget(self.copy_button)
+        top.addWidget(self.absent_only)
+        top.addWidget(self.save_absent)
         top.addWidget(self.import_button)
-        self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["Roll number", "Name", "Class"])
+        self.table = QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(["Roll number", "Name", "Class", "Sheet"])
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.verticalHeader().hide()
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -96,17 +103,57 @@ class StudentsTab(QWidget):
         layout.addLayout(top)
         layout.addWidget(self.table, 1)
 
+    def absentees(self) -> list:
+        c = self.check
+        return absent(c.students, {s.result.roll_number for s in c.sheets if s.result})
+
+    def showEvent(self, e):
+        self.refresh()  # sheets read since
+        super().showEvent(e)
+
     def refresh(self):
-        students = sorted(self.check.students.values(), key=lambda s: s.roll_number)
-        self.note.setText(f"{len(students)} students. Their names show on results and scorecards." if students else
-                          "No students yet. Import an Excel list to show names on results and scorecards.")
+        c = self.check
+        missing = self.absentees()
+        away = {s.roll_number for s in missing}
+        students = missing if self.absent_only.isChecked() else sorted(c.students.values(), key=lambda s: s.roll_number)
+        unreadable = sum(s.result is None for s in c.sheets)
+        note = (f"{len(c.students)} students, {len(away)} absent (no sheet read). Their names show on results and "
+                "scorecards." if c.students else
+                "No students yet. Import an Excel list to show names on results and scorecards, and see who is absent.")
+        if away and unreadable:
+            note += f" {unreadable} pages couldn't be read; some of these students may be on them."
+        self.note.setText(note)
+        warn = QColor(tokens()["warn"])
         self.table.setRowCount(len(students))
         for row, s in enumerate(students):
-            for col, text in enumerate((s.roll_number, s.name, s.class_name)):
-                self.table.setItem(row, col, QTableWidgetItem(text))
+            for col, text in enumerate((s.roll_number, s.name, s.class_name,
+                                        "Absent" if s.roll_number in away else "Read")):
+                item = QTableWidgetItem(text)
+                if col == 3 and s.roll_number in away:
+                    item.setForeground(warn)
+                self.table.setItem(row, col, item)
         self.table.resizeColumnsToContents()
-        self.import_button.setEnabled(self.check.exam is not None)
-        self.copy_button.setEnabled(self.check.exam is not None)
+        self.import_button.setEnabled(c.exam is not None)
+        self.save_absent.setEnabled(bool(away))
+        self.absent_only.setEnabled(bool(c.students))
+
+    def save_absent_list(self):
+        exam = self.check.exam
+        docs = Path(QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
+        path, _ = QFileDialog.getSaveFileName(self, "Save absent list", str(docs / f"{exam.name} absent.csv"),
+                                              "CSV (*.csv)")
+        if not path:
+            return
+        out = io.StringIO()
+        w = csv.writer(out, lineterminator="\n")
+        w.writerow(["Roll number", "Name", "Class"])
+        w.writerows((s.roll_number, s.name, s.class_name) for s in self.absentees())
+        try:
+            Path(path).write_text(out.getvalue(), encoding="utf-8-sig")  # the BOM makes Excel read it as UTF-8
+        except OSError as e:  # e.g. the file is open in Excel
+            QMessageBox.warning(self, "Couldn't save", f"{path}\n\n{e}")
+            return
+        self.window().statusBar().showMessage(f"Saved {path}", 5000)
 
     def import_students(self):
         exam = self.check.exam
@@ -158,6 +205,101 @@ class StudentsTab(QWidget):
         self.changed.emit()
         self.refresh()
         return True
+
+
+class WrittenTab(QWidget):
+    """Marks for a written (subjective) part, typed per student and added to the sheet's score."""
+
+    changed = Signal()
+
+    def __init__(self, check):
+        super().__init__()
+        self.check = check
+        self.out_of = QDoubleSpinBox(minimum=0, maximum=1000, decimals=2, specialValueText="No written part")
+        self.out_of.setToolTip("Marks of the written part; 0 for an exam with only the answer sheet")
+        self.out_of.editingFinished.connect(self.save_out_of)
+        self.note = QLabel(objectName="muted", wordWrap=True)
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Written part out of"))
+        top.addWidget(self.out_of)
+        top.addWidget(self.note, 1)
+        self.table = QTableWidget(0, 3)
+        self.table.setHorizontalHeaderLabels(["Roll number", "Name", "Written marks"])
+        self.table.verticalHeader().hide()
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.itemChanged.connect(self.typed)
+        layout = QVBoxLayout(self)
+        layout.addLayout(top)
+        layout.addWidget(self.table, 1)
+
+    def showEvent(self, e):
+        self.refresh()  # sheets read or students imported since
+        super().showEvent(e)
+
+    def rolls(self) -> list[str]:
+        """Every student on the list and every roll number read from a sheet."""
+        read = {s.result.roll_number for s in self.check.sheets if s.result and "?" not in s.result.roll_number}
+        return sorted(read | set(self.check.students))
+
+    def refresh(self):
+        c = self.check
+        out_of = c.exam.written_out_of if c.exam else 0
+        self.out_of.blockSignals(True)
+        self.out_of.setValue(out_of)
+        self.out_of.blockSignals(False)
+        self.out_of.setEnabled(c.exam is not None)
+        rolls = self.rolls() if out_of else []
+        missing = sum(r not in c.written for r in rolls)
+        self.note.setText("" if not c.exam else
+                          "Set the marks of the written part to type each student's marks; they add to the sheet's "
+                          "score on Results." if not out_of else
+                          f"Type marks out of {out_of:g}; Enter moves down. {missing} of {len(rolls)} still to type.")
+        self.table.blockSignals(True)
+        self.table.setRowCount(len(rolls))
+        for row, roll in enumerate(rolls):
+            student = c.students.get(roll)
+            for col, text in enumerate((roll, student.name if student else "")):
+                item = QTableWidgetItem(text)
+                item.setFlags(Qt.ItemIsEnabled)
+                self.table.setItem(row, col, item)
+            mark = c.written.get(roll)
+            self.table.setItem(row, 2, QTableWidgetItem("" if mark is None else f"{mark:g}"))
+        self.table.blockSignals(False)
+        self.table.setVisible(bool(out_of))
+        self.table.resizeColumnsToContents()
+
+    def save_out_of(self):
+        c = self.check
+        try:
+            c.store.set_written_out_of(c.exam.id, self.out_of.value())
+        except ValueError as e:
+            QMessageBox.warning(self, "Can't change the written part", str(e))
+            self.refresh()
+            return
+        c.exam.written_out_of = self.out_of.value()
+        self.changed.emit()
+
+    def typed(self, item: QTableWidgetItem):
+        if item.column() != 2:
+            return
+        c = self.check
+        roll = self.table.item(item.row(), 0).text()
+        text = item.text().strip()
+        try:
+            marks = float(text) if text else None
+        except ValueError:
+            marks = -1.0  # not a number: refused below like any mark out of range
+        try:
+            c.store.set_written(c.exam.id, roll, marks)
+        except ValueError as e:
+            QMessageBox.warning(self, "Can't use that mark", f"Roll number {roll}: {text!r} isn't a mark; {e}.")
+            self.refresh()
+            return
+        if marks is None:
+            c.written.pop(roll, None)
+        else:
+            c.written[roll] = marks
+        self.changed.emit()
 
 
 class PrintSheet(QWidget):

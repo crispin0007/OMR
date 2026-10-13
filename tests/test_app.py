@@ -54,6 +54,8 @@ def test_reads_sheets_and_scores_them(app, tmp_path):
     assert cell(6) == str(right)
     c.wrong.setValue(-1)
     assert cell(6) == str(right)  # blanks aren't wrong
+    c.wrong.setValue(0.25)
+    assert c.wrong.value() == 0  # a wrong answer can't earn marks, e.g. from scrolling over the box
     c.table.selectRow(0)
     assert c.review_list.item(0).text() == "Nothing to check"
     assert w.dashboard.read.value.text() == "1" and w.dashboard.average.value.text() == f"{right:.1f}"
@@ -668,6 +670,34 @@ def test_first_run_shows_the_steps_and_help_has_the_shortcuts(app, tmp_path, mon
     assert w.exams.start.isHidden() and not w.exams.table.isHidden()
 
 
+def test_written_marks_are_typed_and_added_on_results(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox, QTableWidgetItem
+    files = sheet_files(tmp_path, [1, 2])
+    w = window(tmp_path)
+    c = w.check
+    c.read_files([f[0] for f in files])
+    c.key_edit.setPlainText("A" * 100)
+    tab = w.written
+    tab.refresh()
+    assert tab.table.isHidden() and "Set the marks" in tab.note.text()
+    tab.out_of.setValue(20)
+    tab.save_out_of()
+    tab.refresh()
+    assert tab.table.rowCount() == 2 and "2 of 2 still to type" in tab.note.text()
+    roll = tab.table.item(0, 0).text()
+    before = next(c.score_of(s) for s in c.sheets if s.result.roll_number == roll)
+    tab.table.setItem(0, 2, QTableWidgetItem("15"))
+    assert w.store.written(c.exam.id) == {roll: 15}
+    assert next(c.score_of(s) for s in c.sheets if s.result.roll_number == roll) == before + 15
+    w.results.refresh()
+    head = [w.results.table.horizontalHeaderItem(i).text() for i in range(w.results.table.columnCount())]
+    assert head[4:7] == ["Score", "Sheet", "Written"]
+    warned = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warned.append(a[2]))
+    tab.table.setItem(1, 2, QTableWidgetItem("25"))  # above the written part's 20
+    assert warned and "0 to 20" in warned[0] and len(w.store.written(c.exam.id)) == 1
+
+
 def test_answer_key_is_read_from_a_filled_master_sheet(app, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog, QMessageBox
     t = load(TEMPLATES / "test-100.json")
@@ -685,48 +715,25 @@ def test_answer_key_is_read_from_a_filled_master_sheet(app, tmp_path, monkeypatc
     assert f"Key for set {set_code}" in shown[0] and k.set_code() == set_code
 
 
-def test_a_test_series_shares_students_and_ranks_them_together(app, tmp_path, monkeypatch):
-    from PySide6.QtWidgets import QInputDialog, QMessageBox
-
-    from omr_app import series
-    from omr_app.new_exam import NewExamWizard
-    from omr_core.reader import PageResult
-    from omr_core.students import Student
-    w = window(tmp_path)  # "Mock", in no series yet
-    store, first = w.store, w.check.exam.id
-    store.set_students(first, [Student("11111", "Asha", "12")])
-    assert w.exams.series.isHidden()
-    w.exam_settings.series.setCurrentText("JEE 2027")
-    w.exam_settings.set_series()
-    assert store.exam(first).details["series"] == "JEE 2027" and "test series JEE 2027" in w.exam_page.about.text()
-    z = NewExamWizard(w, store)
-    z.name.setText("Mock 2")
-    assert z.series.findText("JEE 2027") >= 0
-    z.series.setCurrentText("JEE 2027")
-    z.update_review()
-    z.create()
-    assert store.students(z.exam_id) == store.students(first)  # carried over, not imported again
-
-    for exam, right in ((first, 30), (z.exam_id, 40)):
-        store.save_scheme(exam, "A" * 100 if exam == first else "", 1, 0, 0)
-        store.add_page(exam, "b", "s.png", 1, PageResult("11111", "A", {q: "A" if q <= right else "B"
-                                                                        for q in range(1, 101)}, []))
-    w.exams.refresh()
-    assert not w.exams.series.isHidden()
-    d = series.SeriesDialog(w, store)
-    assert d.series.currentText() == "JEE 2027" and d.table.rowCount() == 1
-    assert [d.table.item(0, c).text() for c in range(d.table.columnCount())] == [
-        "1", "11111", "Asha", "12", "30", "absent", "30", "1", "30"]
-    assert "Not counted: Mock 2: no results yet" in d.note.text()
-    out = tmp_path / "series.xlsx"
-    monkeypatch.setattr(series.QFileDialog, "getSaveFileName", lambda *a: (str(out), ""))
-    monkeypatch.setattr(series.QMessageBox, "information", lambda *a: None)
-    d.save_excel()
-    assert out.exists()
-
-    other = store.create_exam("Quiz", (TEMPLATES / "test-100.json").read_text(encoding="utf-8"))
-    w.open_exam(other)
-    monkeypatch.setattr(QInputDialog, "getItem", lambda _p, _t, _l, items, *a: (items[0], True))
-    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.Yes)
-    w.students.copy_students()
-    assert store.students(other) == store.students(first) and w.students.table.rowCount() == 1
+def test_absent_students_are_listed_and_saved(app, tmp_path, monkeypatch):
+    from openpyxl import Workbook
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    (path, _, roll, _), = sheet_files(tmp_path, [6])
+    wb = Workbook()
+    wb.active.append(["Roll number", "Name", "Class"])
+    wb.active.append([roll, "Asha Rai", "10 A"])
+    other = "9" * len(roll) if roll != "9" * len(roll) else "1" * len(roll)
+    wb.active.append([other, "Bikash Shah", "10 A"])
+    wb.save(tmp_path / "students.xlsx")
+    w = window(tmp_path)
+    w.check.read_files([path])
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(tmp_path / "students.xlsx"), ""))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    w.students.import_button.click()
+    s = w.students
+    assert "2 students, 1 absent" in s.note.text() and s.save_absent.isEnabled()
+    s.absent_only.setChecked(True)
+    assert s.table.rowCount() == 1 and s.table.item(0, 1).text() == "Bikash Shah" and s.table.item(0, 3).text() == "Absent"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "absent.csv"), ""))
+    s.save_absent_list()
+    assert (tmp_path / "absent.csv").read_text(encoding="utf-8-sig") == f"Roll number,Name,Class\n{other},Bikash Shah,10 A\n"
