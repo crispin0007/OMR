@@ -931,3 +931,68 @@ def test_topics_are_typed_once_and_reach_the_results(app, tmp_path, monkeypatch)
     w.go("Results")
     g = w.results.graded[0]
     assert set(g.topics) == {"Algebra", "Geometry"} and sum(n for _, n in g.topics.values()) == 100
+
+
+def test_templates_page_saves_edits_as_a_new_template_and_never_changes_a_built_in(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+    from omr_app import new_exam
+    w = MainWindow(tmp_path / "omr.db")
+    w.go("Templates")
+    p = w.templates
+    neet = next(n for n in new_exam.READY if "NEET" in n)
+    p.list.setCurrentItem(p.list.findItems(neet, Qt.MatchExactly)[0])
+    assert p.current == neet and not p.save_button.isVisibleTo(p) and not p.delete_button.isVisibleTo(p)
+    p.sections.item(0, 1).setText("50")  # Physics 45 -> 50
+    p.shape.setCurrentIndex(p.shape.findData("oval"))
+    p.update_preview()
+    assert p.edited() and not p.preview.pixmap().isNull()
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.No)
+    p.list.setCurrentRow(0)  # keep the changes: stays on NEET
+    assert p.current == neet and p.list.currentItem().text() == neet and p.edited()
+    p.reset()  # Reset to default
+    assert not p.edited() and p.sections.item(0, 1).text() == "45"
+
+    p.sections.item(0, 1).setText("50")
+    p.wrong.setValue(-0.5)
+    names = iter([(neet, True), ("NEET mock, Physics 50", True)])  # a built-in's name is refused, then a new one
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: next(names))
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: None)
+    p.save_as()
+    assert p.current == "NEET mock, Physics 50" and p.save_button.isVisibleTo(p)
+    assert new_exam.READY[neet].sections[0] == ("Physics", 45)  # the built-in is untouched
+    mine = new_exam.saved_templates(w.store)[0]["NEET mock, Physics 50"]
+    assert mine.sections[0] == ("Physics", 50) and mine.wrong == -0.5 and mine.labels == "numbers"
+
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("Weekly NEET", True))
+    p.rename()
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("Weekly NEET 2", True))
+    p.duplicate()
+    assert list(w.store.templates()) == ["Weekly NEET", "Weekly NEET 2"] and p.current == "Weekly NEET 2"
+
+    z = new_exam.NewExamWizard(w, w.store)  # listed under Start from, and fills the wizard
+    z.ready.setCurrentText("Weekly NEET")
+    assert z.read_sections()[0].questions == 50 and z.total.value() == 185 and z.wrong.value() == -0.5
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.Yes)
+    p.delete()  # the copy, open after duplicating
+    assert list(w.store.templates()) == ["Weekly NEET"] and p.current == next(iter(new_exam.READY))
+    w.store.save_template("Broken", "{not json")
+    p.refresh("Broken")
+    assert "Broken" in p.damaged.text() and "Broken" not in p.mine
+
+
+def test_a_saved_template_is_checked_before_use():
+    import json
+
+    from omr_app.new_exam import READY, Ready, ready_from_json
+    for r in READY.values():
+        assert ready_from_json(json.dumps(r._asdict())) == r._replace(sections=[tuple(s) for s in r.sections])
+    good = Ready([("Physics", 45)], 0, 4, 4, -1)._asdict()
+    for bad in ({"options": 9}, {"roll": 20}, {"sets": 1}, {"labels": "roman"}, {"shape": "star"},
+                {"sections": [["", 5]]}, {"sections": [["A", 0]]}, {"sections": []}, {"total": "100"}):
+        with pytest.raises(ValueError):
+            ready_from_json(json.dumps({**good, **bad}))
+    for text in ("[]", "{}", "nonsense", json.dumps({**good, "extra": 1})):
+        with pytest.raises(ValueError):
+            ready_from_json(text)

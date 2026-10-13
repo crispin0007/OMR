@@ -25,6 +25,7 @@ from .answer_key import KeyTab
 from .dashboard import DashboardPage, ResultsPage
 from .designer import DesignerPage
 from .exam_page import ExamPage, ExamSettings, PrintSheet, StudentsTab, WrittenTab
+from .exam_templates import TemplatesPage
 from .exams import TEMPLATES, ExamsPage  # noqa: F401  (tests find the templates here)
 from .help import HelpDialog
 from .new_exam import Deduction
@@ -558,7 +559,7 @@ class CheckPage(QWidget):
 
 
 class MainWindow(QMainWindow):
-    PAGES = ["Dashboard", "Exams", "Map printed sheet", "Question Bank", "Syllabus", "Settings"]
+    PAGES = ["Dashboard", "Exams", "Templates", "Map printed sheet", "Question Bank", "Syllabus", "Settings"]
     LATER = {"Question Bank": "Comes in phase 2", "Syllabus": "Comes in phase 3"}
 
     def __init__(self, db_path: str | Path | None = None):
@@ -596,11 +597,12 @@ class MainWindow(QMainWindow):
         self.exams_area = QStackedWidget()  # the list of exams, or one exam's page
         self.exams_area.addWidget(self.exams)
         self.exams_area.addWidget(self.exam_page)
+        self.templates = TemplatesPage(self.store)
         self.designer = DesignerPage()
         self.settings = theme.SettingsPage(self.prefs)
         self.settings.changed.connect(self.apply_prefs)
-        self.pages = {"Dashboard": self.dashboard, "Exams": self.exams_area, "Map printed sheet": self.designer,
-                      "Settings": self.settings}
+        self.pages = {"Dashboard": self.dashboard, "Exams": self.exams_area, "Templates": self.templates,
+                      "Map printed sheet": self.designer, "Settings": self.settings}
 
         self.stack = QStackedWidget()
         sidebar = QWidget(objectName="sidebar")

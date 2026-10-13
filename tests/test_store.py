@@ -217,11 +217,13 @@ def test_backup_restores_on_another_pc_without_replacing_anything(tmp_path):
                                                          np.zeros((4, 4), np.uint8)))
     s.correct(page.id, "Q1", "B", "teacher")
     s.set_students(exam, [Student("12", "Asha", "10A")])
+    s.save_template("Weekly NEET", "{}")
     s.backup(tmp_path / "backup.db")
     s.backup(tmp_path / "backup.db")  # again, over the last one
 
     other = Store(tmp_path / "other" / "omr.db")  # the new PC, with an exam of its own
     other.create_exam("Weekly", TEMPLATE)
+    other.save_template("Weekly NEET", '{"kept": 1}')
     assert other.restore(tmp_path / "backup.db") == (["Mock"], [])
     assert other.restore(tmp_path / "backup.db") == ([], ["Mock"])  # nothing doubled
     (new_id, *_), = [e for e in other.exams() if e[1] == "Mock"]
@@ -231,6 +233,7 @@ def test_backup_restores_on_another_pc_without_replacing_anything(tmp_path):
     assert p.result.answers == {1: "B"} and p.result.flags == [] and np.array_equal(other.image(p.id), np.zeros((4, 4)))
     assert [a[4:] for a in other.audit(new_id)] == [("Q1", "A", "B")]
     assert other.students(new_id)["12"].name == "Asha"
+    assert other.templates() == {"Weekly NEET": '{"kept": 1}'}  # a template here is never replaced
 
     (tmp_path / "notes.txt").write_text("not a backup")
     with pytest.raises(sqlite3.DatabaseError):
@@ -263,3 +266,18 @@ def test_an_exam_in_a_test_series_starts_with_its_student_list(tmp_path):
     assert s.series_names() == ["JEE 2027", "NEET 2027"] and s.series_exams("JEE 2027") == [first, second]
     s.set_series(other, "")
     assert s.series_names() == ["JEE 2027"] and s.series_exams("") == [] and s.exam(other).details == {"series": ""}
+
+
+def test_templates_are_saved_renamed_and_deleted(tmp_path):
+    s = Store(tmp_path / "omr.db")
+    s.save_template(" Mock ", "{}")
+    s.save_template("Mock", '{"a": 1}')  # saving again replaces it
+    s.save_template("Class test", "{}")
+    assert s.templates() == {"Class test": "{}", "Mock": '{"a": 1}'}
+    s.save_template("Weekly", '{"a": 1}', replacing="Mock")
+    with pytest.raises(ValueError):
+        s.save_template("Class test", "{}", replacing="Weekly")  # a rename never overwrites another template
+    with pytest.raises(ValueError):
+        s.save_template(" ", "{}")
+    s.delete_template("Class test")
+    assert s.templates() == {"Weekly": '{"a": 1}'}

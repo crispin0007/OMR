@@ -18,8 +18,8 @@ from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QColorDialog, QComboBox,
                                QMessageBox, QPlainTextEdit, QPushButton, QRadioButton, QScrollArea, QSpinBox,
                                QStackedWidget, QTableWidget, QTableWidgetItem, QTimeEdit, QVBoxLayout, QWidget)
 
-from omr_core.sheet import (DEFAULT_HEADING, DEFAULT_INSTRUCTIONS, MAX_NUMBER_DIGITS, MAX_ROLL_DIGITS, SheetSection,
-                            SheetSpec, layout, logo_jpeg, render)
+from omr_core.sheet import (DEFAULT_HEADING, DEFAULT_INSTRUCTIONS, LABELS, MAX_NUMBER_DIGITS, MAX_ROLL_DIGITS, SHAPES,
+                            SheetSection, SheetSpec, layout, logo_jpeg, render)
 from omr_core.store import Store
 from omr_core.template import load
 
@@ -100,6 +100,45 @@ READY = {
 PATTERN_NOTE = ("Ready-made layouts match an exam's question pattern and marking on this app's own sheet; they are "
                 "not the official answer sheets. Check the marks for your exam.")
 BLANK = "Start blank"
+
+
+def ready_from_json(text: str) -> Ready:
+    """A saved template, checked: it is read back from the database, which a backup from another PC may fill."""
+    try:
+        r = Ready(**json.loads(text))
+        sections = [tuple(s) for s in r.sections]
+        ok = (all(len(s) in (2, 3) and isinstance(s[0], str) and s[0].strip()
+                  and all(isinstance(n, int) and n >= 1 for n in s[1:]) and (len(s) == 2 or s[2] <= MAX_NUMBER_DIGITS)
+                  for s in sections)
+              and isinstance(r.total, int) and 0 <= r.total <= 300 and (r.total or sections)
+              and isinstance(r.options, int) and 2 <= r.options <= 8
+              and isinstance(r.roll, int) and 0 <= r.roll <= MAX_ROLL_DIGITS
+              and isinstance(r.sets, int) and r.sets in (0, *range(2, 9))
+              and all(isinstance(m, (int, float)) for m in (r.right, r.wrong))
+              and r.labels in LABELS and r.shape in SHAPES)
+    except (TypeError, ValueError):  # not JSON, not an object, or missing or unknown fields
+        ok = False
+    if not ok:
+        raise ValueError("the saved template is damaged")
+    return r._replace(sections=sections)
+
+
+def spec_of(name: str, r: Ready) -> SheetSpec:
+    """The sheet a ready-made layout prints, with the default look."""
+    sections = [SheetSection(s[0], s[1], r.right, r.wrong, digits=s[2] if len(s) > 2 else 0) for s in r.sections]
+    return SheetSpec(name, sum(s.questions for s in sections) or r.total, r.options, r.roll, r.sets, sections,
+                     bubble_shape=r.shape, labels=r.labels)
+
+
+def saved_templates(store: Store) -> tuple[dict[str, Ready], list[str]]:
+    """The user's own templates, and the names of any that can't be used."""
+    good, bad = {}, []
+    for name, body in store.templates().items():
+        try:
+            good[name] = ready_from_json(body)
+        except ValueError:
+            bad.append(name)
+    return good, bad
 
 OWN_SHEET_SKIPS = {"Subjects and sections", "Questions and answers", "Sheet look"}  # the printed sheet decides these
 SETS = ["No sets"] + [f"{n} sets (A to {'ABCDEFGH'[n - 1]})" for n in range(2, 9)]
@@ -202,8 +241,9 @@ class NewExamWizard(QDialog):
         layout.addWidget(self.make_sheet)
         layout.addWidget(QLabel("Answer a few questions about the exam and the sheet is laid out for you, ready to "
                                 "print.", objectName="muted", wordWrap=True))
+        self.patterns = {**READY, **saved_templates(self.store)[0]}  # built-in names can't be saved over
         self.ready = QComboBox()
-        self.ready.addItems([BLANK, *READY])
+        self.ready.addItems([BLANK, *self.patterns])
         self.ready.setToolTip("Fills in the subjects, questions and marks; change anything on the next steps")
         self.ready.currentTextChanged.connect(self.use_ready)
         ready_row = QHBoxLayout()
@@ -442,9 +482,9 @@ class NewExamWizard(QDialog):
 
     def use_ready(self, name: str):
         """Fill the steps from a ready-made layout; the user can change anything after."""
-        if name not in READY:
+        if name not in self.patterns:
             return
-        sections, total, options, right, wrong, roll, sets, labels, shape = READY[name]
+        sections, total, options, right, wrong, roll, sets, labels, shape = self.patterns[name]
         self.make_sheet.setChecked(True)
         self.true_false.setChecked(False)
         self.options.setValue(options)

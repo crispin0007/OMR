@@ -62,7 +62,7 @@ Templates live in `templates/`.
 omr
 ```
 
-The sidebar opens Dashboard, Exams, Map printed sheet, Help and Settings. Until
+The sidebar opens Dashboard, Exams, Templates, Map printed sheet, Help and Settings. Until
 the first exam exists, Exams shows the steps below. **Help** (F1) repeats them
 with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
 
@@ -73,7 +73,11 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    CSAT, NDA, CTET, KCET, SSC, bank prelims, RRB NTPC, CUET), Bangladesh
    (BCS), Pakistan (MDCAT) and Turkey (YKS TYT), or a 50-question class
    test. These are this app's own sheets laid out to each exam's pattern,
-   not the official answer sheets. The steps cover its name,
+   not the official answer sheets. **Templates** lists them with a preview:
+   change one and save it under your own name (it then shows under Start
+   from), or put a built-in's values back with Reset to default. Your own
+   templates can be renamed, duplicated and deleted; the built-ins never
+   change. The steps cover its name,
    class, date, time and duration; its subjects or sections, the question
    numbers each covers and whether it is answered with options or with a
    number (up to 6 digits, e.g. JEE numeric questions, which get a box of

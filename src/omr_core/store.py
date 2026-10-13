@@ -73,6 +73,10 @@ CREATE TABLE IF NOT EXISTS student (
     class_name TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (exam_id, roll_number)
 );
+CREATE TABLE IF NOT EXISTS exam_template (
+    name TEXT PRIMARY KEY,
+    body TEXT NOT NULL               -- JSON of a ready-made layout the user saved under their own name
+);
 """
 
 
@@ -250,9 +254,30 @@ class Store:
                         self.db.execute("INSERT INTO student (exam_id, roll_number, name, class_name) SELECT ?, "
                                         "roll_number, name, class_name FROM b.student WHERE exam_id = ?", (exam, old))
                         restored.append(name)
+                    self.db.execute("INSERT OR IGNORE INTO exam_template SELECT name, body FROM b.exam_template")
             finally:
                 self.db.execute("DETACH DATABASE b")
         return restored, skipped
+
+    def templates(self) -> dict[str, str]:
+        """Saved exam templates: name to JSON, by name."""
+        return dict(self.db.execute("SELECT name, body FROM exam_template ORDER BY name COLLATE NOCASE"))
+
+    def save_template(self, name: str, body: str, replacing: str = ""):
+        """Save a template under `name`, taking the place of `replacing` (a rename) when given."""
+        name = name.strip()
+        if not name:
+            raise ValueError("the template needs a name")
+        with self.db:
+            if replacing and replacing != name:
+                if self.db.execute("SELECT 1 FROM exam_template WHERE name = ?", (name,)).fetchone():
+                    raise ValueError(f"there is already a template called “{name}”")
+                self.db.execute("DELETE FROM exam_template WHERE name = ?", (replacing,))
+            self.db.execute("INSERT OR REPLACE INTO exam_template (name, body) VALUES (?, ?)", (name, body))
+
+    def delete_template(self, name: str):
+        with self.db:
+            self.db.execute("DELETE FROM exam_template WHERE name = ?", (name,))
 
     def delete_exam(self, exam_id: int):
         with self.db:
