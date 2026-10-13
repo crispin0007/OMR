@@ -54,6 +54,8 @@ def test_reads_sheets_and_scores_them(app, tmp_path):
     assert cell(6) == str(right)
     c.wrong.setValue(-1)
     assert cell(6) == str(right)  # blanks aren't wrong
+    c.wrong.setValue(0.25)
+    assert c.wrong.value() == 0  # a wrong answer can't earn marks, e.g. from scrolling over the box
     c.table.selectRow(0)
     assert c.review_list.item(0).text() == "Nothing to check"
     assert w.dashboard.read.value.text() == "1" and w.dashboard.average.value.text() == f"{right:.1f}"
@@ -666,6 +668,34 @@ def test_first_run_shows_the_steps_and_help_has_the_shortcuts(app, tmp_path, mon
     w.open_exam(w.store.create_exam("Mock", (TEMPLATES / "test-100.json").read_text(encoding="utf-8")))
     w.exams.refresh()
     assert w.exams.start.isHidden() and not w.exams.table.isHidden()
+
+
+def test_written_marks_are_typed_and_added_on_results(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox, QTableWidgetItem
+    files = sheet_files(tmp_path, [1, 2])
+    w = window(tmp_path)
+    c = w.check
+    c.read_files([f[0] for f in files])
+    c.key_edit.setPlainText("A" * 100)
+    tab = w.written
+    tab.refresh()
+    assert tab.table.isHidden() and "Set the marks" in tab.note.text()
+    tab.out_of.setValue(20)
+    tab.save_out_of()
+    tab.refresh()
+    assert tab.table.rowCount() == 2 and "2 of 2 still to type" in tab.note.text()
+    roll = tab.table.item(0, 0).text()
+    before = next(c.score_of(s) for s in c.sheets if s.result.roll_number == roll)
+    tab.table.setItem(0, 2, QTableWidgetItem("15"))
+    assert w.store.written(c.exam.id) == {roll: 15}
+    assert next(c.score_of(s) for s in c.sheets if s.result.roll_number == roll) == before + 15
+    w.results.refresh()
+    head = [w.results.table.horizontalHeaderItem(i).text() for i in range(w.results.table.columnCount())]
+    assert head[4:7] == ["Score", "Sheet", "Written"]
+    warned = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warned.append(a[2]))
+    tab.table.setItem(1, 2, QTableWidgetItem("25"))  # above the written part's 20
+    assert warned and "0 to 20" in warned[0] and len(w.store.written(c.exam.id)) == 1
 
 
 def test_answer_key_is_read_from_a_filled_master_sheet(app, tmp_path, monkeypatch):

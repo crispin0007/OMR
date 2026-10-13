@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFile
                                QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
+from omr_core.export import single_questions
 from omr_core.grading import Section, full_marks, marks_for, parse_key, score
 from omr_core.reader import read_or_reason
 from omr_core.sources import read_pages
@@ -23,7 +24,7 @@ from . import theme
 from .answer_key import KeyTab
 from .dashboard import DashboardPage, ResultsPage
 from .designer import DesignerPage
-from .exam_page import ExamPage, ExamSettings, PrintSheet, StudentsTab
+from .exam_page import ExamPage, ExamSettings, PrintSheet, StudentsTab, WrittenTab
 from .exams import TEMPLATES, ExamsPage  # noqa: F401  (tests find the templates here)
 from .help import HelpDialog
 from .review import ReviewPage
@@ -63,6 +64,7 @@ class CheckPage(QWidget):
         self.questions: list[int] = []
         self.sheets: list[StoredPage] = []
         self.students: dict[str, Student] = {}
+        self.written: dict[str, float] = {}  # typed written marks by roll number
         self.keys: dict[str, list[str]] = {}
         self.sections: list[Section] = []
 
@@ -88,7 +90,8 @@ class CheckPage(QWidget):
         self.key_status = QLabel(objectName="muted", wordWrap=True)
         self.key_tab = KeyTab(self, self.key_edit, self.key_status)
 
-        self.correct, self.wrong, self.blank = (self._marks(v) for v in (1, 0, 0))
+        self.correct, self.wrong, self.blank = self._marks(1), self._marks(0, most=0), self._marks(0, most=0)
+        self.wrong.setToolTip("Negative marking: e.g. -0.25 or -1 for each wrong answer")
         marks = QHBoxLayout()
         for text, box in (("Correct", self.correct), ("Wrong", self.wrong), ("Blank", self.blank)):
             marks.addWidget(QLabel(text))
@@ -173,8 +176,8 @@ class CheckPage(QWidget):
         self.show_sheets(None)
         self._enable()
 
-    def _marks(self, value: float) -> QDoubleSpinBox:
-        box = QDoubleSpinBox(minimum=-100, maximum=100, value=value, decimals=2, singleStep=0.25)
+    def _marks(self, value: float, most: float = 100) -> QDoubleSpinBox:
+        box = QDoubleSpinBox(minimum=-100, maximum=most, value=value, decimals=2, singleStep=0.25)
         box.valueChanged.connect(self.scheme_changed)
         return box
 
@@ -190,7 +193,7 @@ class CheckPage(QWidget):
         """Show an exam's saved key, marks and sheets; None closes it."""
         self.exam = None  # keeps the loading below from saving the scheme back
         if exam_id is None:
-            self.questions, self.sheets, self.students, self.sections = [], [], {}, []
+            self.questions, self.sheets, self.students, self.sections, self.written = [], [], {}, [], {}
             self.template_label.setText("Open or create an exam on the Exams page")
             self.key_edit.clear()
         else:
@@ -199,6 +202,7 @@ class CheckPage(QWidget):
             self.questions = sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows))
             self.sheets = self.store.pages(exam_id)
             self.students = self.store.students(exam_id)
+            self.written = self.store.written(exam_id)
             self.sections = exam.sections
             self.template_label.setText(f"{exam.name}  ·  {t.name}, {len(self.questions)} questions")
             for box, v in ((self.correct, exam.correct), (self.wrong, exam.wrong), (self.blank, exam.blank)):
@@ -231,11 +235,12 @@ class CheckPage(QWidget):
 
     @property
     def marks(self) -> list[tuple]:
-        return marks_for(self.questions, self.correct.value(), self.wrong.value(), self.blank.value(), self.sections)
+        return marks_for(self.questions, self.correct.value(), self.wrong.value(), self.blank.value(), self.sections,
+                         single_questions(self.exam.template) if self.exam else None)
 
     def full_marks(self) -> float:
         key = next(iter(self.keys.values()), ["A"] * len(self.questions))  # sets differ only in order
-        return full_marks(key, self.marks)
+        return full_marks(key, self.marks) + (self.exam.written_out_of if self.exam else 0)
 
     def edit_sections(self):
         dialog = SectionsDialog(self, self.sections, self.questions,
@@ -367,7 +372,8 @@ class CheckPage(QWidget):
         key = r and self.keys.get(r.set_code, self.keys.get(""))
         if not key:
             return None
-        return score([r.answers[q] for q in self.questions], key, marks=self.marks)
+        written = self.written.get(r.roll_number, 0) if self.exam.written_out_of else 0
+        return score([r.answers[q] for q in self.questions], key, marks=self.marks) + written
 
     def _score_text(self, sheet: StoredPage) -> str:
         s = self.score_of(sheet)
@@ -540,6 +546,8 @@ class MainWindow(QMainWindow):
         self.check.changed.connect(self.scan._enable)
         self.students = StudentsTab(self.check)
         self.students.changed.connect(self.reload_students)
+        self.written = WrittenTab(self.check)
+        self.written.changed.connect(self.check.fill_table)  # rescores; Results and the Dashboard follow
         self.print_sheet = PrintSheet(self.check)
         self.exam_settings = ExamSettings(self.check)
         self.exam_settings.changed.connect(lambda: self.open_exam(self.check.exam.id))
@@ -547,7 +555,8 @@ class MainWindow(QMainWindow):
         self.exam_page = ExamPage(self.check, [
             ("Scan", self.scan), ("Scanned sheets", self.check), ("Review", self.review),
             ("Answer key", self.check.key_tab), ("Marks and sections", self.check.marks_tab),
-            ("Students", self.students), ("Results", self.results), ("Print sheet", self.print_sheet),
+            ("Students", self.students), ("Written marks", self.written), ("Results", self.results),
+            ("Print sheet", self.print_sheet),
             ("Exam settings", self.exam_settings)])
         self.exam_page.back.connect(lambda: self.go("Exams"))
         self.exams_area = QStackedWidget()  # the list of exams, or one exam's page
@@ -626,6 +635,7 @@ class MainWindow(QMainWindow):
         self.exams.refresh(exam_id)
         self.exam_page.refresh()
         self.students.refresh()
+        self.written.refresh()
         self.print_sheet.refresh()
         self.exam_settings.refresh()
         theme.settings().setValue("last_exam", exam_id or "")

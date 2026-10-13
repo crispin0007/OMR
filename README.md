@@ -66,7 +66,9 @@ The sidebar opens Dashboard, Exams, Map printed sheet, Help and Settings. Until
 the first exam exists, Exams shows the steps below. **Help** (F1) repeats them
 with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
 
-1. On **Exams**, **New exam…** sets up the exam step by step: its name,
+1. On **Exams**, **New exam…** sets up the exam step by step. **Start from**
+   fills it in from a ready-made layout (JEE Main, NEET or CEE style, or a
+   50-question class test) to change as you like. The steps cover its name,
    class, date, time and duration; its subjects or sections and the
    question numbers each covers; options per question (2 to 8, or true or
    false), roll number digits and question paper sets; marks for right,
@@ -124,6 +126,9 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    **Check a printed copy…** reads a scan or phone photo of one printed
    sheet, blank or with a few bubbles filled, and says whether it reads,
    before you print the rest.
+   **Written marks** is for an exam with a written (subjective) part: set what
+   it is out of, then type each student's marks. They add to the sheet's score
+   for the rank, and results and scorecards show both parts.
    **Exam settings** renames or deletes the exam. **Change sheet…** there
    gives the exam another template, for pages filled on a different sheet,
    and reads every page again with it: imported files from the original

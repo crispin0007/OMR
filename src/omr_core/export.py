@@ -33,15 +33,25 @@ class Graded:
     to_check: bool = False
     student: Student | None = None  # None when the exam has no student list or the roll number isn't on it
     sections: dict[str, float] = field(default_factory=dict)  # score per section, in the exam's section order
+    omr: float = 0.0  # the score from the sheet; `score` adds the written marks
+    written: float | None = None  # None when the exam has no written part or this student's aren't typed yet
 
 
 def questions(t: Template) -> list[int]:
     return sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows))
 
 
+def single_questions(t: Template) -> set[int]:
+    """Questions printed for one answer only, where two filled bubbles are invalid."""
+    return {g.first + r for g in t.grids if g.kind == "questions" and not g.multi for r in range(g.rows)}
+
+
 def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float, wrong: float,
-          blank: float, students: dict[str, Student] | None = None, sections: list[Section] = ()) -> list[Graded]:
+          blank: float, students: dict[str, Student] | None = None, sections: list[Section] = (),
+          written: dict[str, float] | None = None) -> list[Graded]:
     """Every page that can be scored, best first, with rank and percentile.
+
+    `written` holds typed marks for a written part by roll number; they add to the sheet's score.
 
     Pages that couldn't be read, or whose set has no key, are left out; they show in review instead.
     Raises ValueError if the key doesn't fit the sheet.
@@ -49,7 +59,7 @@ def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float,
     qs = questions(t)
     options = "".join(sorted({o for g in t.grids if g.kind == "questions" for o in g.options}))
     keys = parse_key(answer_key, len(qs), options)
-    marks = marks_for(qs, correct, wrong, blank, sections)
+    marks = marks_for(qs, correct, wrong, blank, sections, single_questions(t))
     students = students or {}
     flagged = {i for i, _, _ in to_review(pages, students)}
     out = []
@@ -64,9 +74,11 @@ def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float,
             part = [n for n, q in enumerate(qs) if sec.first <= q <= sec.last]
             per_section[sec.name] = score([answers[n] for n in part], [key[n] for n in part],
                                           marks=[marks[n] for n in part])
-        out.append(Graded(p, key, score(answers, key, marks=marks), counts.count("right"),
-                          counts.count("wrong"), counts.count("blank"), to_check=i in flagged,
-                          student=students.get(p.result.roll_number), sections=per_section))
+        omr = score(answers, key, marks=marks)
+        extra = written.get(p.result.roll_number) if written is not None else None
+        out.append(Graded(p, key, omr + (extra or 0), counts.count("right"), counts.count("wrong"),
+                          counts.count("blank"), to_check=i in flagged, student=students.get(p.result.roll_number),
+                          sections=per_section, omr=omr, written=extra))
     out.sort(key=lambda g: -g.score)
     for g, (r, pct) in zip(out, rank([g.score for g in out])):
         g.rank, g.percentile = r, pct
@@ -102,6 +114,11 @@ def item_analysis(t: Template, graded: list[Graded]) -> list[list]:
     return rows
 
 
+def has_written(graded: list[Graded]) -> bool:
+    """Whether any student has written marks, so results show the sheet and written parts apart."""
+    return any(g.written is not None for g in graded)
+
+
 def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Graded]):
     """Merit list on the first sheet, every answer (green right, red wrong) on the second, item analysis on the third."""
     qs = questions(t)
@@ -111,14 +128,15 @@ def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Grad
     ws.append([exam_name])
     ws["A1"].font = Font(bold=True, size=14)
     section_names = list(graded[0].sections) if graded else []
-    head = ["Rank", "Roll number", "Name", "Class", "Set", "Score", *section_names, "Right", "Wrong", "Blank", "Percentile",
-            "To check", "File", "Page"]
+    split = ["Sheet", "Written"] if has_written(graded) else []
+    head = ["Rank", "Roll number", "Name", "Class", "Set", "Score", *split, *section_names, "Right", "Wrong", "Blank",
+            "Percentile", "To check", "File", "Page"]
     ws.append(head)
     for g in graded:
         r = g.page.result
         s = g.student
         ws.append([g.rank, r.roll_number, s.name if s else "", s.class_name if s else "", r.set_code, g.score,
-                   *g.sections.values(), g.right, g.wrong, g.blank, round(g.percentile, 1),
+                   *([g.omr, g.written] if split else []), *g.sections.values(), g.right, g.wrong, g.blank, round(g.percentile, 1),
                    "yes" if g.to_check else "", Path(g.page.file).name, g.page.page])
     answers = wb.create_sheet("Answers")
     answers.append(["Roll number", "Name", "Set", *(f"Q{q}" for q in qs)])
@@ -166,7 +184,9 @@ def write_scorecards(path: str | Path, exam_name: str, t: Template, graded: list
         c.drawString(18 * mm, h - 38 * mm, f"Score {g.score:g}    Rank {g.rank} of {len(graded)}    "
                                            f"Percentile {g.percentile:.1f}")
         c.setFont("Helvetica", 10)
-        c.drawString(18 * mm, h - 45 * mm, f"Right {g.right}    Wrong {g.wrong}    Blank {g.blank}    "
+        parts = (f"Sheet {g.omr:g}    Written {g.written:g}    " if g.written is not None
+                 else "Sheet {:g}    Written not given    ".format(g.omr) if has_written(graded) else "")
+        c.drawString(18 * mm, h - 45 * mm, f"{parts}Right {g.right}    Wrong {g.wrong}    Blank {g.blank}    "
                      + "    ".join(f"{name} {v:g}" for name, v in g.sections.items()))
         if g.to_check:
             c.setFillColor(colors.HexColor("#c27c00"))
