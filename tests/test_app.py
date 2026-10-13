@@ -656,6 +656,11 @@ def test_window_carries_the_app_name(app, tmp_path):
     assert w.windowTitle() == "OMR Checker  ·  Mock"
     w.open_exam(None)
     assert w.windowTitle() == "OMR Checker"
+    # fits a 1920 x 1080 screen at 150% scaling (1280 x 720), with any page open
+    for page in w.PAGES:
+        if page not in w.LATER:
+            w.go(page)
+            assert w.minimumSizeHint().width() <= 1000 and w.minimumSizeHint().height() <= 700
 
 
 def test_first_run_shows_the_steps_and_help_has_the_shortcuts(app, tmp_path, monkeypatch):

@@ -660,7 +660,10 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(14)
         layout.addWidget(sidebar)
-        layout.addWidget(self.stack, 1)
+        # Pages scroll rather than set the window's smallest size, so it fits a laptop screen at 150% scaling.
+        pages = QScrollArea(widgetResizable=True, frameShape=QScrollArea.NoFrame)
+        pages.setWidget(self.stack)
+        layout.addWidget(pages, 1)
         self.setCentralWidget(central)
         for keys, action in (("Ctrl+N", self.new_exam), ("Ctrl+O", self.import_scans), ("F1", self.show_help)):
             QShortcut(QKeySequence(keys), self, action)
