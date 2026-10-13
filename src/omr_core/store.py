@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS exam (
     blank REAL NOT NULL DEFAULT 0,
     created TEXT NOT NULL,
     sections TEXT NOT NULL DEFAULT '[]',  -- JSON [Section, ...]
-    details TEXT NOT NULL DEFAULT '{}'    -- JSON {"class", "date", "time", "minutes"}, from New exam
+    details TEXT NOT NULL DEFAULT '{}',   -- JSON {"class", "date", "time", "minutes"}, from New exam
+    written_out_of REAL NOT NULL DEFAULT 0  -- marks of the written part, typed in; 0 for none
 );
 CREATE TABLE IF NOT EXISTS page (
     id INTEGER PRIMARY KEY,
@@ -59,6 +60,12 @@ CREATE TABLE IF NOT EXISTS audit (
     before TEXT NOT NULL,
     after TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS written (
+    exam_id INTEGER NOT NULL REFERENCES exam(id) ON DELETE CASCADE,
+    roll_number TEXT NOT NULL,
+    marks REAL NOT NULL,
+    PRIMARY KEY (exam_id, roll_number)
+);
 CREATE TABLE IF NOT EXISTS student (
     exam_id INTEGER NOT NULL REFERENCES exam(id) ON DELETE CASCADE,
     roll_number TEXT NOT NULL,
@@ -82,6 +89,7 @@ class Exam:
     created: str
     sections: list[Section]
     details: dict
+    written_out_of: float = 0
 
 
 @dataclass
@@ -103,10 +111,11 @@ class Store:
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.executescript(SCHEMA)
         columns = [r[1] for r in self.db.execute("PRAGMA table_info(exam)")]
-        for column, default in (("sections", "[]"), ("details", "{}")):  # a database from before them
+        for column, kind in (("sections", "TEXT NOT NULL DEFAULT '[]'"), ("details", "TEXT NOT NULL DEFAULT '{}'"),
+                             ("written_out_of", "REAL NOT NULL DEFAULT 0")):  # a database from before them
             if column not in columns:
                 with self.db:
-                    self.db.execute(f"ALTER TABLE exam ADD COLUMN {column} TEXT NOT NULL DEFAULT '{default}'")
+                    self.db.execute(f"ALTER TABLE exam ADD COLUMN {column} {kind}")
 
     def close(self):
         self.db.close()
@@ -135,11 +144,11 @@ class Store:
 
     def exam(self, exam_id: int) -> Exam:
         row = self.db.execute("SELECT id, name, template, answer_key, correct, wrong, blank, created, sections, "
-                              "details FROM exam WHERE id = ?", (exam_id,)).fetchone()
+                              "details, written_out_of FROM exam WHERE id = ?", (exam_id,)).fetchone()
         if row is None:
             raise KeyError(exam_id)
         return Exam(row[0], row[1], parse(json.loads(row[2])), *row[2:8], sections_from_json(json.loads(row[8])),
-                    json.loads(row[9]))
+                    json.loads(row[9]), row[10])
 
     def save_scheme(self, exam_id: int, answer_key: str, correct: float, wrong: float, blank: float):
         with self.db:
@@ -191,8 +200,8 @@ class Store:
                             continue
                         exam = self.db.execute(
                             "INSERT INTO exam (name, template, answer_key, correct, wrong, blank, created, sections, "
-                            "details) SELECT name, template, answer_key, correct, wrong, blank, created, sections, "
-                            "details FROM b.exam WHERE id = ?", (old,)).lastrowid
+                            "details, written_out_of) SELECT name, template, answer_key, correct, wrong, blank, "
+                            "created, sections, details, written_out_of FROM b.exam WHERE id = ?", (old,)).lastrowid
                         for (old_page,) in self.db.execute("SELECT id FROM b.page WHERE exam_id = ? ORDER BY id",
                                                            (old,)).fetchall():
                             page = self.db.execute(
@@ -203,6 +212,8 @@ class Store:
                             self.db.execute("INSERT INTO audit (page_id, at, user, item, before, after) SELECT ?, at, "
                                             "user, item, before, after FROM b.audit WHERE page_id = ? ORDER BY id",
                                             (page, old_page))
+                        self.db.execute("INSERT INTO written (exam_id, roll_number, marks) SELECT ?, roll_number, "
+                                        "marks FROM b.written WHERE exam_id = ?", (exam, old))
                         self.db.execute("INSERT INTO student (exam_id, roll_number, name, class_name) SELECT ?, "
                                         "roll_number, name, class_name FROM b.student WHERE exam_id = ?", (exam, old))
                         restored.append(name)
@@ -360,6 +371,30 @@ class Store:
             self.db.execute("DELETE FROM student WHERE exam_id = ?", (exam_id,))
             self.db.executemany("INSERT INTO student (exam_id, roll_number, name, class_name) VALUES (?, ?, ?, ?)",
                                 [(exam_id, s.roll_number, s.name, s.class_name) for s in students])
+
+    def set_written_out_of(self, exam_id: int, out_of: float):
+        """Marks of the exam's written part, 0 for none. Raises ValueError below a mark already typed."""
+        top = self.db.execute("SELECT MAX(marks) FROM written WHERE exam_id = ?", (exam_id,)).fetchone()[0]
+        if out_of < 0 or (top is not None and out_of < top):
+            raise ValueError(f"a student already has {top:g} written marks" if top is not None and out_of >= 0
+                             else "the written part can't be out of less than 0")
+        with self.db:
+            self.db.execute("UPDATE exam SET written_out_of = ? WHERE id = ?", (out_of, exam_id))
+
+    def set_written(self, exam_id: int, roll_number: str, marks: float | None):
+        """One student's written marks, or None to clear them. Raises ValueError outside 0 to the part's marks."""
+        out_of = self.db.execute("SELECT written_out_of FROM exam WHERE id = ?", (exam_id,)).fetchone()[0]
+        with self.db:
+            if marks is None:
+                self.db.execute("DELETE FROM written WHERE exam_id = ? AND roll_number = ?", (exam_id, roll_number))
+                return
+            if not 0 <= marks <= out_of:
+                raise ValueError(f"written marks are 0 to {out_of:g}")
+            self.db.execute("INSERT OR REPLACE INTO written (exam_id, roll_number, marks) VALUES (?, ?, ?)",
+                            (exam_id, roll_number, marks))
+
+    def written(self, exam_id: int) -> dict[str, float]:
+        return dict(self.db.execute("SELECT roll_number, marks FROM written WHERE exam_id = ?", (exam_id,)))
 
     def students(self, exam_id: int) -> dict[str, Student]:
         rows = self.db.execute("SELECT roll_number, name, class_name FROM student WHERE exam_id = ?", (exam_id,))

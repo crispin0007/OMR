@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QDate, QStandardPaths, Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
+from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
                                QScrollArea, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from omr_core.reader import read_or_reason
@@ -133,6 +133,101 @@ class StudentsTab(QWidget):
             more = f"\n…and {len(problems) - 30} more" if len(problems) > 30 else ""
             text += f"\n\nSkipped {len(problems)} rows:\n" + "\n".join(problems[:30]) + more
         QMessageBox.information(self, "Students imported", text)
+
+
+class WrittenTab(QWidget):
+    """Marks for a written (subjective) part, typed per student and added to the sheet's score."""
+
+    changed = Signal()
+
+    def __init__(self, check):
+        super().__init__()
+        self.check = check
+        self.out_of = QDoubleSpinBox(minimum=0, maximum=1000, decimals=2, specialValueText="No written part")
+        self.out_of.setToolTip("Marks of the written part; 0 for an exam with only the answer sheet")
+        self.out_of.editingFinished.connect(self.save_out_of)
+        self.note = QLabel(objectName="muted", wordWrap=True)
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Written part out of"))
+        top.addWidget(self.out_of)
+        top.addWidget(self.note, 1)
+        self.table = QTableWidget(0, 3)
+        self.table.setHorizontalHeaderLabels(["Roll number", "Name", "Written marks"])
+        self.table.verticalHeader().hide()
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.itemChanged.connect(self.typed)
+        layout = QVBoxLayout(self)
+        layout.addLayout(top)
+        layout.addWidget(self.table, 1)
+
+    def showEvent(self, e):
+        self.refresh()  # sheets read or students imported since
+        super().showEvent(e)
+
+    def rolls(self) -> list[str]:
+        """Every student on the list and every roll number read from a sheet."""
+        read = {s.result.roll_number for s in self.check.sheets if s.result and "?" not in s.result.roll_number}
+        return sorted(read | set(self.check.students))
+
+    def refresh(self):
+        c = self.check
+        out_of = c.exam.written_out_of if c.exam else 0
+        self.out_of.blockSignals(True)
+        self.out_of.setValue(out_of)
+        self.out_of.blockSignals(False)
+        self.out_of.setEnabled(c.exam is not None)
+        rolls = self.rolls() if out_of else []
+        missing = sum(r not in c.written for r in rolls)
+        self.note.setText("" if not c.exam else
+                          "Set the marks of the written part to type each student's marks; they add to the sheet's "
+                          "score on Results." if not out_of else
+                          f"Type marks out of {out_of:g}; Enter moves down. {missing} of {len(rolls)} still to type.")
+        self.table.blockSignals(True)
+        self.table.setRowCount(len(rolls))
+        for row, roll in enumerate(rolls):
+            student = c.students.get(roll)
+            for col, text in enumerate((roll, student.name if student else "")):
+                item = QTableWidgetItem(text)
+                item.setFlags(Qt.ItemIsEnabled)
+                self.table.setItem(row, col, item)
+            mark = c.written.get(roll)
+            self.table.setItem(row, 2, QTableWidgetItem("" if mark is None else f"{mark:g}"))
+        self.table.blockSignals(False)
+        self.table.setVisible(bool(out_of))
+        self.table.resizeColumnsToContents()
+
+    def save_out_of(self):
+        c = self.check
+        try:
+            c.store.set_written_out_of(c.exam.id, self.out_of.value())
+        except ValueError as e:
+            QMessageBox.warning(self, "Can't change the written part", str(e))
+            self.refresh()
+            return
+        c.exam.written_out_of = self.out_of.value()
+        self.changed.emit()
+
+    def typed(self, item: QTableWidgetItem):
+        if item.column() != 2:
+            return
+        c = self.check
+        roll = self.table.item(item.row(), 0).text()
+        text = item.text().strip()
+        try:
+            marks = float(text) if text else None
+        except ValueError:
+            marks = -1.0  # not a number: refused below like any mark out of range
+        try:
+            c.store.set_written(c.exam.id, roll, marks)
+        except ValueError as e:
+            QMessageBox.warning(self, "Can't use that mark", f"Roll number {roll}: {text!r} isn't a mark; {e}.")
+            self.refresh()
+            return
+        if marks is None:
+            c.written.pop(roll, None)
+        else:
+            c.written[roll] = marks
+        self.changed.emit()
 
 
 class PrintSheet(QWidget):
