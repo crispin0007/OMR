@@ -62,6 +62,24 @@ def test_page_without_markers_is_unreadable():
         read_page(np.full((2339, 1654, 3), 255, np.uint8), TEMPLATE)
 
 
+@pytest.mark.parametrize("seed", [1, 2])
+def test_cut_off_corner_is_refused_not_read_shifted(seed):
+    from omr_core.reader import read_or_reason
+    from omr_core.sheet import SheetSpec, layout, render
+    from sheets import fill
+
+    spec = layout(SheetSpec("Mock test", 200, options=4, roll_digits=6, sets=4))
+    t = parse(spec)
+    marks, answers, roll, set_code = random_marks(t, seed)
+    page = fill(render(spec), t, marks)
+    # tilted 6 degrees with the scan cropped to the paper: half of one corner mark is lost, and read
+    # as it is, the page came out shifted with about 100 answers silently wrong
+    assert read_or_reason(scan(page, 6, seed=seed), t) == (None, "unreadable: a corner mark is cut off at the "
+                                                                 "edge of the scan")
+    r, _ = read_or_reason(scan(page, 3, seed=seed), t)  # a mark close to the edge but whole still reads
+    assert (r.answers, r.roll_number, r.set_code, r.flags) == (answers, roll, set_code, [])
+
+
 def test_page_reads_in_under_0_3_seconds():
     marks, _, _, _ = random_marks(TEMPLATE, 10)
     page = scan(draw(TEMPLATE, marks), 2)

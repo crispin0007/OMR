@@ -483,7 +483,8 @@ class ScanPage(QWidget):
         stored = self.check.sheets[index]
         r = stored.result
         if r is None:
-            self.latest.setText(f"Can't read this page: {stored.problem.removeprefix('unreadable: ')}")
+            self.latest.setText(f"Can't read this page: {stored.problem.removeprefix('unreadable: ')}.\nIt is kept "
+                                "under Review. Scan it again flat, with all four corner marks on the paper.")
             self.latest_text.setText(f"{Path(stored.file).name}, page {stored.page}")
             return
         a = self.check.store.image(stored.id)

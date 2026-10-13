@@ -15,16 +15,23 @@ The Scan tab says **No scanner found through Windows**.
 
 ## Pages "couldn't be read"
 
-The app finds a sheet by its **four corner circles**. A page can't be read when:
+The app finds a sheet by its **four corner circles**. The reason shows on the live view, on Scanned
+sheets and in Review. A page can't be read when:
 
-- a corner circle is **cut off, folded or covered**: rescan it flat and straight;
+- **"a corner mark is cut off at the edge of the scan"**: the sheet went into the scanner crooked, or
+  the scan was cropped, and part of a corner circle is missing. Scan it again, straight, with a little
+  space around the paper;
+- **"the bubbles don't line up with the corner marks"**: a corner is folded, torn or covered, so the
+  circles were found in the wrong place. Unfold it and scan again;
+- a corner circle is **covered or missing**: rescan it flat and straight;
 - the page is **upside down or the wrong page**, for example the back of the sheet;
 - students filled **a different sheet** from the exam's: map that sheet
   ([Use a sheet you already print](map-printed-sheet.md)), then **Exam settings** >
   **Change sheet…**;
 - the scan is very dark, very light or blurry: scan again at 200 DPI.
 
-The page is kept either way, so nothing is lost. Fix the cause and scan or import it again.
+The page is kept either way, so nothing is lost. Fix the cause and scan or import it again. The app
+refuses such a page on purpose: read with a corner in the wrong place, every answer would be shifted.
 
 ## Too many marks go to Review
 

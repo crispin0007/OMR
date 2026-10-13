@@ -19,6 +19,10 @@ MIN_RING_INK = 0.15  # share of a bubble-sized ring that must be ink for that bu
 MIN_GAP = 0.25  # darkness between empty and filled bubbles when a sheet has few or no marks
 FILLED, UNCLEAR = 0.45, 0.2  # share of that gap above the empty level
 MIN_COVER = 0.75  # share of a filled bubble's inside that must be ink
+CUT_MM = 0.5  # a corner mark closer than this to the scan's edge may be cut off
+CUT_MARK = "a corner mark is cut off at the edge of the scan"
+MAX_SKEW_MM = 1.5  # how far a corner mark may sit from where the other three put it (tilt, stretch, phone angle)
+MAX_LOST_ROWS = 0.25  # share of bubble rows found only at the edge of the search before the page counts as misaligned
 
 
 class UnreadablePage(Exception):
@@ -39,7 +43,12 @@ def read_page(page: np.ndarray, template: Template) -> PageResult:
     gray = _prepare(page, template.dropout)
     warped = _align(gray, template)
     aligned = _flatten(warped)
-    pixels = [_sample(aligned, g, template.bubble) for g in template.grids]
+    sampled = [_sample(aligned, g, template.bubble) for g in template.grids]
+    pixels = [p for p, _ in sampled]
+    if sum(lost for _, lost in sampled) > MAX_LOST_ROWS * sum(g.rows for g in template.grids):
+        # the corner marks were found but don't match where the bubbles are printed: reading on would
+        # read the whole page shifted
+        raise UnreadablePage("the bubbles don't line up with the corner marks (a corner may be cut off or folded)")
     empty, gap = _levels(np.concatenate([p.mean(-1).ravel() for p in pixels]))
     result = PageResult(aligned=aligned)
     for grid, p in zip(template.grids, pixels):
@@ -140,9 +149,29 @@ def _align(gray: np.ndarray, t: Template) -> np.ndarray:
     other paper reads the same once its four corner marks are found.
     """
     try:
-        return _warp(gray, t, _markers_near(gray, t))
-    except UnreadablePage:  # printed at another size or on other paper: look further for the marks
-        return _warp(gray, t, _markers_anywhere(gray, t))
+        return _warp(gray, t, _whole(gray, t, _markers_near(gray, t)))
+    except UnreadablePage as near:  # printed at another size or on other paper: look further for the marks
+        try:
+            return _warp(gray, t, _whole(gray, t, _markers_anywhere(gray, t)))
+        except UnreadablePage as anywhere:
+            raise near if str(near) == CUT_MARK else anywhere  # say what to fix: the cut corner
+
+
+def _whole(gray: np.ndarray, t: Template, found: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """The marks found, unless one is cut off at the scan's edge and found out of line with the others.
+
+    Half a mark still matches, a few millimetres off its centre, and the whole page would then be read
+    shifted. A mark at the edge that lines up with the other three (a scan cropped close) is kept.
+    """
+    src = np.hstack([np.float64(t.markers), np.ones((4, 1))])
+    fit, *_ = np.linalg.lstsq(src, np.float64(found), rcond=None)  # the straight (affine) fit of all four
+    s = np.sqrt(abs(np.linalg.det(fit[:2])))  # px per mm
+    off = np.hypot(*(src @ fit - np.float64(found)).T) / s
+    h, w = gray.shape
+    edge = [min(x, y, w - x, h - y) / s - t.marker_size / 2 for x, y in found]
+    if any(e < CUT_MM for e in edge) and off.max() > MAX_SKEW_MM:
+        raise UnreadablePage(CUT_MARK)
+    return found
 
 
 def _warp(gray: np.ndarray, t: Template, found: list[tuple[float, float]]) -> np.ndarray:
@@ -288,23 +317,25 @@ def _marker_image(shape: str, d: float) -> np.ndarray:
     return cv2.GaussianBlur(img, (0, 0), max(d * 0.05, 0.5))
 
 
-def _sample(aligned: np.ndarray, grid: Grid, bubble: tuple[float, float]) -> np.ndarray:
-    """Darkness 0 (paper) to 1 (ink) of the pixels inside each bubble, skipping its printed outline.
-
-    Shape (rows, cols, pixels).
+def _sample(aligned: np.ndarray, grid: Grid, bubble: tuple[float, float]) -> tuple[np.ndarray, int]:
+    """Darkness 0 (paper) to 1 (ink) of the pixels inside each bubble, skipping its printed outline, shape
+    (rows, cols, pixels); and how many rows' printed bubbles were found only at the edge of the search, as far
+    off as SNAP_MM allows, where a page aligned wrong puts them.
     """
     ax, ay = max(1, int(bubble[0] * SCALE * 0.3)), max(1, int(bubble[1] * SCALE * 0.3))
     mask = np.zeros((2 * ay + 1, 2 * ax + 1), np.uint8)
     cv2.ellipse(mask, (ax, ay), (ax, ay), 0, 0, 360, 1, -1)
     mask = mask.astype(bool)
     out = np.empty((grid.rows, grid.cols, int(mask.sum())))
+    lost = 0
     for r in range(grid.rows):
         centres = [tuple(round(v * SCALE) for v in grid.centre(r, c)) for c in range(grid.cols)]
         dx, dy = _row_offset(aligned, centres, bubble)
+        lost += max(abs(dx), abs(dy)) >= round(SNAP_MM * SCALE) - 1
         for c, (x, y) in enumerate(centres):
             x, y = x + dx, y + dy
             out[r, c] = 1 - aligned[y - ay:y + ay + 1, x - ax:x + ax + 1][mask] / 255
-    return out
+    return out, lost
 
 
 def _row_offset(aligned: np.ndarray, centres: list[tuple[int, int]], bubble: tuple[float, float]) -> tuple[int, int]:
