@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=OMR Checker
+GenericName=OMR sheet scanner
+Comment=Make OMR answer sheets, read scans and get marks, offline
+Exec=omr-checker
+Icon=omr-checker
+Categories=Education;Office;
+Terminal=false

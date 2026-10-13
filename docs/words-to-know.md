@@ -36,14 +36,21 @@ only one is allowed, it doesn't pick one for the student. It puts that question 
 
 ## Installing
 
-1. Download `OMR-Setup-<version>.exe` from the project's
-   [Releases page](https://github.com/crispin0007/omr/releases) when a release is published.
-2. Double-click it and follow the steps: **Next** on the welcome page, accept the licence, keep the
+Download the file for your computer from the project's
+[Releases page](https://github.com/crispin0007/omr/releases/latest) (once a release is published).
+The [README](../README.md#install) has the full list, including Mac and Linux.
+
+### On Windows
+
+1. Download `OMR-Setup-<version>.exe`.
+2. Double-click it. If a blue box says **"Windows protected your PC"**, press **More info**, then
+   **Run anyway**. This appears because the app is free and not signed with a paid certificate.
+3. Follow the steps: **Next** on the welcome page, accept the licence, keep the
    suggested folder, and tick **Create a desktop shortcut** if you want one. It needs nothing else:
    no Python, no internet.
-3. Leave **Start OMR Checker now** ticked on the last page and press **Finish**. Later, open it from
+4. Leave **Start OMR Checker now** ticked on the last page and press **Finish**. Later, open it from
    the Start menu.
-4. Connect your scanner with its USB cable and switch it on. If Windows can scan with it (try the
+5. Connect your scanner with its USB cable and switch it on. If Windows can scan with it (try the
    Windows **Scan** app or **Windows Fax and Scan**), OMR Checker will find it.
 
 The app works fully **offline**. Nothing is uploaded anywhere.
@@ -56,6 +63,26 @@ too. Press **No** to keep them (for example, before reinstalling).
 **No installing allowed on this PC?** Use the portable zip, `OMR-Portable-<version>.zip`: unzip it to
 a USB stick or a folder you can write to and run `OMR.exe`. Its exams stay in the `data` folder
 beside it.
+
+### On a Mac
+
+1. Download the `.dmg` for your Mac: **apple-silicon** for M1 or newer (Apple menu > About This Mac
+   says "Chip: Apple M…"), **intel** for older Macs.
+2. Open it and drag **OMR Checker** onto **Applications**.
+3. The first time only: in Applications, right-click **OMR Checker** and choose **Open**, then
+   **Open** again. On macOS 15 or newer, if it only offers **Done**, press it, then go to **System
+   Settings > Privacy & Security**, scroll down and press **Open Anyway**.
+4. Macs can't scan straight from a scanner's feeder in OMR Checker. Scan with **Image Capture** or the
+   scanner's own app into a folder, and pick that folder on the Scan tab (see
+   [Scan the filled sheets](scanning.md#2-from-a-folder)).
+
+### On Linux
+
+- **Ubuntu, Debian or Linux Mint:** double-click `omr-checker_<version>_amd64.deb` to install it, or
+  run `sudo apt install ./omr-checker_*.deb`. OMR Checker then appears in the app menu.
+- **Other Linux:** download the `.AppImage`, make it runnable (right-click > Properties > allow
+  running, or `chmod +x`), and double-click it.
+- Scan with **Simple Scan** (Document Scanner) into a folder and pick that folder on the Scan tab.
 
 ## Finding your way around
 

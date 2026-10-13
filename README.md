@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
-  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6" alt="Platform: Windows 10 and 11">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6" alt="Platform: Windows, macOS and Linux">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-3776AB" alt="Python 3.11, 3.12, 3.13">
   <img src="https://img.shields.io/badge/works-offline-2e7d32" alt="Works offline">
 </p>
@@ -139,25 +139,56 @@ All screenshots use sheets generated for testing; the names and marks are made u
 
 ## Install
 
-### Windows (recommended)
+<p>
+  <a href="https://github.com/crispin0007/omr/releases/latest"><img src="https://img.shields.io/github/v/release/crispin0007/omr?label=download" alt="Latest release"></a>
+  <a href="https://github.com/crispin0007/omr/releases"><img src="https://img.shields.io/github/downloads/crispin0007/omr/total" alt="Downloads"></a>
+</p>
 
-1. Download `OMR-Setup-<version>.exe` from the
-   [Releases page](https://github.com/crispin0007/omr/releases) when a release is published, or
-   build it yourself as described in [packaging/README.md](packaging/README.md).
-2. Run it. The setup wizard shows the licence, lets you pick the folder and a desktop shortcut, and
-   can start OMR Checker when it finishes. Nothing else is needed: Python and every library are
-   inside. Windows 10 or 11, 64-bit.
-3. Connect your scanner. If Windows can scan with it (Windows Fax and Scan, or the scanner's own
-   app), OMR Checker will find it.
+Download from the [latest release](https://github.com/crispin0007/omr/releases/latest) (once one is
+published) the file for your computer:
+
+| Your computer | File | |
+|---|---|---|
+| Windows 10 or 11 (64-bit) | `OMR-Setup-<version>.exe` | Installer: Start menu, desktop shortcut, updates in place |
+| Windows, no installing | `OMR-Portable-<version>.zip` | Unzip anywhere (a USB stick) and run `OMR.exe` |
+| Mac with Apple Silicon (M1 or newer) | `OMR-Checker-<version>-macos-apple-silicon.dmg` | Open, drag OMR Checker to Applications |
+| Mac with Intel | `OMR-Checker-<version>-macos-intel.dmg` | Open, drag OMR Checker to Applications |
+| Ubuntu, Debian, Linux Mint | `omr-checker_<version>_amd64.deb` | Double-click, or `sudo apt install ./omr-checker_*.deb` |
+| Any other Linux (64-bit) | `OMR-Checker-<version>-x86_64.AppImage` | Make it executable and run it; or use the `.tar.gz` |
+
+`SHA256SUMS.txt` in each release lists every file's checksum. Python and every library are inside;
+nothing else is needed.
+
+### The first time you open it
+
+The downloads are not signed with a paid certificate, so your computer asks once whether to trust
+them:
+
+- **Windows:** if a blue "Windows protected your PC" box appears, press **More info**, then
+  **Run anyway**.
+- **Mac:** in Applications, right-click (or Control-click) **OMR Checker** and choose **Open**, then
+  **Open** again. On macOS 15 Sequoia or newer, if it only offers **Done**, press it, then open
+  **System Settings > Privacy & Security**, scroll down and press **Open Anyway** next to
+  "OMR Checker was blocked". The `.dmg` has these steps in a "First open - read me" file.
+- **Linux AppImage:** right-click it > Properties > allow running as a program, or run
+  `chmod +x OMR-Checker-*.AppImage`.
+
+### Scanners
+
+- **Windows:** any scanner Windows can use. If Windows Fax and Scan or the scanner's own app can scan
+  with it, OMR Checker will find it and scan straight from the feeder.
+- **Mac and Linux:** scan with the scanner's own software (or Image Capture, or Simple Scan) into a
+  folder, and pick **A folder my scanner software saves into** on the Scan tab. Each file is read as
+  soon as it is saved. **Import scans…** reads PDFs and images too.
+
+### Updating and removing (Windows)
 
 Installing a newer version over the old one keeps every exam and setting. Uninstalling (Settings >
-Apps) asks whether to delete your exams too; the answer is No unless you choose Yes.
+Apps) asks whether to delete your exams too; the answer is No unless you choose Yes. The portable copy
+keeps its exams and settings in a `data` folder beside `OMR.exe`, so the whole folder moves to another
+PC.
 
-**Portable copy:** `OMR-Portable-<version>.zip` needs no installing. Unzip it anywhere you can
-write to, such as a USB stick, and run `OMR.exe`. It keeps its exams and settings in a `data`
-folder beside it, so the whole folder moves to another PC.
-
-### From source (Windows or Linux)
+### From source (Windows, macOS or Linux)
 
 Python 3.11, 3.12 or 3.13 (64-bit):
 
@@ -165,12 +196,13 @@ Python 3.11, 3.12 or 3.13 (64-bit):
 git clone https://github.com/crispin0007/omr.git
 cd omr
 python -m venv .venv
-.venv\Scripts\activate          # Linux: source .venv/bin/activate
+.venv\Scripts\activate          # macOS and Linux: source .venv/bin/activate
 pip install -e ".[app]"
 omr
 ```
 
-Scanning from a feeder needs Windows. On Linux, use a watched folder or import scans.
+Scanning straight from a feeder needs Windows. On macOS and Linux, use a watched folder or import scans.
+To build the downloads yourself, see [packaging/README.md](packaging/README.md).
 
 ## Quick start: your first exam in 5 steps
 

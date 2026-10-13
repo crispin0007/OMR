@@ -1,0 +1,13 @@
+OMR Checker is free software that is not signed with a paid Apple certificate, so the first time
+you open it, macOS stops it. You only need to do this once:
+
+1. Drag "OMR Checker" into the Applications folder.
+2. In Applications, right-click (or Control-click) "OMR Checker" and choose Open, then Open again.
+
+If macOS only offers "Move to Bin" or "Done" (macOS 15 Sequoia and newer):
+
+1. Press Done.
+2. Open System Settings > Privacy & Security.
+3. Scroll down to "OMR Checker was blocked" and press Open Anyway, then enter your password.
+
+After that it opens normally from Launchpad or Applications.

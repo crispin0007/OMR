@@ -1,6 +1,27 @@
-# Windows app, installer and portable zip
+# Building the downloads
 
-Teachers install OMR Checker like any Windows program; they don't need Python.
+Teachers install OMR Checker like any program; they don't need Python.
+
+## Publishing a release
+
+1. Set the new version in `pyproject.toml` (for example `version = "0.2.0"`), commit and push.
+2. Tag that commit with the same version, starting with `v`, and push the tag:
+   ```
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+3. GitHub Actions (`.github/workflows/release.yml`) builds every download on Windows, macOS (Apple
+   Silicon and Intel) and Linux, and publishes a Release with them, `SHA256SUMS.txt`, the download
+   table from `release-notes.md` and the list of changes since the last tag. It takes about 20
+   minutes. It refuses a tag that doesn't match `pyproject.toml`.
+
+To try the builds without publishing anything, open Actions > Release > **Run workflow**. The files
+appear as artifacts at the bottom of that run's page.
+
+The downloads are not signed with a paid certificate, so Windows and macOS warn the first time. The
+README tells people how to open them anyway.
+
+## Windows
 
 On a Windows PC with Python 3.11 or newer and [Inno Setup 6.3 or newer](https://jrsoftware.org/isinfo.php),
 run in the repository folder:
@@ -96,6 +117,60 @@ The installer is built and tested on Windows only. Before publishing a release, 
    folder should appear beside it, and `%LOCALAPPDATA%\OMR` should be unchanged.
 10. Run it on a 150% display scale. The installer images should be sharp and the app window should
     fit the screen.
+
+## macOS
+
+On a Mac with Python 3.11 or newer:
+
+```
+python3 -m pip install ".[app]" pyinstaller
+pyinstaller --noconfirm --distpath dist --workpath build packaging/omr.spec
+packaging/macos/build.sh
+```
+
+This makes `dist/OMR-Checker-<version>-macos-apple-silicon.dmg` (or `-intel`, matching the Mac it was
+built on). The app has an ad-hoc signature only, which Apple Silicon needs to run it at all. Data goes
+to `~/Library/Application Support/OMR`. Scanning straight from a feeder is Windows-only; on a Mac,
+people scan into a watched folder.
+
+## Linux
+
+On Ubuntu 22.04 or newer (the oldest system you build on is the oldest it runs on):
+
+```
+python3 -m pip install ".[app]" pyinstaller
+pyinstaller --noconfirm --distpath dist --workpath build packaging/omr.spec
+packaging/linux/build.sh
+```
+
+This makes:
+
+- `omr-checker_<version>_amd64.deb`: installs into `/opt/omr-checker`, adds `omr-checker` and a menu
+  entry, and pulls in the X11 libraries Qt needs.
+- `OMR-Checker-<version>-x86_64.AppImage`: runs on most distributions.
+- `OMR-Checker-<version>-linux-x86_64.tar.gz`: the app folder; run `OMR/OMR`.
+
+Data goes to `~/.local/share/OMR`.
+
+## Check a release on each system
+
+**macOS** (not tested yet; built only by GitHub Actions):
+
+1. Open the `.dmg` for your chip and drag OMR Checker to Applications.
+2. Double-click it and expect the block. Then right-click > Open, or on macOS 15+ use Privacy &
+   Security > Open Anyway. The app should start.
+3. Create an exam, print a sheet to PDF, and import a scan of it. Check that the result appears and
+   that a sheet number barcode reads back.
+4. Quit and reopen the app. The exam should still be there (in `~/Library/Application Support/OMR`).
+5. Check the Dock icon and that the window fits a 13-inch screen.
+
+**Linux** (the .deb and the AppImage were built and started on Ubuntu 24.04 in a test machine):
+
+1. On a desktop Ubuntu or Mint, run `sudo apt install ./omr-checker_*.deb`. OMR Checker should appear
+   in the app menu with its icon, and open.
+2. Create an exam, save the sheet as a PDF, import a scan, export the merit list.
+3. Remove it with `sudo apt remove omr-checker`. Your exams in `~/.local/share/OMR` stay.
+4. On another distribution (Fedora, for example), `chmod +x` the AppImage and run it.
 
 ## Licences
 
