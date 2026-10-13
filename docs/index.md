@@ -6,6 +6,11 @@ about computers or OMR to follow it. Every page shows the screen it talks about.
 **New here?** Read [Words to know](words-to-know.md) first (5 minutes), then do the
 [Quick start](quick-start.md) with a few practice sheets.
 
+**Running a CEE (MECEE-BL) mock test in Nepal?** Pick **Nepal · MECEE-BL / CEE pattern** under
+*Start from* in [Create an exam](create-an-exam.md): 200 questions in Zoology, Botany, Chemistry,
+Physics and MAT, +1 / −0.25, ready to print. KUUMAT, TU CMAT, IOE and Lok Sewa practice patterns are
+there too; see [Templates](templates.md).
+
 ![The OMR Checker Dashboard](images/dashboard.png)
 
 ## The pages

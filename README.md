@@ -1,6 +1,6 @@
 <p align="center"><img src="packaging/logo.png" alt="OMR Checker logo" width="200"></p>
 
-<h1 align="center">OMR Checker: free offline OMR sheet scanner and answer sheet maker</h1>
+<h1 align="center">OMR Checker: free offline OMR sheet scanner and answer sheet maker for Nepal CEE, NEET, JEE and school exams</h1>
 
 <p align="center">
   <b>Make OMR answer sheets, scan them from any ADF scanner, and get marks, ranks and merit lists in minutes, all on one Windows PC with no internet and no fees.</b>
@@ -27,8 +27,47 @@ BCS, MDCAT** and more.
 
 Everything stays on your PC. Nothing is uploaded, and there is no subscription or per-sheet charge.
 
+## For Nepal: CEE (MECEE-BL) mock tests and more
+
+OMR Checker comes with a ready-made **CEE / MECEE-BL pattern** for medical entrance mock tests in Nepal:
+**200 questions** in Zoology (40), Botany (40), Chemistry (50), Physics (50) and MAT (20), four options
+each, **+1 for a right answer and −0.25 for a wrong one**, with roll number and question set bubbles.
+Coaching institutes, colleges and schools can print the sheets, scan a whole batch through the
+feeder and publish a ranked merit list the same day, offline.
+
+<p align="center">
+  <img src="docs/images/cee-answer-sheet.png" alt="CEE / MECEE-BL pattern OMR answer sheet for Nepal medical entrance mock tests: 200 questions in Zoology, Botany, Chemistry, Physics and MAT sections, with roll number and question set bubbles" width="560">
+</p>
+
+Other Nepali exam OMR patterns included:
+
+| Template | Questions | Marking |
+|---|---|---|
+| CEE / MECEE-BL (medical entrance) | 200: Zoology 40, Botany 40, Chemistry 50, Physics 50, MAT 20 | +1 / −0.25 |
+| KUUMAT | 100, in four parts of 25 | +1 / −0.25 |
+| TU CMAT | 100: Verbal, Quantitative, Logical reasoning, General awareness | +1, no negative marking |
+| IOE entrance mock | 100: Mathematics 30, Physics 30, Chemistry 25, English 15 | +1 / −0.1 |
+| Lok Sewa practice | 100 | +1 / −0.2 |
+
+These follow each exam's published question pattern and marking on OMR Checker's own sheet
+design. They are **not the official answer sheets** of the Medical Education Commission, KU, TU,
+IOE or the Public Service Commission. Check the marking for your year's exam, and change anything
+on the **Templates** screen.
+
+### Run a CEE mock test in 5 steps
+
+1. **Exams > New exam…**, and under *Start from* pick **Nepal · MECEE-BL / CEE pattern**. Name the
+   test (for example *CEE Mock Test 1*), add your institute's heading and logo, and **Create exam**.
+2. **Print sheet > Print…** (or **Save as PDF…** for the print shop). Tick sheet numbers in the
+   sheet's look if you want every copy numbered.
+3. **Answer key**: type the 200 answers for each question set (A, B, C, D).
+4. Put the filled sheets in the scanner's feeder and press **▶ Start scanning**.
+5. Fix anything on **Review**, then on **Results** save the **merit list (Excel)**, the
+   **scorecards (PDF)** or a CSV with the columns you choose.
+
 ## Contents
 
+- [For Nepal: CEE (MECEE-BL) mock tests](#for-nepal-cee-mecee-bl-mock-tests-and-more)
 - [Features](#features)
 - [Screenshots](#screenshots)
 - [Install](#install)
