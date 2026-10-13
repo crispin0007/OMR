@@ -162,6 +162,15 @@ class Store:
             self.db.execute("UPDATE exam SET sections = ? WHERE id = ?",
                             (json.dumps(sections_to_json(sections)), exam_id))
 
+    def set_topics(self, exam_id: int, topics: dict[int, str]):
+        """Give questions a topic each, for results by topic; questions left out have none."""
+        with self.db:
+            self.db.execute("UPDATE exam SET details = json_set(details, '$.topics', json(?)) WHERE id = ?",
+                            (json.dumps({str(q): t for q, t in sorted(topics.items())}), exam_id))
+
+    def topics(self, exam_id: int) -> dict[int, str]:
+        return {int(q): t for q, t in self.exam(exam_id).details.get("topics", {}).items()}
+
     def rename_exam(self, exam_id: int, name: str):
         name = name.strip()
         if not name:

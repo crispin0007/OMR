@@ -256,3 +256,43 @@ def key_from_csv(text: str, questions: list[int], options: str | list[str]) -> d
         key = keys.setdefault(set_code, [DROPPED] * len(questions))
         key[place[q]] = answer
     return keys
+
+
+def parse_topics(text: str, questions: list[int]) -> dict[int, str]:
+    """The topic of each question, from lines like "1-10: Kinematics" or "11: Work and energy".
+
+    A tab works in place of the colon, for two columns pasted from Excel. Questions left out have no topic.
+    Raises ValueError naming the line of anything that can't be used.
+    """
+    topics: dict[int, str] = {}
+    for n, line in enumerate(text.splitlines(), 1):
+        if not line.strip():
+            continue
+        where, sep, topic = line.replace("\t", ":", 1).partition(":")
+        first, _, last = where.replace("to", "-").partition("-")
+        try:
+            first, last = int(first), int(last or first)
+        except ValueError:
+            raise ValueError(f"line {n}: start with the questions, e.g. 1-10: Kinematics") from None
+        if not sep or not topic.strip():
+            raise ValueError(f"line {n}: give questions {first} to {last} a topic after a colon")
+        if first > last or first not in questions or last not in questions:
+            raise ValueError(f"line {n}: the sheet has questions {questions[0]} to {questions[-1]}")
+        for q in range(first, last + 1):
+            if q in topics:
+                raise ValueError(f"line {n}: question {q} already has the topic {topics[q]}")
+            topics[q] = topic.strip()
+    return topics
+
+
+def format_topics(topics: dict[int, str]) -> str:
+    """Topics as the text `parse_topics` reads, one line per run of questions with the same topic."""
+    lines, run = [], []
+    for q in sorted(topics):
+        if run and (q != run[-1] + 1 or topics[q] != topics[run[0]]):
+            lines.append(run)
+            run = []
+        run.append(q)
+    if run:
+        lines.append(run)
+    return "\n".join(f"{r[0]}-{r[-1]}: {topics[r[0]]}" if len(r) > 1 else f"{r[0]}: {topics[r[0]]}" for r in lines)

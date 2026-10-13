@@ -67,6 +67,7 @@ class CheckPage(QWidget):
         self.written: dict[str, float] = {}  # typed written marks by roll number
         self.keys: dict[str, list[str]] = {}
         self.sections: list[Section] = []
+        self.topics: dict[int, str] = {}  # question: topic
 
         self.template_label = QLabel("Open or create an exam on the Exams page", objectName="muted")
         self.open_button = QPushButton("Import scans…", objectName="primary")
@@ -112,6 +113,17 @@ class CheckPage(QWidget):
         sections_row.addWidget(self.sections_button)
         sections_row.addWidget(self.sections_label, 1)
         marks_layout.addLayout(sections_row)
+        marks_layout.addSpacing(12)
+        marks_layout.addWidget(QLabel("Topics show each student's share right per topic on their scorecard and in the "
+                                      "merit list's Topics sheet.", objectName="muted", wordWrap=True))
+        self.topics_button = QPushButton("Topics…")
+        self.topics_button.setToolTip("Give questions a topic each, e.g. 1-10: Kinematics")
+        self.topics_button.clicked.connect(self.edit_topics)
+        self.topics_label = QLabel(objectName="muted", wordWrap=True)
+        topics_row = QHBoxLayout()
+        topics_row.addWidget(self.topics_button)
+        topics_row.addWidget(self.topics_label, 1)
+        marks_layout.addLayout(topics_row)
         marks_layout.addStretch()
 
         self.filter_label = QLabel(objectName="muted")
@@ -182,7 +194,8 @@ class CheckPage(QWidget):
         return box
 
     def _enable(self):
-        for w in (self.open_button, self.key_edit, self.correct, self.wrong, self.blank, self.sections_button):
+        for w in (self.open_button, self.key_edit, self.correct, self.wrong, self.blank, self.sections_button,
+                  self.topics_button):
             w.setEnabled(self.exam is not None)
         self.save_button.setEnabled(bool(self.sheets))
         chosen = bool(self.selected())
@@ -204,6 +217,7 @@ class CheckPage(QWidget):
             self.students = self.store.students(exam_id)
             self.written = self.store.written(exam_id)
             self.sections = exam.sections
+            self.topics = self.store.topics(exam_id)
             self.template_label.setText(f"{exam.name}  ·  {t.name}, {len(self.questions)} questions")
             for box, v in ((self.correct, exam.correct), (self.wrong, exam.wrong), (self.blank, exam.blank)):
                 box.setValue(v)
@@ -249,6 +263,24 @@ class CheckPage(QWidget):
             return
         self.store.save_sections(self.exam.id, dialog.sections)
         self.sections = dialog.sections
+        self.update_key()
+
+    def edit_topics(self):
+        text = format_topics(self.topics)
+        while True:
+            text, ok = QInputDialog.getMultiLineText(
+                self, "Topics", "One line per topic: the questions, a colon and the topic, e.g.\n1-10: Kinematics\n"
+                "11-15: Work and energy\n(two columns pasted from Excel work too). Questions left out have no topic.",
+                text)
+            if not ok:
+                return
+            try:
+                topics = parse_topics(text, self.questions)
+                break
+            except ValueError as e:
+                QMessageBox.warning(self, "Can't use those topics", str(e))
+        self.store.set_topics(self.exam.id, topics)
+        self.topics = topics
         self.update_key()
 
     def review_items(self) -> list[tuple[int, str, str]]:
@@ -340,6 +372,9 @@ class CheckPage(QWidget):
         return out
 
     def update_key(self):
+        names = list(dict.fromkeys(self.topics[q] for q in sorted(self.topics)))
+        self.topics_label.setText(f"{len(names)} topics over {len(self.topics)} questions: {', '.join(names)}"
+                                  if names else "No topics")
         self.sections_label.setText(", ".join(f"{s.name}: questions {s.first} to {s.last}, {s.correct:g} right, "
                                               f"{s.wrong:g} wrong" for s in self.sections) or "No sections")
         if self.exam is None:
