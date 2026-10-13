@@ -11,6 +11,7 @@ from PySide6.QtCore import QRectF, QSettings, Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from omr_app import designer, scanner, theme  # noqa: E402
+from omr_app.columns import ColumnsDialog  # noqa: E402
 from omr_app.scan import FOLDER  # noqa: E402
 from omr_app.window import TEMPLATES, MainWindow  # noqa: E402
 from omr_core.reader import SCALE, read_page  # noqa: E402
@@ -1061,9 +1062,11 @@ def test_numbered_sheets_print_and_their_numbers_show_where_sheets_are_listed(ap
     assert results.horizontalHeaderItem(results.columnCount() - 1).text() == "Sheet no."
     assert {results.item(r, results.columnCount() - 1).text() for r in range(4)} == {"W-0007", "W-0008", "W-0010"}
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "results.csv"), ""))
+    monkeypatch.setattr(ColumnsDialog, "exec", lambda self: 1)  # every column, in the default order
     c.save_csv()
     rows = list(csv.reader(open(tmp_path / "results.csv", encoding="utf-8-sig")))
-    assert rows[0][-1] == "sheet_number" and rows[1][-1] == "W-0007"
+    at = rows[0].index("Sheet no.")
+    assert [r[at] for r in rows[1:]] == ["W-0007", "W-0008", "W-0008", "W-0010"]
     from openpyxl import load_workbook
     from PySide6.QtWidgets import QMessageBox
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)  # blank roll numbers to check
@@ -1071,6 +1074,46 @@ def test_numbered_sheets_print_and_their_numbers_show_where_sheets_are_listed(ap
     w.results.excel.click()
     merit = list(load_workbook(tmp_path / "merit.xlsx")["Merit list"].values)
     assert merit[1][-1] == "Sheet no." and {r[-1] for r in merit[2:]} == {"W-0007", "W-0008", "W-0010"}
+
+
+def test_csv_columns_are_picked_ordered_and_remembered_per_exam(app, tmp_path, monkeypatch):
+    import csv
+
+    from PySide6.QtWidgets import QFileDialog
+
+    from omr_app.columns import arrange
+
+    assert arrange(["a", "b", "c"], [["c", False], ["gone", True], ["a", True], ["c", True]]) == [
+        ("c", True), ("a", True), ("b", True)]
+    w = window(tmp_path)
+    c = w.check
+    page = np.full((900, 640), 255, np.uint8)
+    path = tmp_path / "blank.png"
+    cv2.imwrite(str(path), page)
+    c.read_files([str(path)])
+    drain(w.scan)
+    seen = []
+
+    def choose(self):
+        seen.append(self.choice())
+        names = [n for n, _ in self.choice()]
+        if len(seen) == 1:  # File first, then Roll number; Review unticked
+            self.fill([("File", True), ("Roll number", True)] + [(n, n != "Review") for n in names
+                                                                  if n not in ("File", "Roll number")])
+            self.tick_all(False)
+            assert not self.save.isEnabled()  # nothing to save
+            self.fill([("File", True), ("Roll number", True), ("Review", False)])
+        return 1
+
+    monkeypatch.setattr(ColumnsDialog, "exec", choose)
+    out = tmp_path / "picked.csv"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), ""))
+    w.results.csv.click()
+    rows = list(csv.reader(open(out, encoding="utf-8-sig")))
+    assert rows[0] == ["File", "Roll number"] and rows[1][0] == str(path)
+    c.save_csv()  # the same exam starts from the last choice
+    assert seen[1][:3] == [("File", True), ("Roll number", True), ("Review", False)]
+    assert ("Rank", True) in seen[1]  # columns left out of the last choice come back ticked at the end
 
 
 def test_imported_sheets_show_live_with_their_marks_and_can_pause_and_stop(app, tmp_path, monkeypatch):

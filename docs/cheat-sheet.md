@@ -10,7 +10,7 @@
 | 2. Print the sheets | Exam > Print sheet | **Check a printed copy…** on one, then **Print…** or **Save as PDF…** |
 | 3. Answer key | Exam > Answer key | Type the letters: A C B D… |
 | 4. Scan | Exam > Scan | Sheets in the feeder → **▶ Start scanning** |
-| 5. Results | Exam > Review, then Results | Fix each item → **Merit list (Excel)…** / **Scorecards (PDF)…** |
+| 5. Results | Exam > Review, then Results | Fix each item → **Merit list (Excel)…**, **Scorecards (PDF)…** or **Results (CSV)…** |
 
 ## Keys
 

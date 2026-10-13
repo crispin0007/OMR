@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QFileDialog, QGridLayout, QHBoxLayout, QLabel, QL
                                QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QToolTip, QVBoxLayout,
                                QWidget)
 
-from omr_core.export import Graded, grade, write_excel, write_scorecards
+from omr_core.export import Graded, write_excel, write_scorecards
 
 from .theme import tokens
 
@@ -276,10 +276,13 @@ class ResultsPage(QWidget):
         self.excel.clicked.connect(lambda: self.export("Excel", "xlsx", write_excel))
         self.pdf = QPushButton("Scorecards (PDF)…")
         self.pdf.clicked.connect(lambda: self.export("PDF", "pdf", write_scorecards))
+        self.csv = QPushButton("Results (CSV)…", toolTip="Pick the columns and their order, then save a CSV for Excel")
+        self.csv.clicked.connect(check.save_csv)
         top = QHBoxLayout()
         top.addStretch()
         top.addWidget(self.excel)
         top.addWidget(self.pdf)
+        top.addWidget(self.csv)
         layout = QVBoxLayout(self)
         layout.addLayout(top)
         layout.addWidget(self.note)
@@ -289,12 +292,7 @@ class ResultsPage(QWidget):
 
     def refresh(self):
         c = self.check
-        try:
-            self.graded = grade(c.exam.template, c.sheets, c.key_edit.toPlainText(), c.correct.value(),
-                                c.wrong.value(), c.blank.value(), c.students, c.sections,
-                                written=c.written if c.exam.written_out_of else None, topics=c.topics) if c.exam else []
-        except ValueError:
-            self.graded = []  # the key doesn't fit yet; the Answer key tab says why
+        self.graded = c.graded()
         self.note.setText("Ranked by score; equal scores share a rank. Double-click a row to open the sheet."
                           if self.graded else "Type the answer key on the Answer key tab to see results.")
         missing = sum(g.written is None for g in self.graded) if c.exam and c.exam.written_out_of else 0
@@ -303,6 +301,7 @@ class ResultsPage(QWidget):
                               "Written marks tab.")
         self.excel.setEnabled(bool(self.graded))
         self.pdf.setEnabled(bool(self.graded))
+        self.csv.setEnabled(bool(c.sheets))
         self.table.setSortingEnabled(False)
         names = [s.name for s in c.sections]
         split = ["Sheet", "Written"] if c.exam and c.exam.written_out_of else []

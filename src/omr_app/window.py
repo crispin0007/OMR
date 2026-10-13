@@ -1,6 +1,5 @@
 """Main window: a sidebar of pages; an exam opens into its own page with tabs, saved as it is read."""
 
-import csv
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,7 +12,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFile
                                QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
-from omr_core.export import single_questions
+from omr_core.export import Graded, csv_columns, grade, single_questions, write_csv
 from omr_core.grading import Section, format_topics, full_marks, marks_for, parse_key, parse_topics, score
 from omr_core.reader import read_or_reason
 from omr_core.sources import read_pages
@@ -22,6 +21,7 @@ from omr_core.students import Student
 
 from . import theme
 from .answer_key import KeyTab
+from .columns import pick_columns
 from .dashboard import DashboardPage, ResultsPage
 from .designer import DesignerPage
 from .exam_page import ExamPage, ExamSettings, PrintSheet, StudentsTab, WrittenTab
@@ -76,6 +76,7 @@ class CheckPage(QWidget):
         self.open_button.setToolTip("Read PDFs or images of filled sheets")
         self.open_button.clicked.connect(self.open_sheets)
         self.save_button = QPushButton("Save CSV…")
+        self.save_button.setToolTip("Pick the columns and their order, then save a CSV for Excel")
         self.save_button.clicked.connect(self.save_csv)
         top = QHBoxLayout()
         top.addWidget(self.template_label)
@@ -544,23 +545,28 @@ class CheckPage(QWidget):
             return
         self._after_removing(rows, f"Moved {len(rows)} page{'s' if len(rows) != 1 else ''} to “{name}”")
 
+    def graded(self) -> list[Graded]:
+        """Every page that can be scored, best first; none while the key doesn't fit the sheet."""
+        if not self.exam:
+            return []
+        try:
+            return grade(self.exam.template, self.sheets, self.key_edit.toPlainText(), self.correct.value(),
+                         self.wrong.value(), self.blank.value(), self.students, self.sections,
+                         written=self.written if self.exam.written_out_of else None, topics=self.topics)
+        except ValueError:
+            return []  # the Answer key tab says why
+
     def save_csv(self):
+        available = csv_columns(self.exam.template, [s.name for s in self.sections], bool(self.exam.written_out_of))
+        columns = pick_columns(self, self.exam.id, available)
+        if columns is None:
+            return
         path, _ = QFileDialog.getSaveFileName(self, "Save results", "results.csv", "CSV (*.csv)")
         if not path:
             return
         try:
-            with open(path, "w", newline="", encoding="utf-8-sig") as f:  # the BOM lets Excel open it as UTF-8
-                w = csv.writer(f)
-                numbered = self.exam.template.serial is not None
-                w.writerow(["file", "page", "roll_number", "set_code", "score", *(f"Q{q}" for q in self.questions),
-                            "review", *(["sheet_number"] if numbered else [])])
-                for s in self.sheets:
-                    r = s.result
-                    w.writerow([s.file, s.page, r.roll_number if r else "", r.set_code if r else "",
-                                self._score_text(s), *(r.answers[q] if r else "" for q in self.questions),
-                                s.problem or "; ".join(f"{a}: {b}" for a, b in (r.flags if r else [])),
-                                *([r.serial if r else ""] if numbered else [])])
-        except OSError as e:
+            write_csv(path, self.exam.template, self.sheets, self.graded(), self.students, columns)
+        except OSError as e:  # e.g. the file is open in Excel
             QMessageBox.warning(self, "Couldn't save", str(e))
             return
         self.window().statusBar().showMessage(f"Saved {len(self.sheets)} rows to {path}", 5000)

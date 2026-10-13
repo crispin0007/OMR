@@ -128,7 +128,10 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    disagree goes to Review.
 7. **Settings** picks Light, Dark or System theme, an accent colour, text size
    and density. The button at the bottom of the sidebar switches light and dark.
-9. **Save CSV…** writes every page's score and answers for Excel.
+9. **Save CSV…** on Scanned sheets, or **Results (CSV)…** on Results, saves a CSV for Excel. A list of
+   every column (rank, roll number, name, class, set, score, each section, right, wrong, blank,
+   percentile, sheet number, file, page, the answers and what to review) lets you tick the ones
+   you want and drag them into order; the choice is remembered per exam.
 
 Everything is saved as you work: each page as soon as it is read, and the key
 and marks as you type. Exams live in `%LOCALAPPDATA%\OMR\omr.db`; the app

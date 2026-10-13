@@ -34,10 +34,25 @@ score and rank, every answer next to the key and, with topics, how they did on e
 
 ![A student's scorecard](images/scorecard.png)
 
-## CSV of every answer
+## CSV with the columns you choose
 
-On **Scanned sheets**, **Save CSV…** writes every page's score and every answer to a CSV file that
-opens in Excel.
+A **CSV** file opens in Excel or Google Sheets. Press **Results (CSV)…** on Results (or **Save CSV…**
+on Scanned sheets). A window lists every column the file can have:
+
+![Choosing and ordering the columns of the results CSV](images/csv-columns.png)
+
+- **Tick** the columns you want and untick the rest. **Select all** and **Select none** do them all
+  at once.
+- **Put them in order** by dragging a column up or down the list, or with **Move up** and
+  **Move down**. The top of the list is the first column in the file.
+- **Answers** adds one column per question (Q1, Q2, …) with what the student filled.
+- **Reset to default** brings back every column in the usual order.
+
+Press **Save CSV…** and choose where to save. Rows go best score first, then any pages that couldn't
+be scored.
+
+The app remembers your choice for each exam, so next time the same columns are already ticked.
+The Excel merit list always has its full set of columns.
 
 ## The Dashboard
 

@@ -133,3 +133,25 @@ def test_topics_per_student_on_the_scorecard_and_in_excel(tmp_path):
     pdf = pypdfium2.PdfDocument(tmp_path / "cards.pdf")
     assert "Kinematics 1/2 (50%)" in pdf[1].get_textpage().get_text_range()  # cards go by roll number: 222 second
     assert "Q100" in pdf[1].get_textpage().get_text_range()  # every answer still fits on the page
+
+
+def test_csv_has_the_chosen_columns_in_order(tmp_path):
+    import csv
+
+    from omr_core.export import ANSWERS, csv_columns, write_csv
+    from omr_core.students import Student
+
+    t, pages, key = exam_with_pages(tmp_path)
+    assert csv_columns(t, ["Physics", "Score"], written=False)[6:10] == ["Physics", "Score (section)", "Right", "Wrong"]
+    assert "Written" in csv_columns(t, [], written=True) and "Sheet no." not in csv_columns(t, [], written=False)
+    graded = grade(t, pages, key, 4, -1, 0, sections=[Section("Score", 1, 4, 1, 0)])
+    students = {"111": Student("111", "Asha", "10A")}
+    write_csv(tmp_path / "r.csv", t, pages, graded, students,
+              ["Name", "Roll number", "Wrong", "Score (section)", ANSWERS, "Review"])
+    rows = list(csv.reader(open(tmp_path / "r.csv", encoding="utf-8-sig")))
+    assert rows[0][:4] == ["Name", "Roll number", "Wrong", "Score (section)"] and rows[0][4:6] == ["Q1", "Q2"]
+    assert len(rows[0]) == 4 + 100 + 1
+    assert rows[1][:4] == ["Asha", "111", "0", "3"]  # best first (Q3 is a bonus); 0 wrong is written, not left empty
+    assert [r[1] for r in rows[1:]] == ["111", "333", "222", "444", ""]  # the unreadable page comes last
+    assert rows[-1][0] == "" and rows[-1][-1].startswith("page: unreadable") and rows[-1][4] == ""
+    assert "Q3: unclear mark" in rows[3][-1] and "not on the student list" in rows[3][-1]

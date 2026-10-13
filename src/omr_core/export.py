@@ -4,6 +4,7 @@ The Excel file also has an item analysis: how each question went across the clas
 topics, each student's share right per topic goes on their scorecard and on a Topics sheet.
 """
 
+import csv
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -124,6 +125,54 @@ def item_analysis(t: Template, graded: list[Graded]) -> list[list]:
 def has_written(graded: list[Graded]) -> bool:
     """Whether any student has written marks, so results show the sheet and written parts apart."""
     return any(g.written is not None for g in graded)
+
+
+ANSWERS = "Answers"  # one entry in the column list, written as a column per question
+FIXED = ["Rank", "Roll number", "Name", "Class", "Set", "Score", "Sheet score", "Written", "Right", "Wrong", "Blank",
+         "Percentile", "Sheet no.", "File", "Page", ANSWERS, "Review"]
+
+
+def section_column(name: str) -> str:
+    """A section's column name, kept apart from the fixed columns a section could be named after."""
+    return f"{name} (section)" if name in FIXED else name
+
+
+def csv_columns(t: Template, sections: list[str], written: bool) -> list[str]:
+    """Every column a results CSV can have for this exam, in the default order."""
+    skip = ({"Sheet score", "Written"} if not written else set()) | ({"Sheet no."} if t.serial is None else set())
+    cols = [c for c in FIXED if c not in skip]
+    at = cols.index("Right")
+    return cols[:at] + [section_column(n) for n in sections] + cols[at:]
+
+
+def write_csv(path: str | Path, t: Template, pages: list[StoredPage], graded: list[Graded],
+              students: dict[str, Student], columns: list[str]):
+    """The chosen columns in the chosen order: scored pages best first, then pages that couldn't be scored."""
+    qs = questions(t)
+    reasons: dict[int, list[str]] = {}
+    for i, item, why in to_review(pages, students):
+        reasons.setdefault(i, []).append(f"{item}: {why}")
+    by_page = {g.page.id: g for g in graded}
+    index = {p.id: i for i, p in enumerate(pages)}
+    order = [g.page for g in graded] + [p for p in pages if p.id not in by_page]
+    num = lambda v: "" if v is None else f"{v:g}"
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:  # the BOM lets Excel open it as UTF-8
+        w = csv.writer(f)
+        w.writerow([h for c in columns for h in ([f"Q{q}" for q in qs] if c == ANSWERS else [c])])
+        for p in order:
+            r, g = p.result, by_page.get(p.id)
+            student = students.get(r.roll_number) if r else None
+            values = {"Rank": g and g.rank, "Roll number": r and r.roll_number, "Name": student and student.name,
+                      "Class": student and student.class_name, "Set": r and r.set_code,
+                      "Score": num(g and g.score), "Sheet score": num(g and g.omr), "Written": num(g and g.written),
+                      "Right": g and g.right, "Wrong": g and g.wrong, "Blank": g and g.blank,
+                      "Percentile": num(g and round(g.percentile, 1)), "Sheet no.": r and r.serial,
+                      "File": p.file, "Page": p.page, "Review": "; ".join(reasons.get(index[p.id], [])),
+                      **{section_column(n): num(v) for n, v in (g.sections.items() if g else ())}}
+            row = []
+            for c in columns:
+                row += [r.answers[q] if r else "" for q in qs] if c == ANSWERS else ["" if values.get(c) is None else values[c]]
+            w.writerow(row)
 
 
 def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Graded]):
