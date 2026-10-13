@@ -121,6 +121,8 @@ class Store:
         self.db.close()
 
     def create_exam(self, name: str, template_json: str, details: dict | None = None) -> int:
+        """A new exam. One in a test series (details["series"]) starts with the student list of the latest exam
+        of that series that has one, so the list is imported once for the whole series."""
         name = name.strip()
         if not name:
             raise ValueError("the exam needs a name")
@@ -134,7 +136,29 @@ class Store:
                                   "VALUES (?, ?, ?, ?, ?)",
                                   (name, template_json, datetime.now().isoformat(timespec="seconds"),
                                    json.dumps(sections_to_json(sections)), json.dumps(details or {})))
-        return cur.lastrowid
+        exam_id = cur.lastrowid
+        earlier = [e for e in self.series_exams((details or {}).get("series", "")) if e != exam_id]
+        listed = next((s for e in reversed(earlier) if (s := self.students(e))), None)
+        if listed:
+            self.set_students(exam_id, list(listed.values()))
+        return exam_id
+
+    def series_names(self) -> list[str]:
+        """Every test series an exam belongs to, by name."""
+        return sorted({n for (n,) in self.db.execute("SELECT json_extract(details, '$.series') FROM exam") if n})
+
+    def series_exams(self, series: str) -> list[int]:
+        """The exams of a test series, oldest first; none for the empty name."""
+        if not series.strip():
+            return []
+        return [i for (i,) in self.db.execute("SELECT id FROM exam WHERE json_extract(details, '$.series') = ? "
+                                              "ORDER BY created, id", (series.strip(),))]
+
+    def set_series(self, exam_id: int, series: str):
+        """Put an exam in a test series by name, or take it out with ""."""
+        with self.db:
+            self.db.execute("UPDATE exam SET details = json_set(details, '$.series', ?) WHERE id = ?",
+                            (series.strip(), exam_id))
 
     def exams(self) -> list[tuple[int, str, str, int, int]]:
         """(id, name, created, pages, students) for every exam, newest first."""

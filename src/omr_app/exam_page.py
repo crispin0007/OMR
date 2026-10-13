@@ -11,8 +11,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QDate, QStandardPaths, Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
-                               QScrollArea, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox,
+                               QPushButton, QScrollArea, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from omr_core.reader import read_or_reason
 from omr_core.sheet import PAPERS, render, write_pdf
@@ -61,7 +61,7 @@ class ExamPage(QWidget):
 
 
 def when(exam) -> list[str]:
-    """The exam's class, date, time and duration, as far as they were given."""
+    """The exam's class, date, time, duration and test series, as far as they were given."""
     d = exam.details
     out = [d["class"]] if d.get("class") else []
     if d.get("date"):
@@ -69,6 +69,8 @@ def when(exam) -> list[str]:
         out.append(f"{day} at {d['time']}" if d.get("time") else day)
     if d.get("minutes"):
         out.append(f"{d['minutes']} minutes")
+    if d.get("series"):
+        out.append(f"test series {d['series']}")
     return out
 
 
@@ -171,19 +173,38 @@ class StudentsTab(QWidget):
         if not students:
             QMessageBox.warning(self, "Can't import students", "No usable rows.\n\n" + "\n".join(problems[:30]))
             return
-        replacing = self.check.store.students(exam.id)
-        if replacing and QMessageBox.question(
-                self, "Replace student list", f"“{exam.name}” already has {len(replacing)} students. Replace them "
-                f"with the {len(students)} in this file?", QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+        if not self._replace(students, "in this file"):
             return
-        self.check.store.set_students(exam.id, students)
-        self.changed.emit()
-        self.refresh()
         text = f"Imported {len(students)} student{'s' if len(students) != 1 else ''} into “{exam.name}”."
         if problems:
             more = f"\n…and {len(problems) - 30} more" if len(problems) > 30 else ""
             text += f"\n\nSkipped {len(problems)} rows:\n" + "\n".join(problems[:30]) + more
         QMessageBox.information(self, "Students imported", text)
+
+    def copy_students(self):
+        store, exam = self.check.store, self.check.exam
+        others = [(i, name, n) for i, name, _, _, n in store.exams() if n and i != exam.id]
+        if not others:
+            QMessageBox.information(self, "No other lists", "No other exam has a student list yet. Import one here.")
+            return
+        labels = [f"{name} ({n} students)" for _, name, n in others]
+        picked, ok = QInputDialog.getItem(self, "Use the list of another exam", "Exam", labels, 0, False)
+        if ok:
+            other = others[labels.index(picked)]
+            self._replace(list(store.students(other[0]).values()), f"of “{other[1]}”")
+
+    def _replace(self, students: list, source: str) -> bool:
+        """Give the exam these students, asking first when it has some; False when the person says no."""
+        exam = self.check.exam
+        replacing = self.check.store.students(exam.id)
+        if replacing and QMessageBox.question(
+                self, "Replace student list", f"“{exam.name}” already has {len(replacing)} students. Replace them "
+                f"with the {len(students)} {source}?", QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            return False
+        self.check.store.set_students(exam.id, students)
+        self.changed.emit()
+        self.refresh()
+        return True
 
 
 class WrittenTab(QWidget):
@@ -395,6 +416,16 @@ class ExamSettings(QWidget):
         row.addWidget(QLabel("Exam name"))
         row.addWidget(self.name, 1)
         row.addWidget(rename)
+        self.series = QComboBox(editable=True)
+        self.series.setToolTip("Exams in one test series share the student list and get a combined rank (Exams, "
+                               "Test series…)")
+        self.series.lineEdit().setPlaceholderText("None")
+        put = QPushButton("Save series")
+        put.clicked.connect(self.set_series)
+        series_row = QHBoxLayout()
+        series_row.addWidget(QLabel("Test series"))
+        series_row.addWidget(self.series, 1)
+        series_row.addWidget(put)
         self.about = QLabel(objectName="muted", wordWrap=True)
         change = QPushButton("Change sheet…")
         change.clicked.connect(self.change_sheet)
@@ -402,6 +433,7 @@ class ExamSettings(QWidget):
         delete.clicked.connect(self.delete)
         layout = QVBoxLayout(self)
         layout.addLayout(row)
+        layout.addLayout(series_row)
         layout.addWidget(self.about)
         layout.addSpacing(24)
         layout.addWidget(QLabel("If students filled a different sheet from this exam's, pick that sheet's template; "
@@ -415,6 +447,9 @@ class ExamSettings(QWidget):
     def refresh(self):
         exam = self.check.exam
         self.name.setText(exam.name if exam else "")
+        self.series.clear()
+        self.series.addItems(["", *self.check.store.series_names()])
+        self.series.setCurrentText(exam.details.get("series", "") if exam else "")
         self.about.setText("\n".join([*when(exam), f"Sheet: {exam.template.name}, {len(self.check.questions)} "
                                        f"questions.  Created {exam.created.replace('T', ' ')}."]) if exam else "")
 
@@ -424,6 +459,10 @@ class ExamSettings(QWidget):
         except ValueError as e:
             QMessageBox.warning(self, "Can't rename", str(e))
             return
+        self.changed.emit()
+
+    def set_series(self):
+        self.check.store.set_series(self.check.exam.id, self.series.currentText())
         self.changed.emit()
 
     def change_sheet(self):

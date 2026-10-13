@@ -158,12 +158,17 @@ class NewExamWizard(QDialog):
         self.date = QDateEdit(QDate.currentDate(), calendarPopup=True)
         self.time = QTimeEdit(QTime(10, 0))
         self.minutes = QSpinBox(minimum=0, maximum=600, value=90, suffix=" minutes", specialValueText="Not set")
+        self.series = QComboBox(editable=True)
+        self.series.addItems(["", *self.store.series_names()])
+        self.series.lineEdit().setPlaceholderText("None, or e.g. JEE test series 2027")
+        self.series.setToolTip("Exams in one test series share the student list and get a combined rank")
         form = QFormLayout()
         form.addRow("Exam name", self.name)
         form.addRow("Class", self.class_name)
         form.addRow("Date", self.date)
         form.addRow("Starts at", self.time)
         form.addRow("Duration", self.minutes)
+        form.addRow("Test series", self.series)
         layout.addLayout(form)
         layout.addStretch()
 
@@ -499,6 +504,8 @@ class NewExamWizard(QDialog):
         if self.minutes.value():
             when += f", {self.minutes.value()} minutes"
         lines.append(" · ".join(x for x in (self.class_name.text().strip(), when) if x))
+        if self.series.currentText().strip():
+            lines.append(f"Test series: {self.series.currentText().strip()}")
         if self.own_sheet.isChecked():
             self.made = None
             self.preview.clear()
@@ -582,7 +589,8 @@ class NewExamWizard(QDialog):
 
     def create(self):
         details = {"class": self.class_name.text().strip(), "date": self.date.date().toString(Qt.ISODate),
-                   "time": self.time.time().toString("HH:mm"), "minutes": self.minutes.value()}
+                   "time": self.time.time().toString("HH:mm"), "minutes": self.minutes.value(),
+                   "series": self.series.currentText().strip()}
         try:
             text = (Path(self.template_path).read_text(encoding="utf-8") if self.own_sheet.isChecked()
                     else json.dumps(self.made))

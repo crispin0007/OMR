@@ -15,6 +15,7 @@ from omr_core.store import Store
 
 from .help import steps_html
 from .new_exam import TEMPLATES, USER_TEMPLATES, NewExamWizard  # noqa: F401  (TEMPLATES is used by window.py)
+from .series import SeriesDialog
 
 class ExamsPage(QWidget):
     """Every exam; click one to open its page."""
@@ -32,9 +33,13 @@ class ExamsPage(QWidget):
         backup.clicked.connect(self.backup)
         restore = QPushButton("Restore…", toolTip="Add the exams in a backup file; exams already here stay as they are")
         restore.clicked.connect(self.restore)
+        self.series = QPushButton("Test series…", toolTip="Rank students on their combined score over the exams "
+                                  "of a test series")
+        self.series.clicked.connect(lambda: SeriesDialog(self, self.store).exec())
         top = QHBoxLayout()
         top.addWidget(QLabel("Exams", objectName="title"))
         top.addStretch()
+        top.addWidget(self.series)
         top.addWidget(backup)
         top.addWidget(restore)
         top.addWidget(new)
@@ -67,6 +72,7 @@ class ExamsPage(QWidget):
                           "sheet. Everything is saved as you work."
                           if exams else "Create an exam to start: New exam walks you through it and makes its sheet.")
         self.table.setVisible(bool(exams))
+        self.series.setVisible(bool(self.store.series_names()))
         self.start.setVisible(not exams)  # first run: what to do, in order
         self.table.setRowCount(len(exams))
         for row, (id_, name, created, pages, students) in enumerate(exams):
