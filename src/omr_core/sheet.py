@@ -62,6 +62,12 @@ ROOMY_OPTION = 9.0  # option pitch the column count is chosen for (4 options giv
 MIN_OPTION = BUBBLE[0] + 1.5  # narrowest option pitch that still reads well
 PITCHES = [5.0, 4.6, 4.2, 3.8, 3.6]  # row pitch from roomy to compact; the roomiest that fits is used
 
+# Numeric answers: a box per question along the foot of the page, a column of digits 0 to 9 per digit place.
+MAX_NUMBER_DIGITS = 6
+NUMBER_PITCH = 5.3  # between digit columns: the bubble's width and the reader's snapping reach
+NUMBER_ROW0 = BAND + 9.5  # first digit row's centre below the top of the box, under the boxes to write in
+NUMBER_BOX = NUMBER_ROW0 + 9 * ROLL_PITCH + 2.5  # height of the box
+
 DEFAULT_HEADING = "Answer Sheet (OMR)"
 DEFAULT_COLOUR = "#e4007c"
 DEFAULT_INSTRUCTIONS = [
@@ -86,6 +92,7 @@ class SheetSection:
     correct: float = 1.0
     wrong: float = 0.0
     partial: bool = False  # more than one bubble may be filled, with part marks for part of a multi-correct answer
+    digits: int = 0  # numeric: each question is answered with a whole number of up to this many digits
 
 
 @dataclass
@@ -125,14 +132,22 @@ def layout(spec: SheetSpec) -> dict:
         raise ValueError("the sections' questions don't add up to the sheet's questions")
     if spec.questions < 1:
         raise ValueError("the sheet needs at least one question")
+    if any(not 0 <= s.digits <= MAX_NUMBER_DIGITS for s in sections):
+        raise ValueError(f"numeric answers can have 1 to {MAX_NUMBER_DIGITS} digits")
     style = {"colour": spec.colour.lower(), "heading": spec.heading.strip(),
              "instructions": [i.strip() for i in spec.instructions if i.strip()]}
     if spec.logo:
         style["logo_jpeg"] = base64.b64encode(spec.logo).decode("ascii")
     _check_style(style)
 
+    starts = [1 + sum(s.questions for s in sections[:i]) for i in range(len(sections))]
     grids = _id_grids(spec.roll_digits, spec.sets)
-    grids += _question_grids("TF" if spec.true_false else "ABCDEFGH"[:spec.options], sections, bool(spec.sections))
+    numeric, foot = _numeric_grids([(s, f) for s, f in zip(sections, starts) if s.digits])
+    choice = [(s, f) for s, f in zip(sections, starts) if not s.digits]
+    if choice:
+        grids += _question_grids("TF" if spec.true_false else "ABCDEFGH"[:spec.options], *map(list, zip(*choice)),
+                                 bool(spec.sections), foot - GAP)
+    grids += numeric
     d = {"name": spec.name.strip(), "version": 1, "page_mm": list(PAGE),
          "markers": {"shape": "ring", "size_mm": MARK, "centres_mm": MARKS},
          "orientation_mm": ORIENTATION, "bubble_mm": list(BUBBLE), "grids": grids, "print": style}
@@ -236,8 +251,9 @@ def _header(t) -> dict:
     return h
 
 
-def _question_grids(letters: str, sections: list[SheetSection], headed: bool) -> list[dict]:
-    """Question grids in bordered columns.
+def _question_grids(letters: str, sections: list[SheetSection], starts: list[int], headed: bool,
+                    bottom: float) -> list[dict]:
+    """Question grids in bordered columns between the header and `bottom`; `starts` is each section's first question.
 
     Each section starts a new column when that fits; otherwise sections follow one another down the columns,
     each under its own heading band.
@@ -246,7 +262,7 @@ def _question_grids(letters: str, sections: list[SheetSection], headed: bool) ->
     width = RIGHT - LEFT
     roomy = int((width + COLUMN_GAP) // (NUMBER_W + options * ROOMY_OPTION + COLUMN_GAP))
     head = BAND if headed else 0
-    height = BOTTOM - COLUMNS_TOP - 0.5
+    height = bottom - COLUMNS_TOP - 0.5
     for pitch in PITCHES:
         fit = int((height - head) // pitch)
         cols = [-(-s.questions // fit) for s in sections]
@@ -256,7 +272,7 @@ def _question_grids(letters: str, sections: list[SheetSection], headed: bool) ->
     column = (width - (n - 1) * COLUMN_GAP) / n
     option = (column - NUMBER_W) / options
     if option < MIN_OPTION:
-        return _flowed_grids(letters, sections, head)
+        return _flowed_grids(letters, sections, starts, head, height)
     # Spare columns go to the longest sections, so short sheets spread across the page.
     while sum(cols) < roomy:
         i = max(range(len(sections)), key=lambda k: -(-sections[k].questions // cols[k]))
@@ -265,8 +281,8 @@ def _question_grids(letters: str, sections: list[SheetSection], headed: bool) ->
         cols[i] += 1
     used = sum(cols)
     x = LEFT + (width - used * column - (used - 1) * COLUMN_GAP) / 2
-    grids, first = [], 1
-    for s, c in zip(sections, cols):
+    grids = []
+    for s, first, c in zip(sections, starts, cols):
         left = s.questions
         for k in range(c):
             rows = -(-left // (c - k))
@@ -277,14 +293,14 @@ def _question_grids(letters: str, sections: list[SheetSection], headed: bool) ->
     return grids
 
 
-def _flowed_grids(letters: str, sections: list[SheetSection], head: float) -> list[dict]:
+def _flowed_grids(letters: str, sections: list[SheetSection], starts: list[int], head: float,
+                  height: float) -> list[dict]:
     """Sections one after another down the columns, for sheets with more sections than columns.
 
     Uses the fewest columns and then the roomiest row pitch that fit. Raises ValueError when nothing fits.
     """
     options = len(letters)
     width = RIGHT - LEFT
-    height = BOTTOM - COLUMNS_TOP - 0.5
     roomy = int((width + COLUMN_GAP) // (NUMBER_W + options * ROOMY_OPTION + COLUMN_GAP))
     most = int((width + COLUMN_GAP) // (NUMBER_W + options * MIN_OPTION + COLUMN_GAP))
     for n in range(max(roomy, 1), most + 1):
@@ -294,20 +310,20 @@ def _flowed_grids(letters: str, sections: list[SheetSection], head: float) -> li
             placed = _flow(sections, n, height, head, pitch)
             if placed is None:
                 continue
-            grids, first = [], 1
-            for s, col, top, rows in placed:
-                grids.append(_grid(letters, s, first, LEFT + col * (column + COLUMN_GAP), COLUMNS_TOP + top + head,
-                                   option, pitch, rows))
-                first += rows
+            grids, first = [], list(starts)
+            for i, col, top, rows in placed:
+                grids.append(_grid(letters, sections[i], first[i], LEFT + col * (column + COLUMN_GAP),
+                                   COLUMNS_TOP + top + head, option, pitch, rows))
+                first[i] += rows
             return grids
     raise ValueError(f"{sum(s.questions for s in sections)} questions with {options} options don't fit on one A4 "
                      "page; use fewer questions or options")
 
 
 def _flow(sections: list[SheetSection], n: int, height: float, head: float, pitch: float):
-    """(section, column, top in mm, rows) for each piece of each section, or None when n columns are too few."""
+    """(section index, column, top in mm, rows) for each piece of each section, or None when n columns are too few."""
     placed, col, y = [], 0, 0.0
-    for s in sections:
+    for i, s in enumerate(sections):
         left = s.questions
         while left:
             room = int((height - y - head) // pitch)
@@ -317,7 +333,7 @@ def _flow(sections: list[SheetSection], n: int, height: float, head: float, pitc
                     return None
                 continue
             rows = min(left, room)
-            placed.append((s, col, y, rows))
+            placed.append((i, col, y, rows))
             y += head + rows * pitch
             left -= rows
     return placed
@@ -329,6 +345,31 @@ def _grid(letters: str, s: SheetSection, first: int, x: float, top: float, optio
     return {"kind": "questions", "first": first, "options": letters, "multi": s.partial,
             "origin_mm": [round(x + NUMBER_W + option / 2, 2), round(top + pitch / 2, 2)],
             "pitch_mm": [round(option, 3), pitch], "rows": rows, "cols": len(letters)}
+
+
+def _numeric_grids(pieces: list[tuple[SheetSection, int]]) -> tuple[list[dict], float]:
+    """A digit grid per numeric question, in boxes along the foot of the page, and the top of those boxes.
+
+    `pieces` is each numeric section with its first question.
+    """
+    placed, x, y = [], LEFT, 0.0
+    for s, first in pieces:
+        width = s.digits * NUMBER_PITCH + 3
+        for q in range(first, first + s.questions):
+            if x + width > RIGHT + 0.01:
+                x, y = LEFT, y + NUMBER_BOX + GAP
+            placed.append((q, s.digits, x, y))
+            x += width + GAP
+    if not placed:
+        return [], BOTTOM
+    top = BOTTOM - y - NUMBER_BOX
+    if top < COLUMNS_TOP:
+        raise ValueError(f"{len(placed)} numeric answer boxes don't fit on one A4 page; use fewer of them or fewer "
+                         "digits")
+    return [{"kind": "numeric", "first": q, "origin_mm": [round(x + 1.5 + NUMBER_PITCH / 2, 2),
+                                                           round(top + by + NUMBER_ROW0, 2)],
+             "pitch_mm": [NUMBER_PITCH, ROLL_PITCH], "rows": 10, "cols": digits}
+            for q, digits, x, by in placed], top
 
 
 def _instruction_lines(instructions: list[str], box) -> tuple[list[tuple[str, str]], float, float]:
@@ -519,7 +560,8 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4"):
     headings = {sec["first"]: sec["name"] for sec in template.get("sections", [])}
     head = BAND if headings else 0
     questions = [g for g in t.grids if g.kind == "questions"]
-    bottom = max(g.origin[1] - g.pitch[1] / 2 + g.rows * g.pitch[1] for g in questions) + 0.5  # every column ends here
+    # every column ends here
+    bottom = max((g.origin[1] - g.pitch[1] / 2 + g.rows * g.pitch[1] for g in questions), default=0) + 0.5
     for i, g in enumerate(questions):
         option, pitch = g.pitch
         x0 = g.origin[0] - option / 2 - NUMBER_W
@@ -541,6 +583,16 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4"):
             text(x0 + 1, cy + 1.2, str(g.first + r), 8.5 if pitch >= 4.2 else 7.5, BOLD)
             for col in range(g.cols):
                 pill(g.centre(r, col)[0], cy, g.options[col])
+    for g in (g for g in t.grids if g.kind == "numeric"):
+        x0, y0 = g.origin[0] - g.pitch[0] / 2 - 1.5, g.origin[1] - NUMBER_ROW0
+        x1 = x0 + g.cols * g.pitch[0] + 3
+        box(x0, y0, x1, y0 + NUMBER_BOX)
+        banded(x0, y0, x1, f"Q{g.first}", 7.5)
+        for col in range(g.cols):
+            cx = g.centre(0, col)[0]
+            box(cx - g.pitch[0] / 2 + 0.4, y0 + BAND + 1.5, cx + g.pitch[0] / 2 - 0.4, y0 + BAND + 6.5, width=0.2)
+            for r in range(10):
+                pill(cx, g.centre(r, col)[1], str(r))
     text(w / 2, h - 5, "Fill one bubble fully with a dark pen. Do not fold the sheet or mark the corners.", 7,
          colour=ink, align="centre")
     c.showPage()

@@ -239,9 +239,12 @@ show the matching names by roll number.
   and design a new sheet from blocks, both saving the same template format.
 - **FR-017**: System MUST import students from Excel and support users with
   admin, teacher and operator roles.
-- **FR-018**: Numerical answers and matrix match questions are [NEEDS
-  CLARIFICATION: in the plan's feature list for phase 1, but neither sample
-  sheet uses them; include in phase 1 or move to phase 2?]
+- **FR-018**: System MUST read and grade numerical answers: whole numbers
+  of up to 6 digits filled in digit columns, right when the number matches,
+  with a doubtful digit or a gap between digits flagged for review. Matrix
+  match questions are graded per row: as single-correct questions when
+  printed as list-matching options (as JEE Advanced now does), or as a
+  multi-correct section with partial marking, one question per row.
 - **FR-019**: Interface language is [NEEDS CLARIFICATION: English only, or
   also Nepali or Hindi for reports?]
 

@@ -69,8 +69,10 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
 1. On **Exams**, **New exam…** sets up the exam step by step. **Start from**
    fills it in from a ready-made layout (JEE Main, NEET or CEE style, or a
    50-question class test) to change as you like. The steps cover its name,
-   class, date, time and duration; its subjects or sections and the
-   question numbers each covers; options per question (2 to 8, or true or
+   class, date, time and duration; its subjects or sections, the question
+   numbers each covers and whether it is answered with options or with a
+   number (up to 6 digits, e.g. JEE numeric questions, which get a box of
+   digit bubbles each at the foot of the sheet); options per question (2 to 8, or true or
    false), roll number digits and question paper sets; marks for right,
    wrong (negative marking) and blank answers, per section, with partial
    marking for multi-correct questions; and the sheet's colour, heading,
@@ -99,22 +101,29 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    one. Pick the set at the top for a key per set. **Import CSV…** and
    **Export CSV…** use the columns `set,question,answer` (`set` may be left
    out), and **Paste as text** takes one letter per question (`ABDCA…`), or
-   one line per set (`A: ABDC…`). **Read from a filled sheet…** takes the key
+   one line per set (`A: ABDC…`). On a numeric question, type the number (or
+   click it); in pasted text a number's digits go together (`ABC42D`), and an
+   answer is right when it is the same number (042 is 42). **Read from a filled sheet…** takes the key
    from a master sheet filled with the right answers: its set code picks the
    set, and any unclear or doubled mark is left for you to click. Scores appear as you go. A key shorter than the sheet
    counts only those questions. **Marks and sections** sets marks for
    correct, wrong (type the marks taken off, e.g. 0.25) and blank answers; **Sections…** gives ranges
    of questions their own name and marks (e.g. Physics 1 to 30, 4 right, -1
-   wrong), and results then show a score per section.
+   wrong), and results then show a score per section. **Topics…** gives questions a topic
+   each (`1-10: Kinematics`, one line per topic); every scorecard then shows
+   the student's share right per topic, and the merit list gets a Topics
+   sheet with a row per student and one for everyone.
 5. **Review** lists everything the reader wasn't sure about, unreadable
    pages and repeated roll numbers. Each item shows that part of the sheet;
    click the right answer or press its key (Delete for blank, Space to keep
-   the reading). Scores update at once and every change is logged.
+   the reading). A numeric answer with a doubtful digit or a gap between
+   digits is typed in. Scores update at once and every change is logged.
    **Students** imports an Excel file with roll number, name and class
    columns; names then show everywhere, roll numbers not on the list go to
    Review, and rows that can't be used are listed, not imported.
    It also marks who is absent (on the list, no sheet read); **Show only
    absent** and **Save absent list…** give that list as a CSV.
+   **Use the list of another exam…** copies a list already imported.
    **Results** ranks every sheet with right, wrong and blank counts and its
    percentile, and exports a merit list to Excel (with every answer coloured
    right or wrong, and an item analysis: per question the share right, wrong
@@ -141,7 +150,8 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
    an existing sheet into a template. Open a flat scan of the whole page (blank or filled, 150 to 300
    DPI), click the four corner marks, then drag a box around each block of
    bubbles. It finds the bubbles, guesses roll number, set code or questions
-   and numbers them; fix anything on the right. **Test on this scan** reads
+   and numbers them; fix anything on the right (a second block of digit
+   columns is taken as a numeric answer). **Test on this scan** reads
    the scan with the new template, and **Save template…** puts it in
    `%LOCALAPPDATA%\OMR\templates`, where **Use my own printed sheet** looks
    first.
@@ -157,6 +167,12 @@ with the shortcuts: Ctrl+N for a new exam, Ctrl+O to import scans.
 Everything is saved as you work: each page as soon as it is read, and the key
 and marks as you type. Exams live in `%LOCALAPPDATA%\OMR\omr.db`; the app
 reopens the last exam.
+
+**Test series**: give exams the same test series name (in New exam, or on
+Exam settings) and each new exam in it starts with the series' student list.
+**Test series…** on Exams ranks students on their total score over the
+series, with each test's score (absent when they have no sheet), the tests
+taken and their average percentage, and saves it to Excel.
 
 **Back up…** on Exams saves every exam, with its sheets, corrections and
 students, in one file. **Restore…** adds the exams in such a file, on the same

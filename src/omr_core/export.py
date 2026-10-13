@@ -1,6 +1,7 @@
 """Results for an exam: grade every page, and export a merit list (Excel) and scorecards (PDF) (US3).
 
-The Excel file also has an item analysis: how each question went across the class.
+The Excel file also has an item analysis: how each question went across the class. When questions have
+topics, each student's share right per topic goes on their scorecard and on a Topics sheet.
 """
 
 from collections import Counter
@@ -12,6 +13,7 @@ from openpyxl.styles import Font, PatternFill
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
+from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
 
 from .grading import DROPPED, Section, marks_for, parse_key, rank, score, status
@@ -35,10 +37,11 @@ class Graded:
     sections: dict[str, float] = field(default_factory=dict)  # score per section, in the exam's section order
     omr: float = 0.0  # the score from the sheet; `score` adds the written marks
     written: float | None = None  # None when the exam has no written part or this student's aren't typed yet
+    topics: dict[str, tuple[int, int]] = field(default_factory=dict)  # (right, counted) per topic, in question order
 
 
 def questions(t: Template) -> list[int]:
-    return sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows))
+    return t.questions()
 
 
 def single_questions(t: Template) -> set[int]:
@@ -48,7 +51,7 @@ def single_questions(t: Template) -> set[int]:
 
 def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float, wrong: float,
           blank: float, students: dict[str, Student] | None = None, sections: list[Section] = (),
-          written: dict[str, float] | None = None) -> list[Graded]:
+          written: dict[str, float] | None = None, topics: dict[int, str] | None = None) -> list[Graded]:
     """Every page that can be scored, best first, with rank and percentile.
 
     `written` holds typed marks for a written part by roll number; they add to the sheet's score.
@@ -57,8 +60,7 @@ def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float,
     Raises ValueError if the key doesn't fit the sheet.
     """
     qs = questions(t)
-    options = "".join(sorted({o for g in t.grids if g.kind == "questions" for o in g.options}))
-    keys = parse_key(answer_key, len(qs), options)
+    keys = parse_key(answer_key, len(qs), t.answer_options())
     marks = marks_for(qs, correct, wrong, blank, sections, single_questions(t))
     students = students or {}
     flagged = {i for i, _, _ in to_review(pages, students)}
@@ -74,11 +76,16 @@ def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float,
             part = [n for n, q in enumerate(qs) if sec.first <= q <= sec.last]
             per_section[sec.name] = score([answers[n] for n in part], [key[n] for n in part],
                                           marks=[marks[n] for n in part])
+        per_topic: dict[str, tuple[int, int]] = {}
+        for q, state in zip(qs, counts):
+            if q in (topics or {}) and state != "dropped":
+                right, counted = per_topic.get(topics[q], (0, 0))
+                per_topic[topics[q]] = (right + (state == "right"), counted + 1)
         omr = score(answers, key, marks=marks)
         extra = written.get(p.result.roll_number) if written is not None else None
         out.append(Graded(p, key, omr + (extra or 0), counts.count("right"), counts.count("wrong"),
                           counts.count("blank"), to_check=i in flagged, student=students.get(p.result.roll_number),
-                          sections=per_section, omr=omr, written=extra))
+                          sections=per_section, omr=omr, written=extra, topics=per_topic))
     out.sort(key=lambda g: -g.score)
     for g, (r, pct) in zip(out, rank([g.score for g in out])):
         g.rank, g.percentile = r, pct
@@ -152,7 +159,19 @@ def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Grad
     items.append(["Question", "Key", "% right", "% wrong", "% blank", "Most chosen wrong answer", "Discrimination"])
     for row in item_analysis(t, graded):
         items.append(row)
-    for sheet, header_row in ((ws, 2), (answers, 1), (items, 1)):
+    sheets = [(ws, 2), (answers, 1), (items, 1)]
+    names = list(dict.fromkeys(t for g in graded for t in g.topics))
+    if names:
+        by_topic = wb.create_sheet("Topics")
+        by_topic.append(["Roll number", "Name", *(f"{t} % right" for t in names)])
+        for g in graded:
+            by_topic.append([g.page.result.roll_number, g.student.name if g.student else "",
+                             *(_share(g.topics.get(t)) for t in names)])
+        totals = [[sum(g.topics.get(t, (0, 0))[k] for g in graded) for k in (0, 1)] for t in names]
+        by_topic.append(["Everyone", "", *(_share(total) for total in totals)])
+        by_topic.cell(by_topic.max_row, 1).font = Font(bold=True)
+        sheets.append((by_topic, 1))
+    for sheet, header_row in sheets:
         for cell in sheet[header_row]:
             cell.font = Font(bold=True)
         sheet.freeze_panes = sheet.cell(header_row + 1, 1)
@@ -161,6 +180,11 @@ def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Grad
             width = max(len(str(c.value or "")) for c in column[header_row - 1:]) + 2
             sheet.column_dimensions[column[0].column_letter].width = min(max(width, 6), 40)
     wb.save(path)
+
+
+def _share(right_counted: tuple[int, int] | None) -> float | None:
+    """Percent right, or None for a topic with no counted question."""
+    return round(100 * right_counted[0] / right_counted[1], 1) if right_counted and right_counted[1] else None
 
 
 def write_scorecards(path: str | Path, exam_name: str, t: Template, graded: list[Graded]):
@@ -188,16 +212,24 @@ def write_scorecards(path: str | Path, exam_name: str, t: Template, graded: list
                  else "Sheet {:g}    Written not given    ".format(g.omr) if has_written(graded) else "")
         c.drawString(18 * mm, h - 45 * mm, f"{parts}Right {g.right}    Wrong {g.wrong}    Blank {g.blank}    "
                      + "    ".join(f"{name} {v:g}" for name, v in g.sections.items()))
+        top, row_h = h - 60 * mm, 4.4 * mm
         if g.to_check:
             c.setFillColor(colors.HexColor("#c27c00"))
             c.drawString(18 * mm, h - 51 * mm, "Some marks on this sheet were still being checked.")
             c.setFillColor(colors.black)
-        top, row_h = h - 60 * mm, 4.4 * mm
-        col_w = (w - 36 * mm) / max(1, -(-len(qs) // per_column))
+        if g.topics:
+            text = "By topic:  " + "  ·  ".join(f"{t} {r}/{n} ({_share((r, n)):g}%)" for t, (r, n) in g.topics.items())
+            lines = simpleSplit(text, "Helvetica", 9, w - 36 * mm)
+            c.setFont("Helvetica", 9)
+            for k, line in enumerate(lines):
+                c.drawString(18 * mm, h - (57 + 4.2 * k) * mm, line)
+            top -= 4.2 * len(lines) * mm
+        rows = min(per_column, int((top - 21 * mm) // row_h) + 1)  # the topics take room from the answer columns
+        col_w = (w - 36 * mm) / max(1, -(-len(qs) // rows))
         c.setFont("Helvetica", 8)
         for n, (q, k) in enumerate(zip(qs, g.key)):
-            x = 18 * mm + (n // per_column) * col_w
-            y = top - (n % per_column) * row_h
+            x = 18 * mm + (n // rows) * col_w
+            y = top - (n % rows) * row_h
             sign, colour = marks[status(r.answers[q], k)]
             c.setFillColor(colors.black)
             c.drawString(x, y, f"Q{q}")

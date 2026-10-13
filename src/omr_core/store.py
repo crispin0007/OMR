@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS exam (
     blank REAL NOT NULL DEFAULT 0,
     created TEXT NOT NULL,
     sections TEXT NOT NULL DEFAULT '[]',  -- JSON [Section, ...]
-    details TEXT NOT NULL DEFAULT '{}',   -- JSON {"class", "date", "time", "minutes"}, from New exam
+    details TEXT NOT NULL DEFAULT '{}',   -- JSON {"class", "date", "time", "minutes", "series"} from New exam, "topics"
     written_out_of REAL NOT NULL DEFAULT 0  -- marks of the written part, typed in; 0 for none
 );
 CREATE TABLE IF NOT EXISTS page (
@@ -121,6 +121,8 @@ class Store:
         self.db.close()
 
     def create_exam(self, name: str, template_json: str, details: dict | None = None) -> int:
+        """A new exam. One in a test series (details["series"]) starts with the student list of the latest exam
+        of that series that has one, so the list is imported once for the whole series."""
         name = name.strip()
         if not name:
             raise ValueError("the exam needs a name")
@@ -128,13 +130,35 @@ class Store:
         t = parse(d)  # refuse a template the reader can't use
         # A sheet made in the app carries its sections and marks; the exam starts with them.
         sections = sections_from_json(d.get("sections", []))
-        check_sections(sections, sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows)))
+        check_sections(sections, t.questions())
         with self.db:
             cur = self.db.execute("INSERT INTO exam (name, template, created, sections, details) "
                                   "VALUES (?, ?, ?, ?, ?)",
                                   (name, template_json, datetime.now().isoformat(timespec="seconds"),
                                    json.dumps(sections_to_json(sections)), json.dumps(details or {})))
-        return cur.lastrowid
+        exam_id = cur.lastrowid
+        earlier = [e for e in self.series_exams((details or {}).get("series", "")) if e != exam_id]
+        listed = next((s for e in reversed(earlier) if (s := self.students(e))), None)
+        if listed:
+            self.set_students(exam_id, list(listed.values()))
+        return exam_id
+
+    def series_names(self) -> list[str]:
+        """Every test series an exam belongs to, by name."""
+        return sorted({n for (n,) in self.db.execute("SELECT json_extract(details, '$.series') FROM exam") if n})
+
+    def series_exams(self, series: str) -> list[int]:
+        """The exams of a test series, oldest first; none for the empty name."""
+        if not series.strip():
+            return []
+        return [i for (i,) in self.db.execute("SELECT id FROM exam WHERE json_extract(details, '$.series') = ? "
+                                              "ORDER BY created, id", (series.strip(),))]
+
+    def set_series(self, exam_id: int, series: str):
+        """Put an exam in a test series by name, or take it out with ""."""
+        with self.db:
+            self.db.execute("UPDATE exam SET details = json_set(details, '$.series', ?) WHERE id = ?",
+                            (series.strip(), exam_id))
 
     def exams(self) -> list[tuple[int, str, str, int, int]]:
         """(id, name, created, pages, students) for every exam, newest first."""
@@ -157,10 +181,19 @@ class Store:
 
     def save_sections(self, exam_id: int, sections: list[Section]):
         t = self.exam(exam_id).template
-        check_sections(sections, sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows)))
+        check_sections(sections, t.questions())
         with self.db:
             self.db.execute("UPDATE exam SET sections = ? WHERE id = ?",
                             (json.dumps(sections_to_json(sections)), exam_id))
+
+    def set_topics(self, exam_id: int, topics: dict[int, str]):
+        """Give questions a topic each, for results by topic; questions left out have none."""
+        with self.db:
+            self.db.execute("UPDATE exam SET details = json_set(details, '$.topics', json(?)) WHERE id = ?",
+                            (json.dumps({str(q): t for q, t in sorted(topics.items())}), exam_id))
+
+    def topics(self, exam_id: int) -> dict[int, str]:
+        return {int(q): t for q, t in self.exam(exam_id).details.get("topics", {}).items()}
 
     def rename_exam(self, exam_id: int, name: str):
         name = name.strip()
@@ -253,7 +286,7 @@ class Store:
         log keeps them. Raises ValueError for a template the reader can't use or a page left out."""
         d = json.loads(template_json)
         t = parse(d)
-        questions = sorted(g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows))
+        questions = t.questions()
         ids = {i for (i,) in self.db.execute("SELECT id FROM page WHERE exam_id = ?", (exam_id,))}
         if set(pages) != ids:
             raise ValueError("every page of the exam must be read again with the new sheet")
@@ -309,8 +342,8 @@ class Store:
     def correct(self, page_id: int, item: str, value: str, user: str) -> StoredPage:
         """Set one answer, roll number digit or set code by hand, clear its flag, and log the change (FR-013).
 
-        `item` is a flag's "where": "Q12", "roll number digit 3" or "set code". Keeping a reading as it is
-        is a correction too: it clears the flag and is logged.
+        `item` is a flag's "where": "Q12", "roll number digit 3" or "set code"; a numeric question takes its
+        digits. Keeping a reading as it is is a correction too: it clears the flag and is logged.
         """
         row = self.db.execute("SELECT p.exam_id, p.roll_number, p.set_code, p.answers, p.flags, e.template "
                               "FROM page p JOIN exam e ON e.id = p.exam_id WHERE p.id = ?", (page_id,)).fetchone()
@@ -323,15 +356,21 @@ class Store:
         t, answers, value = parse(json.loads(template)), json.loads(answers), value.upper()
         if item.startswith("Q") and item[1:].isdigit():
             q = int(item[1:])
-            grid = next((g for g in t.grids if g.kind == "questions" and g.first <= q < g.first + g.rows), None)
+            grid = t.grid_for(q)
             if grid is None:
                 raise ValueError(f"the sheet has no question {q}")
-            if any(c not in grid.options for c in value) or len(set(value)) != len(value):
+            if grid.kind == "numeric":
+                if value and (not value.isdigit() or len(value.lstrip("0") or "0") > grid.cols):
+                    raise ValueError(f"{item} takes a whole number of up to {grid.cols} digits")
+                value = str(int(value)) if value else ""
+                before, answers[str(q)] = answers[str(q)], value
+            elif any(c not in grid.options for c in value) or len(set(value)) != len(value):
                 raise ValueError(f"{value!r} isn't an answer to {item} (options {grid.options})")
-            if len(value) > 1 and not grid.multi:
+            elif len(value) > 1 and not grid.multi:
                 raise ValueError(f"{item} takes one answer")
-            value = "".join(sorted(value))
-            before, answers[str(q)] = answers[str(q)], value
+            else:
+                value = "".join(sorted(value))
+                before, answers[str(q)] = answers[str(q)], value
         elif item.startswith("roll number digit "):
             n = int(item.rsplit(" ", 1)[1]) - 1
             if not 0 <= n < len(roll) or len(value) != 1 or value not in "0123456789":

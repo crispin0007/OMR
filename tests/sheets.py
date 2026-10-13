@@ -102,6 +102,11 @@ def random_marks(t: Template, seed: int) -> tuple[dict, dict[int, str], str, str
                 d = int(rng.integers(10))
                 marks[gi, d, c] = "pen"
                 roll += str(d)
+        elif g.kind == "numeric":  # a number in the leftmost columns, or blank
+            digits = [int(d) for d in rng.integers(10, size=int(rng.integers(g.cols + 1)))]
+            for c, d in enumerate(digits):
+                marks[gi, d, c] = "pen"
+            answers[g.first] = str(int("".join(map(str, digits)))) if digits else ""
         else:
             c = int(rng.integers(g.cols))
             marks[gi, 0, c] = "pen"
@@ -116,5 +121,7 @@ def fill(page: np.ndarray, t: Template, marks: dict[tuple[int, int, int], str], 
     axes = (round(t.bubble[0] / 2 * s), round(t.bubble[1] / 2 * s))
     for (gi, r, c), style in marks.items():
         x, y = t.grids[gi].centre(r, c)
-        cv2.ellipse(out, (round(x * s), round(y * s)), axes, 0, 0, 360, (INK[style],) * 3, -1)
+        start = 90 if style == "half" else 0  # half: the left half filled
+        cv2.ellipse(out, (round(x * s), round(y * s)), axes, 0, start, start + (180 if style == "half" else 360),
+                    (INK["pen" if style == "half" else style],) * 3, -1)
     return out

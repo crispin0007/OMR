@@ -17,8 +17,9 @@ top-left corner, measured on the printed sheet:
     }
 
 Grid kinds: "questions" (one row per question, one column per option),
-"roll_number" (one column per digit, rows are 0 to 9) and "set_code"
-(one row, one column per set). `origin_mm` is the centre of the top-left bubble.
+"roll_number" (one column per digit, rows are 0 to 9), "set_code"
+(one row, one column per set) and "numeric" (one question answered with a
+number: one column per digit, rows are 0 to 9; `first` is its question number). `origin_mm` is the centre of the top-left bubble.
 A sheet can identify the student by a roll number grid, a barcode, or both.
 """
 
@@ -26,7 +27,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-KINDS = ("questions", "roll_number", "set_code")
+KINDS = ("questions", "roll_number", "set_code", "numeric")
+DIGITS = "0123456789"
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,11 @@ class Grid:
     def centre(self, row: int, col: int) -> tuple[float, float]:
         return self.origin[0] + col * self.pitch[0], self.origin[1] + row * self.pitch[1]
 
+    def numbers(self) -> list[int]:
+        """The question numbers this grid answers."""
+        return list(range(self.first, self.first + self.rows)) if self.kind == "questions" else \
+            [self.first] if self.kind == "numeric" else []
+
 
 @dataclass(frozen=True)
 class Template:
@@ -56,6 +63,17 @@ class Template:
     orientation: tuple[float, float, float, float] | None = None
     dropout: str | None = None
     barcode: tuple[float, float, float, float] | None = None
+
+    def questions(self) -> list[int]:
+        """Every question number on the sheet, in order."""
+        return sorted(q for g in self.grids for q in g.numbers())
+
+    def grid_for(self, q: int) -> Grid | None:
+        return next((g for g in self.grids if q in g.numbers()), None)
+
+    def answer_options(self) -> list[str]:
+        """What each question, in order, is answered with: its option letters, or DIGITS for a number."""
+        return [DIGITS if g.kind == "numeric" else g.options for g in map(self.grid_for, self.questions())]
 
 
 def load(path: str | Path) -> Template:
@@ -88,12 +106,12 @@ def parse(d: dict) -> Template:
         barcode=_area(d["barcode_mm"], "barcode_mm", (w, h)) if "barcode_mm" in d else None,
     )
     kinds = [g.kind for g in t.grids]
-    if "questions" not in kinds:
+    if "questions" not in kinds and "numeric" not in kinds:
         raise ValueError("template has no questions grid")
     for k in ("roll_number", "set_code"):
         if kinds.count(k) > 1:
             raise ValueError(f"template has more than one {k} grid")
-    numbers = [g.first + r for g in t.grids if g.kind == "questions" for r in range(g.rows)]
+    numbers = [q for g in t.grids for q in g.numbers()]
     if len(numbers) != len(set(numbers)):
         raise ValueError("question numbers overlap between grids")
     for x, y in [*t.markers, *(g.centre(r, c) for g in t.grids for r in (0, g.rows - 1) for c in (0, g.cols - 1))]:
@@ -110,11 +128,11 @@ def _grid(g: dict) -> Grid:
     if rows < 1 or cols < 1:
         raise ValueError(f"{kind} grid needs rows and cols of at least 1")
     options = str(g.get("options", ""))
-    if kind == "roll_number" and rows != 10:
-        raise ValueError("roll_number grid needs 10 rows (digits 0 to 9)")
+    if kind in ("roll_number", "numeric") and rows != 10:
+        raise ValueError(f"{kind} grid needs 10 rows (digits 0 to 9)")
     if kind == "set_code" and rows != 1:
         raise ValueError("set_code grid needs 1 row")
-    if kind != "roll_number" and len(options) != cols:
+    if kind not in ("roll_number", "numeric") and len(options) != cols:
         raise ValueError(f"{kind} grid has {cols} columns but options {options!r}")
     return Grid(kind, _pair(g, "origin_mm"), _pair(g, "pitch_mm", positive=False), rows, cols,
                 options, int(g.get("first", 1)), bool(g.get("multi", False)))

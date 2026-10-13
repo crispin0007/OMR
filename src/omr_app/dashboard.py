@@ -287,7 +287,7 @@ class ResultsPage(QWidget):
         try:
             self.graded = grade(c.exam.template, c.sheets, c.key_edit.toPlainText(), c.correct.value(),
                                 c.wrong.value(), c.blank.value(), c.students, c.sections,
-                                c.written if c.exam.written_out_of else None) if c.exam else []
+                                written=c.written if c.exam.written_out_of else None, topics=c.topics) if c.exam else []
         except ValueError:
             self.graded = []  # the key doesn't fit yet; the Answer key tab says why
         self.note.setText("Ranked by score; equal scores share a rank. Double-click a row to open the sheet."

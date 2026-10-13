@@ -1,7 +1,8 @@
 """Score answered sheets against a key, and rank the results.
 
 Answers and keys are strings of option letters: "B" for one answer, "AC" for
-multi-correct, "" for blank. In a key, "*" is a bonus question (everyone gets
+multi-correct, "" for blank. A numeric question's answer and key are its
+digits, e.g. "42"; an answer is right when it is the same number. In a key, "*" is a bonus question (everyone gets
 the correct marks) and "-" is a dropped question (it counts for nobody).
 Sheets reach grading after review, so every answer here is already decided.
 
@@ -16,7 +17,10 @@ the reader flags them for review.
 
 import csv
 import io
+import re
 from dataclasses import asdict, dataclass
+
+from .template import DIGITS
 
 BONUS, DROPPED = "*", "-"
 
@@ -92,7 +96,7 @@ def score(answers: list[str], key: list[str], correct: float = 1.0, wrong: float
     marks = marks or [(correct, wrong, blank, False, True)] * len(key)
     total = 0.0
     for answer, right, (c, w, b, partial, single) in zip(answers, key, marks):
-        if single and len(answer) > 1 and len(right) == 1 and right != BONUS:
+        if single and len(answer) > 1 and len(right) == 1 and right.isalpha():
             continue  # invalid: two bubbles where one answer was asked for earns nothing
         if partial and _part_right(answer, right):
             # shortcut: counted as wrong in right/wrong/blank counts and colours; only the marks are partial
@@ -104,7 +108,7 @@ def score(answers: list[str], key: list[str], correct: float = 1.0, wrong: float
 
 def _part_right(answer: str, right: str) -> bool:
     """Some, but not all, of a multi-correct question's options, and no wrong one."""
-    return right not in (BONUS, DROPPED) and bool(answer) and set(answer) < set(right)
+    return right not in (BONUS, DROPPED) and not right.isdigit() and bool(answer) and set(answer) < set(right)
 
 
 def full_marks(key: list[str], marks: list[tuple]) -> float:
@@ -116,7 +120,11 @@ def status(answer: str, right: str) -> str:
     """"right", "wrong", "blank" or "dropped" for one answer against its key."""
     if right == DROPPED:
         return "dropped"
-    if right == BONUS or set(answer) == set(right):
+    if right == BONUS:
+        return "right"
+    if right.isdigit():
+        return "right" if answer.isdigit() and int(answer) == int(right) else "wrong" if answer else "blank"
+    if set(answer) == set(right):
         return "right"
     return "wrong" if answer else "blank"
 
@@ -132,15 +140,19 @@ def rank(scores: list[float]) -> list[tuple[int, float]]:
     return [(ordered.index(s) + 1, 100 * sum(t <= s for t in scores) / n) for s in scores]
 
 
-def parse_key(text: str, count: int, options: str) -> dict[str, list[str]]:
+def parse_key(text: str, count: int, options: str | list[str]) -> dict[str, list[str]]:
     """Answer keys typed by a person, one per set code; "" is the key for every set.
 
     Each line is an optional set code and a colon, then the answers in question
-    order: "A: ABCDA..." with one letter per question, or separated by spaces or
-    commas when a question has more than one correct option ("A, AC, *, -").
+    order: "A: ABCDA..." with one letter per question (and a numeric question's
+    digits together, "ABC42D"), or separated by spaces or commas when a question
+    has more than one correct option ("A, AC, *, -").
+    `options` is the option letters of every question, or each question's from
+    `Template.answer_options`, where DIGITS marks a numeric question.
     A key shorter than the sheet leaves the rest of the questions out of the
     score (dropped), for papers that use only part of the sheet.
     """
+    each = [options] * count if isinstance(options, str) else options
     keys = {}
     for n, line in enumerate(text.splitlines(), 1):
         if not line.strip():
@@ -148,7 +160,7 @@ def parse_key(text: str, count: int, options: str) -> dict[str, list[str]]:
         set_code, _, answers = line.rpartition(":")
         set_code = set_code.strip().upper()
         answers = answers.upper().replace(",", " ")
-        key = answers.split() if " " in answers.strip() else list(answers.strip())
+        key = answers.split() if " " in answers.strip() else re.findall(r"\d+|\S", answers)
         if set_code in keys:
             raise ValueError(f"line {n}: a second key for {'set ' + set_code if set_code else 'all sets'}")
         if len(key) > count:
@@ -156,11 +168,22 @@ def parse_key(text: str, count: int, options: str) -> dict[str, list[str]]:
         if not key:
             raise ValueError(f"line {n}: no answers")
         key += [DROPPED] * (count - len(key))
-        bad = sorted({c for a in key if a not in (BONUS, DROPPED) for c in a if c not in options})
-        if bad:
-            raise ValueError(f"line {n}: {', '.join(bad)} is not an option ({options})")
-        keys[set_code] = key
+        keys[set_code] = [_checked(a, opts, f"line {n}") for a, opts in zip(key, each)]
     return keys
+
+
+def _checked(answer: str, options: str, where: str) -> str:
+    """A key's answer as kept, or ValueError when it can't answer a question with these options."""
+    if answer in (BONUS, DROPPED):
+        return answer
+    if options == DIGITS:
+        if not answer.isdigit():
+            raise ValueError(f"{where}: {answer} is not a number, and this question is answered with one")
+        return str(int(answer))
+    bad = sorted({c for c in answer if c not in options})
+    if bad:
+        raise ValueError(f"{where}: {', '.join(bad)} is not an option ({options})")
+    return answer
 
 
 def format_key(keys: dict[str, list[str]]) -> str:
@@ -200,7 +223,7 @@ def key_to_csv(keys: dict[str, list[str]], questions: list[int]) -> str:
     return out.getvalue()
 
 
-def key_from_csv(text: str, questions: list[int], options: str) -> dict[str, list[str]]:
+def key_from_csv(text: str, questions: list[int], options: str | list[str]) -> dict[str, list[str]]:
     """Keys from CSV with a header of question and answer columns, and a set column when there are sets.
 
     Answers are option letters ("B", "AC" or "A;C"), "*" for bonus, and empty or "-" for dropped. Questions
@@ -215,6 +238,7 @@ def key_from_csv(text: str, questions: list[int], options: str) -> dict[str, lis
         raise ValueError("the first line must name the columns: question, answer (and set when there are sets)")
     qi, ai, si = header.index("question"), header.index("answer"), header.index("set") if "set" in header else None
     place = {q: i for i, q in enumerate(questions)}
+    each = [options] * len(questions) if isinstance(options, str) else options
     keys: dict[str, list[str]] = {}
     for n, row in enumerate(rows[1:], 2):
         cell = lambda i: row[i].strip() if i is not None and i < len(row) else ""  # noqa: E731
@@ -225,12 +249,50 @@ def key_from_csv(text: str, questions: list[int], options: str) -> dict[str, lis
             raise ValueError(f"line {n}: question “{cell(qi)}” is not a number") from None
         if q not in place:
             raise ValueError(f"line {n}: the sheet has no question {q}")
-        answer = "".join(cell(ai).upper().replace(";", " ").replace(",", " ").split()) or DROPPED
-        if answer not in (BONUS, DROPPED):
-            bad = sorted({c for c in answer if c not in options})
-            if bad:
-                raise ValueError(f"line {n}: {', '.join(bad)} is not an option ({options})")
+        answer = _checked("".join(cell(ai).upper().replace(";", " ").replace(",", " ").split()) or DROPPED,
+                          each[place[q]], f"line {n}")
+        if answer not in (BONUS, DROPPED) and not answer.isdigit():
             answer = "".join(sorted(set(answer)))
         key = keys.setdefault(set_code, [DROPPED] * len(questions))
         key[place[q]] = answer
     return keys
+
+
+def parse_topics(text: str, questions: list[int]) -> dict[int, str]:
+    """The topic of each question, from lines like "1-10: Kinematics" or "11: Work and energy".
+
+    A tab works in place of the colon, for two columns pasted from Excel. Questions left out have no topic.
+    Raises ValueError naming the line of anything that can't be used.
+    """
+    topics: dict[int, str] = {}
+    for n, line in enumerate(text.splitlines(), 1):
+        if not line.strip():
+            continue
+        where, sep, topic = line.replace("\t", ":", 1).partition(":")
+        first, _, last = where.replace("to", "-").partition("-")
+        try:
+            first, last = int(first), int(last or first)
+        except ValueError:
+            raise ValueError(f"line {n}: start with the questions, e.g. 1-10: Kinematics") from None
+        if not sep or not topic.strip():
+            raise ValueError(f"line {n}: give questions {first} to {last} a topic after a colon")
+        if first > last or first not in questions or last not in questions:
+            raise ValueError(f"line {n}: the sheet has questions {questions[0]} to {questions[-1]}")
+        for q in range(first, last + 1):
+            if q in topics:
+                raise ValueError(f"line {n}: question {q} already has the topic {topics[q]}")
+            topics[q] = topic.strip()
+    return topics
+
+
+def format_topics(topics: dict[int, str]) -> str:
+    """Topics as the text `parse_topics` reads, one line per run of questions with the same topic."""
+    lines, run = [], []
+    for q in sorted(topics):
+        if run and (q != run[-1] + 1 or topics[q] != topics[run[0]]):
+            lines.append(run)
+            run = []
+        run.append(q)
+    if run:
+        lines.append(run)
+    return "\n".join(f"{r[0]}-{r[-1]}: {topics[r[0]]}" if len(r) > 1 else f"{r[0]}: {topics[r[0]]}" for r in lines)
