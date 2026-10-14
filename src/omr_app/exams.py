@@ -8,8 +8,8 @@ from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths, Qt, Signal
-from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QTableWidget,
-                               QTableWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QProgressDialog,
+                               QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from omr_core.store import Store
 
@@ -36,9 +36,13 @@ class ExamsPage(QWidget):
         self.series = QPushButton("Test series…", toolTip="Rank students on their combined score over the exams "
                                   "of a test series")
         self.series.clicked.connect(lambda: SeriesDialog(self, self.store).exec())
+        self.shrink = QPushButton("Make smaller…", toolTip="Sheets read by an older version keep a large picture "
+                                  "of each page; save them the new, smaller way")
+        self.shrink.clicked.connect(self.shrink_images)
         top = QHBoxLayout()
         top.addWidget(QLabel("Exams", objectName="title"))
         top.addStretch()
+        top.addWidget(self.shrink)
         top.addWidget(self.series)
         top.addWidget(backup)
         top.addWidget(restore)
@@ -73,6 +77,7 @@ class ExamsPage(QWidget):
                           if exams else "Create an exam to start: New exam walks you through it and makes its sheet.")
         self.table.setVisible(bool(exams))
         self.series.setVisible(bool(self.store.series_names()))
+        self.shrink.setVisible(self.store.png_pages() > 0)
         self.start.setVisible(not exams)  # first run: what to do, in order
         self.table.setRowCount(len(exams))
         for row, (id_, name, created, pages, students) in enumerate(exams):
@@ -101,6 +106,46 @@ class ExamsPage(QWidget):
             return
         QMessageBox.information(self, "Backed up", f"Every exam is saved in {path}.\n\nKeep it on a USB drive or "
                                 "another PC; Restore… there brings the exams back.")
+
+    def shrink_images(self):
+        pages = self.store.png_pages()
+        if QMessageBox.question(
+                self, "Make the exams smaller",
+                f"{pages} scanned pages were saved by an older version with a large picture of each page. Saving "
+                "them the new way makes the exams several times smaller. Answers, marks and corrections don't "
+                "change, and Review still shows each page clearly.\n\nFirst, save a backup of every exam.",
+                QMessageBox.Ok | QMessageBox.Cancel, QMessageBox.Ok) != QMessageBox.Ok:
+            return
+        docs = Path(QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
+        path, _ = QFileDialog.getSaveFileName(self, "Backup before making the exams smaller",
+                                              str(docs / f"OMR backup {date.today()}.db"), "OMR backup (*.db)")
+        if not path:
+            return
+        try:
+            self.store.backup(path)
+        except (OSError, sqlite3.Error) as e:
+            QMessageBox.warning(self, "Couldn't back up", f"{path}\n\n{e}\n\nNothing was changed.")
+            return
+        progress = QProgressDialog("Making the exams smaller…", "Stop", 0, pages, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+
+        def step(done: int, total: int) -> bool:
+            progress.setValue(done)
+            QApplication.processEvents()
+            return not progress.wasCanceled()
+        try:
+            before, after = self.store.shrink_images(step)
+        except (OSError, sqlite3.Error) as e:
+            progress.close()
+            QMessageBox.warning(self, "Couldn't finish", f"{e}\n\nThe pages done so far are saved; the rest are as "
+                                f"they were. Your backup is in {path}.")
+            return
+        progress.close()
+        self.refresh()
+        QMessageBox.information(self, "Done", f"The exams went from {before / 1e6:,.0f} MB to {after / 1e6:,.0f} MB."
+                                + (f"\n\n{self.store.png_pages()} pages are left for next time."
+                                   if self.store.png_pages() else "") + f"\n\nYour backup is in {path}.")
 
     def restore(self):
         docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)

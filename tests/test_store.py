@@ -35,7 +35,7 @@ def test_exam_scheme_and_pages_survive_reopening(tmp_path):
     first, second = s.pages(exam)
     assert first.result.answers == {1: "B", 2: ""} and first.result.flags == [("Q2", "unclear mark")]
     assert (first.file, first.page, first.batch) == ("scan.pdf", 2, "batch 1")
-    assert np.array_equal(s.image(page.id), aligned)
+    assert np.abs(s.image(page.id).astype(int) - aligned).mean() < 10  # saved as JPEG
     assert second.result is None and second.problem.startswith("unreadable")
     s.delete_exam(exam)
     assert s.exams() == [] and s.pages(exam) == []
@@ -330,3 +330,26 @@ def test_changes_to_the_key_are_logged_and_restored_with_a_backup(tmp_path):
     other = Store(tmp_path / "other.db")
     other.restore(tmp_path / "b.db")
     assert [r[1:] for r in other.key_log(other.exams()[0][0])] == [r[1:] for r in log]
+
+
+def test_pages_are_saved_as_jpeg_and_an_old_database_is_made_smaller(tmp_path):
+    from omr_core.store import _png
+    rng = np.random.default_rng(1)
+    aligned = rng.integers(180, 256, (600, 400), np.uint8)  # a noisy grey page
+    s = Store(tmp_path / "omr.db")
+    exam = s.create_exam("Mock 1", TEMPLATE)
+    new = s.add_page(exam, "b", "new.png", 1, PageResult("1", "A", {1: "B"}, [], aligned))
+    assert s.image(new.id).shape == aligned.shape and s.png_pages() == 0
+    assert np.abs(s.image(new.id).astype(int) - aligned).mean() < 20
+    old = [s.add_page(exam, "b", f"{i}.png", 1, PageResult(str(i), "A", {1: "B"}, [], None)).id for i in range(6)]
+    with s.db:  # pages saved by an older version, as PNG
+        s.db.executemany("UPDATE page SET image = ? WHERE id = ?", [(_png(aligned), i) for i in old])
+    scan = rng.integers(0, 256, (300, 200, 3), np.uint8)
+    unread = s.add_page(exam, "b", "bad.png", 1, None, "unreadable: registration mark not found", scan)
+    assert s.png_pages() == 6
+    seen = []
+    before, after = s.shrink_images(lambda done, total: seen.append((done, total)))
+    assert after < before / 2 and seen[-1] == (6, 6) and s.png_pages() == 0
+    assert s.image(old[0]).shape == aligned.shape
+    assert np.array_equal(s.image(unread.id, as_saved=True), scan)  # kept as it was, colour and all
+    assert [p.result.roll_number for p in s.pages(exam) if p.result] == ["1", "0", "1", "2", "3", "4", "5"]

@@ -687,6 +687,33 @@ def test_exams_are_backed_up_and_restored(app, tmp_path, monkeypatch):
     assert "isn't an OMR backup" in shown[-1] and new_pc.exams.table.rowCount() == 1
 
 
+
+def test_an_older_database_is_backed_up_then_made_smaller(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    from omr_core.reader import PageResult
+    from omr_core.store import _png
+    shown = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: shown.append(a[2]))
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.Ok)
+    w = window(tmp_path)
+    assert w.exams.shrink.isHidden()
+    page = np.random.default_rng(1).integers(180, 256, (800, 600), np.uint8)
+    exam = w.check.exam.id
+    ids = [w.store.add_page(exam, "b", f"{i}.png", 1, PageResult(str(i), "", {}, [], None)).id for i in range(3)]
+    with w.store.db:
+        w.store.db.executemany("UPDATE page SET image = ? WHERE id = ?", [(_png(page), i) for i in ids])
+    w.exams.refresh()
+    assert not w.exams.shrink.isHidden()
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a: ("", ""))
+    w.exams.shrink.click()  # no backup, no change
+    assert w.store.png_pages() == 3
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a: (str(tmp_path / "before.db"), ""))
+    w.exams.shrink.click()
+    assert w.store.png_pages() == 0 and w.exams.shrink.isHidden() and "before.db" in shown[-1]
+    from omr_core.store import Store
+    assert Store(tmp_path / "before.db").png_pages() == 3  # the backup has the pages as they were
+
+
 def test_a_printed_copy_is_checked_before_printing_the_rest(app, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog, QMessageBox
     from omr_app.exam_page import print_check
