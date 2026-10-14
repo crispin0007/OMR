@@ -17,6 +17,7 @@ from omr_core.export import Graded, csv_columns, grade, single_questions, write_
 from omr_core.grading import (BONUS, DROPPED, EITHER, Section, format_topics, full_marks, key_changes, marks_for,
                               parse_key, parse_topics, score)
 from omr_core.marking import LEGEND
+from omr_core.names import as_text, suggest
 from omr_core.parallel import PageReader
 from omr_core.reader import read_or_reason
 from omr_core.sources import read_pages
@@ -79,6 +80,7 @@ class CheckPage(QWidget):
         self.sheets: list[StoredPage] = []
         self.students: dict[str, Student] = {}  # the exam's own list
         self.named: dict[str, Student] = {}  # those, and the directory's student for any other roll number read
+        self._suggested: dict[int, tuple] = {}  # page id: (what it was worked out from, the student or None)
         self.written: dict[str, float] = {}  # typed written marks by roll number
         self.keys: dict[str, list[str]] = {}
         self.sections: list[Section] = []
@@ -151,10 +153,15 @@ class CheckPage(QWidget):
         self.delete_button = QPushButton("Delete…")
         self.delete_button.setToolTip("Delete the selected pages, e.g. a sheet scanned twice or into the wrong exam")
         self.delete_button.clicked.connect(self.delete_selected)
+        self.names_button = QPushButton("Use names read")
+        self.names_button.setToolTip("Save the names read from the handwriting on the selected sheets, as shown "
+                                     "with a ?, to the student directory. Check them first.")
+        self.names_button.clicked.connect(self.use_names_read)
         filter_bar = QHBoxLayout()
         filter_bar.addWidget(self.filter_label)
         filter_bar.addWidget(self.show_all)
         filter_bar.addStretch()
+        filter_bar.addWidget(self.names_button)
         filter_bar.addWidget(self.move_button)
         filter_bar.addWidget(self.delete_button)
         self.mismatch = QLabel(objectName="error", wordWrap=True)
@@ -241,6 +248,7 @@ class CheckPage(QWidget):
         self.save_button.setEnabled(bool(self.sheets))
         chosen = bool(self.selected())
         self.delete_button.setEnabled(chosen)
+        self.names_button.setEnabled(chosen)
         self.move_button.setEnabled(chosen)
 
     def open_exam(self, exam_id: int | None):
@@ -347,6 +355,47 @@ class CheckPage(QWidget):
     def name_of(self, sheet: StoredPage) -> str:
         s = sheet.result and self.named.get(sheet.result.roll_number)
         return s.name if s else ""
+
+    def suggestion(self, sheet: StoredPage) -> Student | None:
+        """The directory's student whose name the handwriting fits, for a sheet whose roll number has no student;
+        among those whose roll number fits when some digits couldn't be read."""
+        r = sheet.result
+        if not r or not r.name or self.name_of(sheet):
+            return None
+        students = self.store.directory()
+        key = (r.roll_number, len(students), sum(len(s.name) for s in students))
+        if self._suggested.get(sheet.id, (None,))[0] != key:
+            self._suggested[sheet.id] = key, suggest(r.name, students, r.roll_number if "?" in r.roll_number else "")
+        return self._suggested[sheet.id][1]
+
+    def name_read(self, sheet: StoredPage) -> tuple[str, str]:
+        """For a sheet with no student for its roll number: what to show for the name written, and why."""
+        if not sheet.result or self.name_of(sheet):
+            return "", ""
+        s = self.suggestion(sheet)
+        if s:
+            return f"{s.name} ?", (f"The name written looks like {s.name}, roll number {s.roll_number} in the "
+                                   "student directory. Check the roll number on Review.")
+        text = as_text(sheet.result.name)
+        return (f"{text} ?", "Read from the handwriting and not checked. Double-click to correct it, or select "
+                "the rows and press Use names read.") if text else ("", "")
+
+    def use_names_read(self):
+        """Save the handwriting read as the name, for selected sheets with a whole roll number and no student."""
+        saved = skipped = 0
+        for i in self.selected():
+            sheet = self.sheets[i]
+            text, _ = self.name_read(sheet)
+            if not text or self.suggestion(sheet) or "?" in sheet.result.roll_number:
+                skipped += bool(sheet.result and not self.name_of(sheet))
+                continue
+            self.save_name(sheet.result.roll_number, text.removesuffix(" ?"))
+            saved += 1
+        self.fill_table()
+        self.window().statusBar().showMessage(
+            f"Saved {saved} name{'s' if saved != 1 else ''} read" + (f"; {skipped} left: fix the roll number or "
+                                                                      "pick the student on Review first" if skipped
+                                                                      else ""), 8000)
 
     def open_sheets(self):
         paths, _ = QFileDialog.getOpenFileNames(
@@ -518,8 +567,17 @@ class CheckPage(QWidget):
                      r.set_code if r else "",
                      f"{sum(1 for q in self.questions if r.answers[q])}/{len(self.questions)}" if r else "",
                      self._score_text(sheet), review, r.serial if r else ""]
+            read, why = self.name_read(sheet) if not cells[3] else ("", "")
+            if read:
+                cells[3] = read
             for col, text in enumerate(cells):
                 item = QTableWidgetItem(text)
+                if read and COLUMNS[col] == "Name":
+                    item.setToolTip(why)
+                    item.setForeground(QColor(theme.tokens()["muted"]))
+                    font = item.font()
+                    font.setItalic(True)
+                    item.setFont(font)
                 if not (r and COLUMNS[col] in ("Roll number", "Name")):
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 if review:
@@ -545,7 +603,8 @@ class CheckPage(QWidget):
 
     def edited(self, item: QTableWidgetItem):
         """A roll number or name typed over in the table: saved at once, like a correction on Review."""
-        sheet, column, text = self.sheets[item.row()], COLUMNS[item.column()], " ".join(item.text().split())
+        sheet, column = self.sheets[item.row()], COLUMNS[item.column()]
+        text = " ".join(item.text().split()).removesuffix(" ?")
         roll = sheet.result.roll_number
         try:
             if column == "Roll number":

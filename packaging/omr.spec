@@ -14,6 +14,7 @@ a = Analysis(
     datas=[
         (str(SRC / "omr_core" / "fonts"), "omr_core/fonts"),
         (str(SRC / "omr_app" / "icon.png"), "omr_app"),
+        (str(SRC / "omr_core" / "letters.npz"), "omr_core"),  # the reader of handwritten names
         (str(ROOT / "templates"), "templates"),
         *copy_metadata("omr"),  # the version shown in Help
     ],

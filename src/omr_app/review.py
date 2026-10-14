@@ -157,17 +157,22 @@ class ReviewPage(QWidget):
                                                                                         len(current) <= 1) else None)
         elif item.startswith("roll number digit "):
             current = r.roll_number[int(item.rsplit(" ", 1)[1]) - 1]
-            self.read_as.setText(f"Read as: {current}")
+            looks = c.suggestion(sheet)
+            self.read_as.setText(f"Read as: {current}" + (f"   ·   The name written looks like {looks.name}, roll "
+                                                          f"number {looks.roll_number}" if looks else ""))
             self._choice_buttons(item, list("0123456789"), keep=None if current == "?" else current)
         elif item == "set code":
             self.read_as.setText(f"Read as: {r.set_code}")
             options = found[0].options if found else ""
             self._choice_buttons(item, list(options), keep=None if r.set_code == "?" else r.set_code)
         else:  # the whole roll number, e.g. a duplicate
-            student = c.named.get(r.roll_number)
-            self.read_as.setText(f"Read as: {r.roll_number}" + (f"  ({student.name})" if student else ""))
+            student, looks = c.named.get(r.roll_number), c.suggestion(sheet)
+            self.read_as.setText(f"Read as: {r.roll_number}" + (f"  ({student.name})" if student else "") +
+                                 (f"   ·   The name written looks like {looks.name}, roll number {looks.roll_number}"
+                                  if looks else ""))
             digits = next((g.cols for g in t.grids if g.kind == "roll_number"), None)
-            edit = QLineEdit(r.roll_number.replace("?", ""), maxLength=digits or 40)
+            typed = looks.roll_number.zfill(digits or 0) if looks and "?" in r.roll_number else r.roll_number
+            edit = QLineEdit(typed.replace("?", ""), maxLength=digits or 40)
             save = QPushButton("Save roll number", objectName="primary")
             save.clicked.connect(lambda: self.fix(item, edit.text()))
             edit.returnPressed.connect(save.click)

@@ -1676,3 +1676,35 @@ def test_roll_number_and_name_are_typed_over_in_scanned_sheets(app, tmp_path, mo
     c.table.item(row, 2).setText("12x")  # not a roll number: refused, and the cell goes back
     QApplication.processEvents()
     assert warned and c.table.item(row, 2).text() == roll
+
+
+def test_the_name_written_shows_as_a_suggestion_and_can_be_kept(app, tmp_path):
+    import json
+
+    from omr_core.sheet import SheetSpec, layout, render
+    from omr_core.students import Student
+    from sheets import fill
+    from test_names import write_name
+    d = layout(SheetSpec("Names", 20, roll_digits=3, sets=0))
+    t = parse(d)
+    roll = next(i for i, g in enumerate(t.grids) if g.kind == "roll_number")
+    path = tmp_path / "named.png"
+    cv2.imwrite(str(path), write_name(fill(render(d), t, {(roll, 1, 0): "pen", (roll, 0, 1): "pen",
+                                                          (roll, 7, 2): "pen"}), t, ["ASHA", "", "RAI"]))
+    w = MainWindow(tmp_path / "omr.db")
+    w.open_exam(w.store.create_exam("Names", json.dumps(d)))
+    c = w.check
+    w.store.save_student(Student("200", "Asha Rai"))  # in the directory, under another roll number
+    c.read_files([str(path)])
+    cell = c.table.item(0, 3)
+    assert c.sheets[0].result.roll_number == "107" and cell.text() == "Asha Rai ?" and cell.font().italic()
+    assert "roll number 200" in cell.toolTip()
+
+    w.store.save_student(Student("200", "Bikash Lama"), "200")  # no one in the directory writes like that now
+    c.fill_table()
+    read = c.table.item(0, 3).text()
+    assert read.endswith(" ?") and len(read.split()) == 3
+    c.select(0)
+    c.use_names_read()
+    assert any(s.roll_number == "107" and s.name == read.removesuffix(" ?") for s in w.store.directory())
+    assert c.table.item(0, 3).text() == read.removesuffix(" ?") and not c.table.item(0, 3).font().italic()

@@ -1,0 +1,45 @@
+# Fonts the letter reader (src/omr_core/letters.npz) was trained on by tools/train_letters.py.
+# Handwriting fonts from npm (npm pack @fontsource/NAME, the latin-400-normal .woff file), with their licences:
+@fontsource/amatic-sc OFL-1.1
+@fontsource/annie-use-your-telescope OFL-1.1
+@fontsource/architects-daughter OFL-1.1
+@fontsource/cabin-sketch OFL-1.1
+@fontsource/comic-neue OFL-1.1
+@fontsource/coming-soon Apache-2.0
+@fontsource/covered-by-your-grace OFL-1.1
+@fontsource/crafty-girls Apache-2.0
+@fontsource/dawning-of-a-new-day OFL-1.1
+@fontsource/delius OFL-1.1
+@fontsource/edu-sa-beginner OFL-1.1
+@fontsource/edu-tas-beginner OFL-1.1
+@fontsource/edu-vic-wa-nt-beginner OFL-1.1
+@fontsource/fuzzy-bubbles OFL-1.1
+@fontsource/gochi-hand OFL-1.1
+@fontsource/handlee OFL-1.1
+@fontsource/indie-flower OFL-1.1
+@fontsource/itim OFL-1.1
+@fontsource/just-another-hand Apache-2.0
+@fontsource/just-me-again-down-here OFL-1.1
+@fontsource/kalam OFL-1.1
+@fontsource/klee-one OFL-1.1
+@fontsource/kranky Apache-2.0
+@fontsource/loved-by-the-king OFL-1.1
+@fontsource/mansalva OFL-1.1
+@fontsource/neucha OFL-1.1
+@fontsource/nothing-you-could-do OFL-1.1
+@fontsource/over-the-rainbow OFL-1.1
+@fontsource/patrick-hand OFL-1.1
+@fontsource/permanent-marker Apache-2.0
+@fontsource/reenie-beanie OFL-1.1
+@fontsource/rock-salt Apache-2.0
+@fontsource/schoolbell Apache-2.0
+@fontsource/shadows-into-light OFL-1.1
+@fontsource/short-stack OFL-1.1
+@fontsource/sriracha OFL-1.1
+@fontsource/sue-ellen-francisco OFL-1.1
+@fontsource/swanky-and-moo-moo OFL-1.1
+@fontsource/waiting-for-the-sunrise OFL-1.1
+@fontsource/walter-turncoat Apache-2.0
+@fontsource/yomogi OFL-1.1
+# System fonts: DejaVu Sans and DejaVu Sans Mono (Bitstream Vera licence), Liberation Sans and
+# Liberation Mono (OFL-1.1), Carlito (OFL-1.1).

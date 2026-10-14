@@ -122,6 +122,14 @@ class SheetSpec:
     track: bool = False  # print a sheet number on every copy, as text and a barcode the reader reads back
 
 
+def name_boxes() -> list[list[list[float]]]:
+    """The letter boxes of the first, middle and last name, each [x, y, w, h] in mm."""
+    third = (RIGHT - LEFT) / 3
+    cell = (third - 4) / 12
+    return [[[round(LEFT + i * third + 2 + k * cell, 3), 30.5, round(cell, 3), 5.5] for k in range(12)]
+            for i in range(3)]
+
+
 def layout(spec: SheetSpec) -> dict:
     """The template for a sheet with these choices. Raises ValueError when they can't fit one A4 page."""
     if not spec.name.strip():
@@ -163,7 +171,8 @@ def layout(spec: SheetSpec) -> dict:
     grids += numeric
     d = {"name": spec.name.strip(), "version": 1, "page_mm": list(PAGE),
          "markers": {"shape": "ring", "size_mm": MARK, "centres_mm": MARKS},
-         "orientation_mm": ORIENTATION, "bubble_mm": list(SHAPES[spec.bubble_shape]), "grids": grids, "print": style}
+         "orientation_mm": ORIENTATION, "bubble_mm": list(SHAPES[spec.bubble_shape]), "grids": grids, "print": style,
+         "name_boxes_mm": name_boxes()}
     if spec.track:
         x0, y0, x1, y1 = SERIAL_BOX
         d["serial_mm"] = [x0 + 1, y0 + 0.5, x1 - x0 - 2, 8.0]  # the barcode with its quiet zones, not the text
@@ -532,12 +541,10 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4", n
     box(LEFT, NAME_TOP, RIGHT, NAME_BOTTOM)
     banded(LEFT, NAME_TOP, RIGHT, "Student’s Name (IN BLOCK LETTERS)", 10)
     third = (RIGHT - LEFT) / 3
-    for i, label in enumerate(("First Name", "Middle Name", "Last Name")):
-        x0 = LEFT + i * third
-        text(x0 + third / 2, 28.6, label, 9.5, align="centre")
-        cell = (third - 4) / 12
-        for k in range(12):
-            box(x0 + 2 + k * cell, 30.5, x0 + 2 + (k + 1) * cell, 36.0, width=0.2)
+    for i, (label, word) in enumerate(zip(("First Name", "Middle Name", "Last Name"), name_boxes())):
+        text(LEFT + i * third + third / 2, 28.6, label, 9.5, align="centre")
+        for bx, by, bw, bh in word:
+            box(bx, by, bx + bw, by + bh, width=0.2)
 
     hd = _header(t)
     roll = next((g for g in t.grids if g.kind == "roll_number"), None)

@@ -91,8 +91,16 @@ the page, marked in the same colours, with a legend underneath.
   leading zeros (type `16` for `0016?`); the change is logged like a correction on Review. A name is
   saved to the [Student directory](students.md), and to the exam's own student list if it has one.
 - **Names** come from the exam's student list, or else from the Student directory by roll number, so
-  once your students are in the directory every sheet shows its name. Handwritten names on the sheet
-  aren't read.
+  once your students are in the directory every sheet shows its name.
+- **Handwritten names** in the name boxes of sheets made in OMR Checker are read too, on this PC, but
+  never trusted on their own. Where the roll number has no student, the Name shows in grey with a
+  **?**:
+  - If the writing clearly fits a student in the directory, you see that student's name. Hover it
+    for their roll number; Review shows it next to an unclear roll number and fills it in for you
+    to save.
+  - Otherwise you see the letters as read. Handwriting is read about 4 letters in 5 right, so check
+    each one: correct it in place, or select rows and press **Use names read** to save them to the
+    directory as shown.
 - **Mark the answers** turns the colours on and off, to see the sheet as it was scanned.
 - **Show every bubble position** draws a thin circle where each bubble was read. Every circle
   should sit on a printed bubble. The reader follows a curled or stretched page row by row, by up

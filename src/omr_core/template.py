@@ -11,6 +11,7 @@ top-left corner, measured on the printed sheet:
       "orientation_mm": [x, y, w, h],                   # optional: an area always printed black
       "barcode_mm": [x, y, w, h],                       # optional: a barcode or QR code holding the roll number
       "serial_mm": [x, y, w, h],                        # optional: a barcode with the sheet's own printed number
+      "name_boxes_mm": [[[x, y, w, h], ...], ...],        # optional: the name's letter boxes, word by word
       "bubble_mm": [w, h],
       "dropout": "red",                                 # optional: drop pink or red print
       "grids": [{"kind": "questions", "first": 1, "options": "ABCD",
@@ -65,6 +66,7 @@ class Template:
     dropout: str | None = None
     barcode: tuple[float, float, float, float] | None = None
     serial: tuple[float, float, float, float] | None = None
+    names: tuple[tuple[tuple[float, float, float, float], ...], ...] = ()  # letter boxes, word by word
 
     def questions(self) -> list[int]:
         """Every question number on the sheet, in order."""
@@ -107,6 +109,7 @@ def parse(d: dict) -> Template:
         dropout=d.get("dropout"),
         barcode=_area(d["barcode_mm"], "barcode_mm", (w, h)) if "barcode_mm" in d else None,
         serial=_area(d["serial_mm"], "serial_mm", (w, h)) if "serial_mm" in d else None,
+        names=tuple(tuple(_area(b, "name_boxes_mm", (w, h)) for b in word) for word in _name_boxes(d)),
     )
     kinds = [g.kind for g in t.grids]
     if "questions" not in kinds and "numeric" not in kinds:
@@ -121,6 +124,18 @@ def parse(d: dict) -> Template:
         if not (0 <= x <= w and 0 <= y <= h):
             raise ValueError(f"point ({x}, {y}) mm is outside the page")
     return t
+
+
+def _name_boxes(d: dict) -> list:
+    if "name_boxes_mm" in d:
+        boxes = d["name_boxes_mm"]
+        if not isinstance(boxes, list) or not all(isinstance(word, list) for word in boxes):
+            raise ValueError("name_boxes_mm must be a list of words, each a list of [x, y, w, h]")
+        return boxes
+    if "print" in d:  # a sheet made here before the boxes were written down: they were always in the same place
+        from .sheet import name_boxes
+        return name_boxes()
+    return []
 
 
 def _grid(g: dict) -> Grid:

@@ -66,7 +66,8 @@ CREATE TABLE IF NOT EXISTS page (
     flags TEXT,                      -- JSON [[where, why], ...]
     problem TEXT NOT NULL DEFAULT '',
     image BLOB,                      -- aligned page as grey JPEG (PNG before 0.2), or an unreadable scan as PNG
-    serial TEXT NOT NULL DEFAULT ''  -- the sheet number printed on the sheet, '?' if unreadable
+    serial TEXT NOT NULL DEFAULT '', -- the sheet number printed on the sheet, '?' if unreadable
+    name_read TEXT NOT NULL DEFAULT '[]'  -- JSON: the odds of each letter in the name boxes, word by word
 );
 CREATE INDEX IF NOT EXISTS page_exam ON page(exam_id);
 CREATE TABLE IF NOT EXISTS audit (
@@ -193,6 +194,9 @@ class Store:
         if "serial" not in [r[1] for r in self.db.execute("PRAGMA table_info(page)")]:
             with self.db:
                 self.db.execute("ALTER TABLE page ADD COLUMN serial TEXT NOT NULL DEFAULT ''")
+        if "name_read" not in [r[1] for r in self.db.execute("PRAGMA table_info(page)")]:
+            with self.db:
+                self.db.execute("ALTER TABLE page ADD COLUMN name_read TEXT NOT NULL DEFAULT '[]'")
         if "batch" not in [r[1] for r in self.db.execute("PRAGMA table_info(student)")]:
             with self.db:
                 for column in ("batch", "email", "phone"):
@@ -512,8 +516,9 @@ class Store:
                                                            (old,)).fetchall():
                             page = self.db.execute(
                                 "INSERT INTO page (exam_id, batch, file, page_no, read_at, roll_number, set_code, "
-                                "answers, flags, problem, image, serial) SELECT ?, batch, file, page_no, read_at, "
-                                "roll_number, set_code, answers, flags, problem, image, serial FROM b.page WHERE id = ?",
+                                "answers, flags, problem, image, serial, name_read) SELECT ?, batch, file, page_no, "
+                                "read_at, roll_number, set_code, answers, flags, problem, image, serial, name_read "
+                                "FROM b.page WHERE id = ?",
                                 (exam, old_page)).lastrowid
                             self.db.execute("INSERT INTO audit (page_id, at, user, item, before, after) SELECT ?, at, "
                                             "user, item, before, after FROM b.audit WHERE page_id = ? ORDER BY id",
@@ -607,7 +612,7 @@ class Store:
                 values, image = _row(result)
                 # An unreadable page keeps the image it had, to try yet another sheet with.
                 self.db.execute("UPDATE page SET roll_number = ?, set_code = ?, answers = ?, flags = ?, serial = ?, "
-                                "problem = ?, image = COALESCE(?, image) WHERE id = ?",
+                                "name_read = ?, problem = ?, image = COALESCE(?, image) WHERE id = ?",
                                 (*values, problem, image, page_id))
 
     def add_page(self, exam_id: int, batch: str, file: str, page_no: int, result: PageResult | None,
@@ -621,7 +626,7 @@ class Store:
         with self.db:
             cur = self.db.execute(
                 "INSERT INTO page (exam_id, batch, file, page_no, read_at, roll_number, set_code, answers, flags, "
-                "serial, problem, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "serial, name_read, problem, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (exam_id, batch, file, page_no, read_at, *values, problem, image))
         return StoredPage(cur.lastrowid, batch, file, page_no, read_at, result, problem)
 
@@ -634,13 +639,14 @@ class Store:
 
     def _pages(self, where: str, arg: int) -> list[StoredPage]:
         rows = self.db.execute(
-            "SELECT id, batch, file, page_no, read_at, roll_number, set_code, answers, flags, problem, serial FROM "
+            "SELECT id, batch, file, page_no, read_at, roll_number, set_code, answers, flags, problem, serial, name_read "
+            "FROM "
             f"page WHERE {where} ORDER BY id", (arg,)).fetchall()
         out = []
-        for id_, batch, file, page_no, read_at, roll, set_code, answers, flags, problem, serial in rows:
+        for id_, batch, file, page_no, read_at, roll, set_code, answers, flags, problem, serial, name in rows:
             result = None if roll is None else PageResult(
                 roll, set_code, {int(q): a for q, a in json.loads(answers).items()},
-                [tuple(f) for f in json.loads(flags)], serial=serial)
+                [tuple(f) for f in json.loads(flags)], serial=serial, name=json.loads(name))
             out.append(StoredPage(id_, batch, file, page_no, read_at, result, problem))
         return out
 
@@ -888,10 +894,11 @@ def encode_page(image: np.ndarray) -> bytes | None:
 
 
 def _row(result: PageResult | None) -> tuple[tuple, bytes | None]:
-    """(roll number, set code, answers, flags, sheet number) as stored, and the aligned image as JPEG."""
+    """(roll number, set code, answers, flags, sheet number, name read) as stored, and the aligned image as JPEG."""
     if result is None:
-        return (None,) * 4 + ("",), None
-    return ((result.roll_number, result.set_code, json.dumps(result.answers), json.dumps(result.flags), result.serial),
+        return (None,) * 4 + ("", "[]"), None
+    return ((result.roll_number, result.set_code, json.dumps(result.answers), json.dumps(result.flags), result.serial,
+             json.dumps(result.name)),
             result.aligned if not isinstance(result.aligned, np.ndarray) else encode_page(result.aligned))
 
 

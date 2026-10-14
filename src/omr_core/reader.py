@@ -39,6 +39,7 @@ class PageResult:
     flags: list[tuple[str, str]] = field(default_factory=list)  # (where, why)
     aligned: np.ndarray | bytes | None = None  # page in template coordinates, for review; bytes once encoded to save
     serial: str = ""  # the sheet number printed on the sheet, "?" when it can't be read; "" for sheets without one
+    name: list = field(default_factory=list)  # the odds of each letter in the name boxes, as names.read_name gives
 
 
 def read_page(page: np.ndarray, template: Template) -> PageResult:
@@ -79,6 +80,9 @@ def read_page(page: np.ndarray, template: Template) -> PageResult:
         _identify(result, _barcode(warped, template.barcode), any(g.kind == "roll_number" for g in template.grids))
     if template.serial:
         result.serial = _barcode(warped, template.serial) or "?"
+    if template.names:
+        from .names import read_name  # it reads with this module's scale
+        result.name = read_name(aligned, template)
     return result
 
 
