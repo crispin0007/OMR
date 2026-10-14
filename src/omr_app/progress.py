@@ -9,7 +9,7 @@ from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton,
                                QTableWidget, QTableWidgetItem, QToolTip, QVBoxLayout, QWidget)
 
-from omr_core.progress import Entry, attendance, history, section_averages
+from omr_core.progress import Entry, attendance, history, section_averages, topic_averages
 from omr_core.store import Store
 from omr_core.students import Student
 
@@ -91,7 +91,7 @@ class ProfileDialog(QDialog):
         self.setWindowTitle(student.name)
         self.resize(900, 700)
         self.entries = history(store, student.roll_number)
-        facts = [f"Roll number {student.roll_number}", student.class_name and f"Class {student.class_name}",
+        facts = [f"Student ID {student.roll_number}", student.class_name and f"Class {student.class_name}",
                  student.batch and f"Batch {student.batch}", student.email, student.phone]
         head = QLabel(f"<h2>{student.name}</h2>" + "  ·  ".join(f for f in facts if f), textFormat=Qt.RichText)
         head.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -103,10 +103,13 @@ class ProfileDialog(QDialog):
                        + (f", {'up' if change >= 0 else 'down'} {abs(change):.1f} points since the first" if change
                           is not None else "") + ".")
         else:
-            summary = "No exam has a sheet read for this roll number yet."
+            summary = "No exam has a sheet read for this student yet."
         sections = section_averages(e)
         weak = (f"Weakest: {sections[0][0]} ({sections[0][1]:g}%). Strongest: {sections[-1][0]} "
                 f"({sections[-1][1]:g}%)." if len(sections) > 1 else "")
+        topics = topic_averages(e)
+        if len(topics) > 1:
+            weak += " Topics to work on: " + ", ".join(f"{t} ({p:g}% right)" for t, p, *_ in topics[:3]) + "."
         layout = QVBoxLayout(self)
         layout.addWidget(head)
         layout.addWidget(QLabel(f"{summary} {weak}", objectName="muted", wordWrap=True))
@@ -117,9 +120,16 @@ class ProfileDialog(QDialog):
                            [(x.exam, x.date, x.score, x.out_of, x.percent, f"{x.rank} of {x.of}",
                              round(x.percentile, 1)) for x in e])
         self.sections = table(["Section", "Average %", "Exams"], sections)
+        self.topics = table(["Topic", "% right", "Questions", "Exams"], topics)
+        self.topics.setToolTip("Every topic the student's exams gave their questions (Marks and sections, "
+                               "Topics…), weakest first")
+        side = QVBoxLayout()
+        side.addWidget(self.sections, 1)
+        side.addWidget(self.topics, 2)
+        self.topics.setVisible(bool(topics))
         tables = QHBoxLayout()
         tables.addWidget(self.exams, 3)
-        tables.addWidget(self.sections, 2)
+        tables.addLayout(side, 2)
         layout.addLayout(tables, 1)
 
 

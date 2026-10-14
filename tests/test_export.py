@@ -3,7 +3,7 @@ from pathlib import Path
 import pypdfium2
 from openpyxl import load_workbook
 
-from omr_core.export import grade, item_analysis, write_excel, write_scorecards
+from omr_core.export import batch_summary, grade, item_analysis, write_excel, write_scorecards
 from omr_core.grading import Section
 from omr_core.reader import PageResult
 from omr_core.store import Store
@@ -198,3 +198,19 @@ def test_scorecards_and_excel_carry_the_institute(tmp_path):
     write_excel(tmp_path / "r.xlsx", "Mock 1", t, graded, inst)
     wb = load_workbook(tmp_path / "r.xlsx")
     assert wb["Merit list"]["A1"].value == "Sunrise Academy: Mock 1" and wb.properties.creator == "Sunrise Academy"
+
+
+def test_batches_are_compared_on_score_and_topic(tmp_path):
+    from omr_core.students import Student
+    t, pages, key = exam_with_pages(tmp_path)
+    topics = {1: "Kinematics", 2: "Kinematics", **{q: "Optics" for q in range(5, 101)}}
+    students = {"111": Student("111", "Asha", batch="Morning"), "222": Student("222", "Bina", batch="Evening"),
+                "333": Student("333", "Chet", batch="Morning"), "444": Student("444", "Dev")}
+    graded = grade(t, pages, key, 4, -1, 0, students, topics=topics)
+    batches = {b[0]: b for b in batch_summary(graded)}
+    assert list(batches) == ["Evening", "Morning"]  # Dev is in no batch
+    assert batches["Morning"][1:4] == (2, 396.0, 396) and batches["Morning"][5]["Kinematics"] == 100
+    assert batches["Evening"][5]["Kinematics"] == 50
+    write_excel(tmp_path / "merit.xlsx", "Mock 1", t, graded)
+    rows = list(load_workbook(tmp_path / "merit.xlsx")["Batches"].iter_rows(values_only=True))
+    assert rows[0][:4] == ("Batch", "Students", "Average score", "Highest score") and rows[2][0] == "Morning"

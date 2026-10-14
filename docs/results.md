@@ -26,6 +26,9 @@ Press **Merit list (Excel)…** and choose where to save it. The file has:
   left it blank, the most chosen wrong answer, and how well the question separates strong students
   from weak ones. It helps you find a question that was too hard or had a mistake in it;
 - a **Topics** sheet, if you set [topics](marks-and-sections.md#topics).
+- a **Batches** sheet, when the students on the exam's list are in two or more batches: each
+  batch's students, average and highest score, average in each section and share right in each
+  topic, side by side.
 
 ## Scorecards
 

@@ -108,3 +108,17 @@ def test_a_student_under_a_new_roll_number_in_each_test_is_one_row(tmp_path):
     s.rolls_change = False  # roll numbers are Student IDs: an unlinked 105 is the same student in both
     _, rows, _ = series_results(s, "JEE")
     assert len(rows) == 3
+
+
+def test_a_students_weak_topics_add_up_over_their_exams(tmp_path):
+    from omr_core.progress import history, topic_averages
+
+    s = Store(tmp_path / "omr.db")
+    s.save_student(Student("111", "Asha"))
+    for name, right in (("Mock 1", 10), ("Mock 2", 30)):
+        exam = s.create_exam(name, TEMPLATE)
+        s.save_scheme(exam, "A" * 100, 1, 0, 0)
+        s.set_topics(exam, {**{q: "Kinematics" for q in range(1, 41)}, **{q: "Optics" for q in range(41, 101)}})
+        s.add_page(exam, "b", "a.png", 1, sheet("111", right))
+    # Kinematics: 10 of 40, then 30 of 40; Optics: none right in either
+    assert topic_averages(history(s, "111")) == [("Optics", 0.0, 120, 2), ("Kinematics", 50.0, 80, 2)]

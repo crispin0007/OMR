@@ -244,6 +244,15 @@ def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Grad
         by_topic.append(["Everyone", "", *(_share(total) for total in totals)])
         by_topic.cell(by_topic.max_row, 1).font = Font(bold=True)
         sheets.append((by_topic, 1))
+    batches = batch_summary(graded)
+    if len(batches) > 1:
+        by_batch = wb.create_sheet("Batches")
+        by_batch.append(["Batch", "Students", "Average score", "Highest score",
+                         *(f"{s} average" for s in section_names), *(f"{t} % right" for t in names)])
+        for row in batches:
+            by_batch.append([row[0], row[1], row[2], row[3], *(row[4].get(s) for s in section_names),
+                             *(row[5].get(t) for t in names)])
+        sheets.append((by_batch, 1))
     for sheet, header_row in sheets:
         for cell in sheet[header_row]:
             cell.font = Font(bold=True)
@@ -253,6 +262,24 @@ def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Grad
             width = max(len(str(c.value or "")) for c in column[header_row - 1:]) + 2
             sheet.column_dimensions[column[0].column_letter].width = min(max(width, 6), 40)
     wb.save(path)
+
+
+def batch_summary(graded: list[Graded]) -> list[tuple[str, int, float, float, dict[str, float], dict[str, float]]]:
+    """How each batch did, by batch name: (batch, students, average score, highest score, average per section,
+    % right per topic). Students not in a batch are left out; "" when none is."""
+    groups: dict[str, list[Graded]] = {}
+    for g in graded:
+        if g.student and g.student.batch:
+            groups.setdefault(g.student.batch, []).append(g)
+    out = []
+    for batch in sorted(groups, key=str.casefold):
+        gs = groups[batch]
+        sections = {s: round(sum(g.sections.get(s, 0) for g in gs) / len(gs), 2) for s in gs[0].sections}
+        topics = {t: _share((sum(g.topics.get(t, (0, 0))[0] for g in gs), sum(g.topics.get(t, (0, 0))[1] for g in gs)))
+                  for t in dict.fromkeys(t for g in gs for t in g.topics)}
+        out.append((batch, len(gs), round(sum(g.score for g in gs) / len(gs), 2), max(g.score for g in gs), sections,
+                    topics))
+    return out
 
 
 def _share(right_counted: tuple[int, int] | None) -> float | None:

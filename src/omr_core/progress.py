@@ -25,6 +25,7 @@ class Entry:
     of: int
     percentile: float
     sections: dict[str, float] = field(default_factory=dict)  # percentage per section
+    topics: dict[str, tuple[int, int]] = field(default_factory=dict)  # (right, counted) per topic
 
 
 def history(store: Store, student_id: str, exam_ids: list[int] | None = None) -> list[Entry]:
@@ -38,7 +39,7 @@ def history(store: Store, student_id: str, exam_ids: list[int] | None = None) ->
         e = store.exam(i)
         try:
             graded = grade(e.template, store.pages(i), e.answer_key, e.correct, e.wrong, e.blank, store.students(i),
-                           e.sections)
+                           e.sections, topics=store.topics(i))
         except ValueError:
             continue  # no usable key yet: the exam's own Answer key tab says why
         g = next((g for g in graded if person(i, g.page.result.roll_number) == want), None)
@@ -54,7 +55,7 @@ def history(store: Store, student_id: str, exam_ids: list[int] | None = None) ->
                 sections[sec.name] = round(100 * g.sections.get(sec.name, 0.0) / most, 1)
         out.append(Entry(i, e.name, e.details.get("date") or e.created[:10], g.score, out_of,
                          round(100 * g.score / out_of, 1) if out_of else 0.0, g.rank, len(graded), g.percentile,
-                         sections))
+                         sections, g.topics))
     return out
 
 
@@ -65,6 +66,20 @@ def section_averages(entries: list[Entry]) -> list[tuple[str, float, int]]:
         for name, p in entry.sections.items():
             seen.setdefault(name, []).append(p)
     return sorted(((name, round(sum(p) / len(p), 1), len(p)) for name, p in seen.items()), key=lambda s: s[1])
+
+
+def topic_averages(entries: list[Entry]) -> list[tuple[str, float, int, int]]:
+    """(topic, % right, questions, exams) over the student's exams, weakest first. A topic is the same topic in
+    every exam that names it alike, so "Kinematics" in three mocks counts as one."""
+    seen: dict[str, list[int]] = {}
+    for entry in entries:
+        for name, (right, counted) in entry.topics.items():
+            if counted:
+                got = seen.setdefault(name, [0, 0, 0])
+                got[0] += right
+                got[1] += counted
+                got[2] += 1
+    return sorted(((name, round(100 * r / n, 1), n, k) for name, (r, n, k) in seen.items()), key=lambda t: t[1])
 
 
 def attendance(store: Store, students: list[str], exam_ids: list[int]) -> dict[str, list[bool]]:

@@ -53,7 +53,10 @@ then the student with that Student ID, as before.
 
 Choose a student and press **Profile…** (or double-click them). It shows every exam they took, with
 their score, percentage, rank and percentile, a line of their percentage in each exam (point at a
-dot to see the exam), and their average in each section, weakest first. Sheets are matched to the
+dot to see the exam), their average in each section, weakest first, and, when the exams have
+[topics](marks-and-sections.md#topics), their share right in each topic over every exam, weakest
+first, with the three to work on named at the top. A topic named alike in several exams (say
+"Kinematics" in every mock) counts as one. Sheets are matched to the
 student through each exam's list, or by roll number as their Student ID (a sheet's `00123` is the
 directory's `123`).
 
