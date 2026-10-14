@@ -17,6 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 app = [
     "PySide6>=6.7",
+    "keyring>=24",  # passwords and API keys for sending results, in the system credential store
     "pywin32>=306; sys_platform == 'win32'",
 ]
 dev = ["pytest>=8"]
