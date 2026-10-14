@@ -316,3 +316,17 @@ def test_repeated_missing_and_unreadable_sheet_numbers_are_named():
         "Sheet number A-0004 on more than one page. Sheet numbers A-0002, A-0003, B-0011 not scanned. "
         "1 page with a sheet number that can't be read.")
     assert "and 2 more not scanned" in sheet_number_problems(pages("0001", "0012"))
+
+
+def test_changes_to_the_key_are_logged_and_restored_with_a_backup(tmp_path):
+    s = Store(tmp_path / "omr.db")
+    exam = s.create_exam("Mock 1", TEMPLATE)
+    s.save_scheme(exam, "ABCD", 4, -1, 0)
+    s.save_scheme(exam, "A, *, C, D", 4, -1, 0, [("", 2, "B", "*")], "teacher")
+    s.save_scheme(exam, "A, *, C, -", 4, -1, 0, [("", 4, "D", "-")], "teacher")
+    log = s.key_log(exam)
+    assert [r[1:] for r in log] == [("teacher", "", 4, "D", "-"), ("teacher", "", 2, "B", "*")]  # newest first
+    s.backup(tmp_path / "b.db")
+    other = Store(tmp_path / "other.db")
+    other.restore(tmp_path / "b.db")
+    assert [r[1:] for r in other.key_log(other.exams()[0][0])] == [r[1:] for r in log]

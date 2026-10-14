@@ -1,5 +1,6 @@
 """Main window: a sidebar of pages; an exam opens into its own page with tabs, saved as it is read."""
 
+import getpass
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,7 +14,8 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFile
                                QVBoxLayout, QWidget)
 
 from omr_core.export import Graded, csv_columns, grade, single_questions, write_csv
-from omr_core.grading import Section, format_topics, full_marks, marks_for, parse_key, parse_topics, score
+from omr_core.grading import (BONUS, DROPPED, EITHER, Section, format_topics, full_marks, key_changes, marks_for,
+                              parse_key, parse_topics, score)
 from omr_core.reader import read_or_reason
 from omr_core.sources import read_pages
 from omr_core.store import Exam, Store, StoredPage, sheet_number_problems, to_review
@@ -64,6 +66,7 @@ class CheckPage(QWidget):
         super().__init__()
         self.store = store
         self.exam: Exam | None = None
+        self.logged_keys: dict[str, list[str]] | None = None  # the key as last logged, see _to_log
         self.questions: list[int] = []
         self.sheets: list[StoredPage] = []
         self.students: dict[str, Student] = {}
@@ -195,7 +198,7 @@ class CheckPage(QWidget):
         self._enable()
 
     def _marks(self, box: QDoubleSpinBox) -> QDoubleSpinBox:
-        box.valueChanged.connect(self.scheme_changed)
+        box.valueChanged.connect(lambda _: self.scheme_changed())
         return box
 
     def _enable(self):
@@ -229,14 +232,15 @@ class CheckPage(QWidget):
                 box.setValue(v)
             self.key_edit.setPlainText(exam.answer_key)
             self.exam = exam
+        self.logged_keys = None  # the key as last logged; set from the opened exam's key, with nothing to log
         self.update_key()
         self.show_sheets(None)
         self._enable()
 
-    def scheme_changed(self):
+    def scheme_changed(self, changes: list[tuple[str, int, str, str]] = ()):
         if self.exam is not None:
             self.store.save_scheme(self.exam.id, self.key_edit.toPlainText(), self.correct.value(),
-                                   self.wrong.value(), self.blank.value())
+                                   self.wrong.value(), self.blank.value(), changes, getpass.getuser())
         self.fill_table()
 
     @property
@@ -404,7 +408,18 @@ class CheckPage(QWidget):
             self.key_status.setObjectName("error")
         self.key_status.setStyleSheet("")  # re-apply the theme for the new object name
         self.key_tab.refresh()
-        self.scheme_changed()
+        self.scheme_changed(self._to_log())
+
+    def _to_log(self) -> list[tuple[str, int, str, str]]:
+        """Changes to the key since it was last logged, leaving out answers typed in for the first time."""
+        if not self.keys:  # a key being typed that doesn't read yet: log it once it does
+            return []
+        before, self.logged_keys = self.logged_keys, self.keys
+        if before is None:
+            return []
+        logged = {(c, q) for _, _, c, q, _, _ in self.store.key_log(self.exam.id)}
+        return [(c, q, a, b) for c, q, a, b in key_changes(before, self.keys, self.questions)
+                if not (a == DROPPED and b != BONUS and EITHER not in b and (c, q) not in logged)]
 
     def score_of(self, sheet: StoredPage) -> float | None:
         r = sheet.result

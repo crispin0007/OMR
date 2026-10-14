@@ -155,3 +155,18 @@ def test_csv_has_the_chosen_columns_in_order(tmp_path):
     assert [r[1] for r in rows[1:]] == ["111", "333", "222", "444", ""]  # the unreadable page comes last
     assert rows[-1][0] == "" and rows[-1][-1].startswith("page: unreadable") and rows[-1][4] == ""
     assert "Q3: unclear mark" in rows[3][-1] and "not on the student list" in rows[3][-1]
+
+
+def test_key_changes_are_noted_on_scorecards_and_in_excel(tmp_path):
+    t, pages, _ = exam_with_pages(tmp_path)
+    graded = grade(t, pages, ", ".join(["A/C", "B", "*", "-"] + ["A"] * 96), 1, 0, 0)  # Q1 A or C, Q3 bonus, Q4 dropped
+    assert {g.page.result.roll_number: g.right for g in graded}["111"] == 99
+    write_excel(tmp_path / "r.xlsx", "Mock 1", t, graded)
+    wb = load_workbook(tmp_path / "r.xlsx")
+    assert "Key changes sheet" in wb["Merit list"]["C1"].value
+    assert [list(r) for r in wb["Key changes"].values] == [
+        ["Set", "Question", "Change"], ["A", "Q1", "A or C accepted"], ["A", "Q3", "bonus, full marks to everyone"],
+        ["A", "Q4", "dropped, counted for no one"]]
+    write_scorecards(tmp_path / "s.pdf", "Mock 1", t, graded)
+    text = pypdfium2.PdfDocument(tmp_path / "s.pdf")[0].get_textpage().get_text_range()
+    assert "Answer key changed: Q1 A or C accepted" in text and "bonus" in text

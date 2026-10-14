@@ -61,6 +61,16 @@ CREATE TABLE IF NOT EXISTS audit (
     before TEXT NOT NULL,
     after TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS key_log (   -- changes to answers already in the key, e.g. a question made a bonus
+    id INTEGER PRIMARY KEY,
+    exam_id INTEGER NOT NULL REFERENCES exam(id) ON DELETE CASCADE,
+    at TEXT NOT NULL,
+    user TEXT NOT NULL,
+    set_code TEXT NOT NULL,          -- '' for the key of every set
+    question INTEGER NOT NULL,
+    before TEXT NOT NULL,            -- answers as in the key: "B", "*", "-", "A/C"
+    after TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS written (
     exam_id INTEGER NOT NULL REFERENCES exam(id) ON DELETE CASCADE,
     roll_number TEXT NOT NULL,
@@ -182,10 +192,20 @@ class Store:
         return Exam(row[0], row[1], parse(json.loads(row[2])), *row[2:8], sections_from_json(json.loads(row[8])),
                     json.loads(row[9]), row[10])
 
-    def save_scheme(self, exam_id: int, answer_key: str, correct: float, wrong: float, blank: float):
+    def save_scheme(self, exam_id: int, answer_key: str, correct: float, wrong: float, blank: float,
+                    changes: list[tuple[str, int, str, str]] = (), user: str = ""):
+        """Save the key and marks, with `changes` (set code, question, before, after) in the key's log."""
+        at = datetime.now().isoformat(timespec="seconds")
         with self.db:
             self.db.execute("UPDATE exam SET answer_key = ?, correct = ?, wrong = ?, blank = ? WHERE id = ?",
                             (answer_key, correct, wrong, blank, exam_id))
+            self.db.executemany("INSERT INTO key_log (exam_id, at, user, set_code, question, before, after) "
+                                "VALUES (?, ?, ?, ?, ?, ?, ?)", [(exam_id, at, user, *c) for c in changes])
+
+    def key_log(self, exam_id: int) -> list[tuple[str, str, str, int, str, str]]:
+        """(at, user, set code, question, before, after) for every logged change to the key, newest first."""
+        return self.db.execute("SELECT at, user, set_code, question, before, after FROM key_log WHERE exam_id = ? "
+                               "ORDER BY id DESC", (exam_id,)).fetchall()
 
     def save_sections(self, exam_id: int, sections: list[Section]):
         t = self.exam(exam_id).template
@@ -255,6 +275,9 @@ class Store:
                                             (page, old_page))
                         self.db.execute("INSERT INTO written (exam_id, roll_number, marks) SELECT ?, roll_number, "
                                         "marks FROM b.written WHERE exam_id = ?", (exam, old))
+                        self.db.execute("INSERT INTO key_log (exam_id, at, user, set_code, question, before, after) "
+                                        "SELECT ?, at, user, set_code, question, before, after FROM b.key_log "
+                                        "WHERE exam_id = ? ORDER BY id", (exam, old))
                         self.db.execute("INSERT INTO student (exam_id, roll_number, name, class_name) SELECT ?, "
                                         "roll_number, name, class_name FROM b.student WHERE exam_id = ?", (exam, old))
                         restored.append(name)

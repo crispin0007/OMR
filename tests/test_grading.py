@@ -151,3 +151,25 @@ def test_bad_topics_say_why(text, problem):
     from omr_core.grading import parse_topics
     with pytest.raises(ValueError, match=problem):
         parse_topics(text, list(range(1, 11)))
+
+
+def test_a_question_with_a_mistake_can_accept_either_answer():
+    from omr_core.grading import changed_questions, key_changes, status, summary
+    # Q1 A or C both right; doubled A and C is still two marks where one was asked for: nothing, not -1
+    assert [status(a, "A/C") for a in ("A", "C", "B", "")] == ["right", "right", "wrong", "blank"]
+    assert score(["C", "B", "AC", ""], ["A/C"] * 4, correct=4, wrong=-1) == 4 - 1 + 0 + 0
+    assert status("43", "42/43") == "right" and status("44", "42/43") == "wrong"
+    keys = parse_key("A, A/C, *, -, B, 42/043", 6, ["ABCD"] * 5 + ["0123456789"])
+    assert keys[""] == ["A", "A/C", "*", "-", "B", "42/43"]
+    assert parse_key(format_key(keys), 6, ["ABCD"] * 5 + ["0123456789"]) == keys
+    assert key_from_csv("question,answer\n1,A/C\n2,*\n", [1, 2], "ABCD") == {"": ["A/C", "*"]}
+    for bad in ("A/", "A/*", "A/Z"):
+        with pytest.raises(ValueError):
+            parse_key(f"B, {bad}", 2, "ABCD")
+    # a dropped question inside the key is a change; the unused end of the sheet is not
+    changes = changed_questions(["A", "*", "-", "A/C", "B", "-", "-"], [1, 2, 3, 4, 5, 6, 7])
+    assert changes == [(2, "bonus, full marks to everyone"), (3, "dropped, counted for no one"),
+                       (4, "A or C accepted")]
+    assert summary(changes) == "1 bonus, 1 dropped, 1 with either answer"
+    assert key_changes({"": ["A", "B"]}, {"": ["A", "*"], "B": ["C", "-"]}, [1, 2]) == [
+        ("", 2, "B", "*"), ("B", 1, "-", "C")]

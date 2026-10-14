@@ -491,6 +491,39 @@ def test_answer_key_grid_keyboard_and_csv(app, tmp_path, monkeypatch):
     assert g.isHidden() and not w.check.key_edit.isHidden()
 
 
+
+def test_a_question_with_a_mistake_is_made_bonus_dropped_or_either_and_can_be_undone(app, tmp_path):
+    from PySide6.QtTest import QTest
+    from omr_app import answer_key
+    w = window(tmp_path)
+    c, k, g = w.check, w.check.key_tab, w.check.key_tab.grid
+    for key in (Qt.Key_B, Qt.Key_D, Qt.Key_A):
+        QTest.keyClick(g, key)
+    assert c.full_marks() == 3 and w.store.key_log(c.exam.id) == []  # typing the key in isn't a change
+    g.setCurrentCell(0, 2)
+    QTest.keyClick(g, Qt.Key_C, Qt.ShiftModifier)
+    QTest.keyClick(g, Qt.Key_Slash)  # B or C
+
+    def choose(row, text):
+        next(a for a in k.mistake_menu(row).actions() if a.text().startswith(text)).trigger()
+    choose(1, "Bonus")
+    choose(2, "Drop")
+    assert c.key_edit.toPlainText() == "B/C, *"  # Q3 dropped at the end of the key: the paper is now 2 questions
+    choose(2, "Undo the last change (back to A)")
+    assert c.key_edit.toPlainText() == "B/C, *, A" and c.full_marks() == 3
+    assert k.changes.text() == ("Changed (1 bonus, 1 with either answer): Q1 B or C accepted  ·  "
+                                "Q2 bonus, full marks to everyone")
+    assert g.item(1, k.bonus_col).text() == "Bonus" and g.item(0, k.bonus_col).text() == "B or C"
+
+    log = w.store.key_log(c.exam.id)
+    assert [r[3:] for r in log] == [(3, "-", "A"), (3, "A", "-"), (2, "D", "*"), (1, "BC", "B/C"), (1, "B", "BC")]
+    dialog = answer_key.LogDialog(k)
+    dialog.table.selectRow(2)  # Q2 made a bonus
+    dialog.undo.click()
+    assert c.key_edit.toPlainText() == "B/C, D, A"
+    assert w.store.key_log(c.exam.id)[0][3:] == (2, "*", "D")
+
+
 def test_a_page_that_cant_be_read_says_why_and_offers_mapping(app, tmp_path):
     w = window(tmp_path)
     blank = tmp_path / "blank.png"

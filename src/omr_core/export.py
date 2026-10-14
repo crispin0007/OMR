@@ -17,7 +17,7 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
 
-from .grading import DROPPED, Section, marks_for, parse_key, rank, score, status
+from .grading import BONUS, DROPPED, Section, changed_questions, marks_for, parse_key, rank, score, status
 from .store import StoredPage, to_review
 from .students import Student
 from .template import Template
@@ -210,6 +210,16 @@ def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Grad
     for row in item_analysis(t, graded):
         items.append(row)
     sheets = [(ws, 2), (answers, 1), (items, 1)]
+    by_set = {g.page.result.set_code: g.key for g in graded}
+    changed = [[set_code, f"Q{q}", change] for set_code, key in sorted(by_set.items())
+               for q, change in changed_questions(key, qs)]
+    if changed:
+        ws["C1"] = "The answer key was changed for some questions: see the Key changes sheet."
+        notes = wb.create_sheet("Key changes")
+        notes.append(["Set", "Question", "Change"])
+        for row in changed:
+            notes.append(row)
+        sheets.append((notes, 1))
     names = list(dict.fromkeys(t for g in graded for t in g.topics))
     if names:
         by_topic = wb.create_sheet("Topics")
@@ -274,7 +284,11 @@ def write_scorecards(path: str | Path, exam_name: str, t: Template, graded: list
             for k, line in enumerate(lines):
                 c.drawString(18 * mm, h - (57 + 4.2 * k) * mm, line)
             top -= 4.2 * len(lines) * mm
-        rows = min(per_column, int((top - 21 * mm) // row_h) + 1)  # the topics take room from the answer columns
+        changes = changed_questions(g.key, qs)
+        notes = simpleSplit("Answer key changed: " + "  ·  ".join(f"Q{q} {c}" for q, c in changes), "Helvetica", 8,
+                            w - 36 * mm) if changes else []
+        bottom = (21 + 3.6 * len(notes)) * mm
+        rows = min(per_column, int((top - bottom) // row_h) + 1)  # topics and notes take room from the answers
         col_w = (w - 36 * mm) / max(1, -(-len(qs) // rows))
         c.setFont("Helvetica", 8)
         for n, (q, k) in enumerate(zip(qs, g.key)):
@@ -285,9 +299,12 @@ def write_scorecards(path: str | Path, exam_name: str, t: Template, graded: list
             c.drawString(x, y, f"Q{q}")
             c.drawString(x + 10 * mm, y, r.answers[q] or "-")
             c.setFillColor(colors.grey)
-            c.drawString(x + 19 * mm, y, "*" if k == "*" else k if k != "-" else "")
+            c.drawString(x + 19 * mm, y, "bonus" if k == BONUS else k if k != DROPPED else "")
             c.setFillColor(colour)
             c.drawString(x + 28 * mm, y, sign)
+        c.setFillColor(colors.HexColor("#c27c00"))
+        for k, line in enumerate(notes):
+            c.drawString(18 * mm, (16.5 + 3.6 * (len(notes) - 1 - k)) * mm, line)
         c.setFillColor(colors.grey)
         c.drawString(18 * mm, 12 * mm, "Columns: question, answer given, correct answer, result.")
         c.setFillColor(colors.black)

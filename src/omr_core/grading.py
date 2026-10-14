@@ -3,7 +3,8 @@
 Answers and keys are strings of option letters: "B" for one answer, "AC" for
 multi-correct, "" for blank. A numeric question's answer and key are its
 digits, e.g. "42"; an answer is right when it is the same number. In a key, "*" is a bonus question (everyone gets
-the correct marks) and "-" is a dropped question (it counts for nobody).
+the correct marks), "-" is a dropped question (it counts for nobody), and "A/C" accepts either answer, for a
+question with a mistake that makes more than one option right.
 Sheets reach grading after review, so every answer here is already decided.
 
 Sections give a range of questions its own marks, e.g. 4 right and -1 wrong
@@ -22,7 +23,7 @@ from dataclasses import asdict, dataclass
 
 from .template import DIGITS
 
-BONUS, DROPPED = "*", "-"
+BONUS, DROPPED, EITHER = "*", "-", "/"
 
 
 @dataclass(frozen=True)
@@ -96,7 +97,7 @@ def score(answers: list[str], key: list[str], correct: float = 1.0, wrong: float
     marks = marks or [(correct, wrong, blank, False, True)] * len(key)
     total = 0.0
     for answer, right, (c, w, b, partial, single) in zip(answers, key, marks):
-        if single and len(answer) > 1 and len(right) == 1 and right.isalpha():
+        if single and len(answer) > 1 and all(len(a) == 1 and a.isalpha() for a in right.split(EITHER)):
             continue  # invalid: two bubbles where one answer was asked for earns nothing
         if partial and _part_right(answer, right):
             # shortcut: counted as wrong in right/wrong/blank counts and colours; only the marks are partial
@@ -108,7 +109,8 @@ def score(answers: list[str], key: list[str], correct: float = 1.0, wrong: float
 
 def _part_right(answer: str, right: str) -> bool:
     """Some, but not all, of a multi-correct question's options, and no wrong one."""
-    return right not in (BONUS, DROPPED) and not right.isdigit() and bool(answer) and set(answer) < set(right)
+    return right not in (BONUS, DROPPED) and bool(answer) and any(
+        not a.isdigit() and set(answer) < set(a) for a in right.split(EITHER))
 
 
 def full_marks(key: list[str], marks: list[tuple]) -> float:
@@ -122,10 +124,9 @@ def status(answer: str, right: str) -> str:
         return "dropped"
     if right == BONUS:
         return "right"
-    if right.isdigit():
-        return "right" if answer.isdigit() and int(answer) == int(right) else "wrong" if answer else "blank"
-    if set(answer) == set(right):
-        return "right"
+    for a in right.split(EITHER):
+        if a.isdigit() and answer.isdigit() and int(answer) == int(a) or not a.isdigit() and set(answer) == set(a):
+            return "right"
     return "wrong" if answer else "blank"
 
 
@@ -176,6 +177,11 @@ def _checked(answer: str, options: str, where: str) -> str:
     """A key's answer as kept, or ValueError when it can't answer a question with these options."""
     if answer in (BONUS, DROPPED):
         return answer
+    if EITHER in answer:
+        either = answer.split(EITHER)
+        if not all(either) or BONUS in either or DROPPED in either:
+            raise ValueError(f"{where}: {answer} needs an answer on each side of /, e.g. A/C")
+        return EITHER.join(dict.fromkeys(_checked(a, options, where) for a in either))
     if options == DIGITS:
         if not answer.isdigit():
             raise ValueError(f"{where}: {answer} is not a number, and this question is answered with one")
@@ -198,6 +204,40 @@ def format_key(keys: dict[str, list[str]]) -> str:
         answers = ", ".join(key) if any(len(a) > 1 for a in key) else "".join(key)
         lines.append(f"{set_code}: {answers}" if set_code else answers)
     return "\n".join(lines)
+
+
+def describe(answer: str) -> str:
+    """A key's answer in words, e.g. "bonus", "dropped", "A or C"."""
+    return {BONUS: "bonus", DROPPED: "dropped"}.get(answer, answer.replace(EITHER, " or "))
+
+
+def changed_questions(key: list[str], questions: list[int]) -> list[tuple[int, str]]:
+    """(question, change) for each question the key gives everyone, drops, or accepts more than one answer for.
+
+    Dropped questions after the last one in the key are not changes: the paper just uses part of the sheet.
+    """
+    last = max((n for n, a in enumerate(key) if a != DROPPED), default=-1)
+    words = {BONUS: "bonus, full marks to everyone", DROPPED: "dropped, counted for no one"}
+    return [(q, words.get(a) or f"{describe(a)} accepted") for n, (q, a) in enumerate(zip(questions, key))
+            if a == BONUS or a == DROPPED and n < last or EITHER in a]
+
+
+def summary(changes: list[tuple[int, str]]) -> str:
+    """"2 bonus, 1 dropped, 1 with either answer", or "" for none."""
+    kinds = [c.split(",")[0] if "," in c else "either" for _, c in changes]
+    return ", ".join(f"{kinds.count(k)} {k if k != 'either' else 'with either answer'}"
+                     for k in ("bonus", "dropped", "either") if k in kinds)
+
+
+def key_changes(before: dict[str, list[str]], after: dict[str, list[str]],
+                questions: list[int]) -> list[tuple[str, int, str, str]]:
+    """(set code, question, before, after) for every answer that differs between two keys."""
+    out = []
+    for set_code in dict.fromkeys([*before, *after]):
+        old = before.get(set_code) or [DROPPED] * len(questions)
+        new = after.get(set_code) or [DROPPED] * len(questions)
+        out += [(set_code, q, a, b) for q, a, b in zip(questions, old, new) if a != b]
+    return out
 
 
 def key_from_sheet(answers: dict[int, str], flags: list[tuple[str, str]],
@@ -226,8 +266,8 @@ def key_to_csv(keys: dict[str, list[str]], questions: list[int]) -> str:
 def key_from_csv(text: str, questions: list[int], options: str | list[str]) -> dict[str, list[str]]:
     """Keys from CSV with a header of question and answer columns, and a set column when there are sets.
 
-    Answers are option letters ("B", "AC" or "A;C"), "*" for bonus, and empty or "-" for dropped. Questions
-    left out are dropped. Raises ValueError naming the line of anything that can't be used.
+    Answers are option letters ("B", "AC" or "A;C"), "A/C" for either, "*" for bonus, and empty or "-" for
+    dropped. Questions left out are dropped. Raises ValueError naming the line of anything that can't be used.
     """
     rows = list(csv.reader(io.StringIO(text.lstrip("﻿"))))  # Excel may start the file with a BOM
     rows = [r for r in rows if any(c.strip() for c in r)]
@@ -251,7 +291,7 @@ def key_from_csv(text: str, questions: list[int], options: str | list[str]) -> d
             raise ValueError(f"line {n}: the sheet has no question {q}")
         answer = _checked("".join(cell(ai).upper().replace(";", " ").replace(",", " ").split()) or DROPPED,
                           each[place[q]], f"line {n}")
-        if answer not in (BONUS, DROPPED) and not answer.isdigit():
+        if answer not in (BONUS, DROPPED) and not answer.isdigit() and EITHER not in answer:
             answer = "".join(sorted(set(answer)))
         key = keys.setdefault(set_code, [DROPPED] * len(questions))
         key[place[q]] = answer

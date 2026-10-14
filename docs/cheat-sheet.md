@@ -20,9 +20,10 @@
 | Ctrl+O | Anywhere | Import scans into the open exam |
 | F1 | Anywhere | Help |
 | A, B, C… | Answer key | Set the answer and go to the next question |
-| Shift+letter | Answer key | Add a second right answer |
+| Shift+letter | Answer key | Add a second answer the student must also fill |
 | `*` | Answer key | Bonus question (everyone gets the marks) |
-| Space | Answer key | Drop the question |
+| Space | Answer key | Drop the question (counts for no one) |
+| `/` | Answer key | Either of the ticked answers is right |
 | A, B, C… | Review | Pick that answer |
 | Delete | Review | Blank |
 | Space | Review | Keep as read |
