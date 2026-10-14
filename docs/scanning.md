@@ -32,9 +32,13 @@ You'll also find **▶ Start scanning** at the top right of every exam page and 
 ### What you see while it scans
 
 - **Sheet being read**: a picture of each sheet as it arrives.
-  - **Green** ring: a right answer.
+  - **Green** ring: a right answer (a bonus question counts as right).
   - **Red** ring: a wrong answer.
-  - **Blue** ring: read, but there's no answer key yet (also used for roll number and set).
+  - **Blue** ring: the right answer, where the student was wrong or left it blank. A number
+    question's whole grid is boxed instead, with the right number written above it in blue.
+  - **Purple** ring: read, but there's nothing to mark it against: the roll number, the set, or a
+    question with no answer key yet.
+  - **Grey** ring: an answer to a dropped question.
   - **Orange box**: something a person needs to check later, in [Review](review.md).
 - Under it, the sheet's roll number, student name, set and score.
 - A growing **list of sheets read**. Click one to see it again.
@@ -78,9 +82,16 @@ ways on: **Import scans…**, **Choose folder…** or **Find scanners**.
 
 The **Scanned sheets** tab has a row for every page: file, page, roll number, name, set, questions
 answered, score, what to review, and the sheet number (if used). Highlighted rows have something to check; click a row to see
-the page.
+the page, marked in the same colours, with a legend underneath.
 
 ![The Scanned sheets tab](images/scanned-sheets.png)
+
+- **Mark the answers** turns the colours on and off, to see the sheet as it was scanned.
+- **Show every bubble position** draws a thin circle where the sheet expects each bubble. Every
+  circle should sit on a printed bubble. If they drift off to one side or down the page, the
+  printed sheet doesn't match the exam's sheet: see [Map my printed sheet](map-printed-sheet.md).
+
+![A sheet marked green, red and blue, with every bubble position shown](images/marked-sheet.png)
 
 - Select rows and press **Delete…** to remove pages, such as a sheet scanned twice.
 - **Move to exam…** moves selected pages to another exam that uses the same sheet, for sheets

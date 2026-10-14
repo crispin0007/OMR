@@ -1355,6 +1355,9 @@ def test_cut_off_corner_shows_why_live_and_on_review(app, tmp_path):
 def test_imported_sheets_show_live_with_their_marks_and_can_pause_and_stop(app, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog
 
+    import pypdfium2
+    from PySide6.QtWidgets import QMessageBox
+
     from omr_app.scan import RIGHT, WRONG, marked_sheet
     from omr_core.reader import SCALE
     files = sheet_files(tmp_path, [7, 8, 9, 7])  # the last is sheet 7 again: the same roll number twice
@@ -1391,6 +1394,16 @@ def test_imported_sheets_show_live_with_their_marks_and_can_pause_and_stop(app, 
     assert tuple(marked_sheet(image, t, stored.result, {q: answers[q]})[on_ring]) == RIGHT
     other = next(o for o in g.options if o != answers[q])
     assert tuple(marked_sheet(image, t, stored.result, {q: other})[on_ring]) == WRONG
+    c.select(0)  # Scanned sheets marks them too, and every bubble's place on the paper when asked
+    c.every_bubble.setChecked(True)
+    c.show_sheet()
+    assert not c.page_view.pixmap().isNull()
+    out = tmp_path / "marked.pdf"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), ""))
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)  # some marks are still to check
+    w.results.redraw()
+    w.results.marked.click()  # a marked sheet per student, as a PDF
+    assert len(pypdfium2.PdfDocument(out)) == len(w.results.graded)
 
     # Stopping part-way keeps what was read and says what wasn't.
     s.read_files([f[0] for f in files[:3]])

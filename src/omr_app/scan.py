@@ -10,7 +10,6 @@ from collections import deque
 from datetime import datetime
 from pathlib import Path
 
-import cv2
 import numpy as np
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPixmap
@@ -18,10 +17,10 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QGridLayout, Q
                                QLineEdit, QMessageBox, QPushButton, QSizePolicy, QSplitter, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
-from omr_core.grading import status
-from omr_core.reader import SCALE, PageResult, read_or_reason
+from omr_core.reader import PageResult, read_or_reason
 from omr_core.parallel import PageReader
 from omr_core.sources import is_blank, ready_files
+from omr_core.marking import RIGHT, WRONG, mark_sheet  # noqa: F401  (tests find the colours here)
 from omr_core.template import Template
 
 from . import scanner, theme
@@ -33,41 +32,13 @@ DPIS = ["200", "300", "150"]
 NO_EXAM = "Open an exam on the Exams page first; scanned sheets are saved into it."
 SCANS = "Scans (*.pdf *.png *.jpg *.jpeg *.tif *.tiff *.bmp)"
 LIVE_COLUMNS = ["#", "Roll number", "Name", "Set", "Score", "To check"]
-# BGR rings on the live sheet: right, wrong, read (no key yet, or roll number and set) and to check.
-RIGHT, WRONG, READ, CHECK = (46, 125, 50), (40, 40, 211), (192, 101, 21), (0, 140, 255)
 
 
-def marked_sheet(aligned: np.ndarray, t: Template, r: PageResult, key: dict[int, str]) -> np.ndarray:
-    """The sheet as it was read: every filled bubble ringed (green right, red wrong, blue without a key) and
-    every item to check boxed in orange."""
-    out = cv2.cvtColor(aligned, cv2.COLOR_GRAY2BGR) if aligned.ndim == 2 else aligned.copy()
-    radius = round(max(t.bubble) / 2 * SCALE) + 3
-
-    def ring(g, row: int, col: int, colour):
-        x, y = g.centre(row, col)
-        cv2.circle(out, (round(x * SCALE), round(y * SCALE)), radius, colour, 3, cv2.LINE_AA)
-
-    for g in t.grids:
-        if g.kind == "questions":
-            for row in range(g.rows):
-                q = g.first + row
-                answer = r.answers.get(q, "")
-                colour = READ if q not in key else RIGHT if status(answer, key[q]) == "right" else WRONG
-                for letter in answer:
-                    if letter in g.options:
-                        ring(g, row, g.options.index(letter), colour)
-        elif g.kind == "roll_number":
-            for col, digit in enumerate(r.roll_number[:g.cols]):
-                if digit.isdigit():
-                    ring(g, int(digit), col, READ)
-        elif g.kind == "set_code" and r.set_code and r.set_code in g.options:
-            ring(g, 0, g.options.index(r.set_code), READ)
-    for where, _ in r.flags:
-        found = region(t, where)
-        if found:
-            x0, y0, x1, y1 = (round(v * SCALE) for v in found[2])
-            cv2.rectangle(out, (x0, y0), (x1, y1), CHECK, 4)
-    return out
+def marked_sheet(aligned: np.ndarray, t: Template, r: PageResult, key: dict[int, str],
+                 every_bubble: bool = False) -> np.ndarray:
+    """The sheet as it was read, with its marking (see omr_core.marking) and every item to check boxed."""
+    boxes = [found[2] for where, _ in r.flags if (found := region(t, where))]
+    return mark_sheet(aligned, t, r, key, every_bubble, boxes)
 
 
 class ScanThread(QThread):

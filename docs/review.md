@@ -19,7 +19,9 @@ person to decide. Everything else is already done.
 ## How to fix an item
 
 The list on the left shows every item. The right side shows **that part of the sheet**, with the
-question boxed, and what it was **Read as**.
+question boxed, and what it was **Read as**. The part of the sheet shown is marked in the same
+colours as [Scanned sheets](scanning.md#after-scanning-scanned-sheets), with a thin circle where each bubble is
+expected, so you can see at once whether the mark sits in its bubble.
 
 - Press the **letter** of the right answer (or click its button).
 - Press **Delete** for **Blank**.

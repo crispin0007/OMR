@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QGridLayout, QHBoxLayo
                                QTableWidgetItem, QToolTip, QVBoxLayout, QWidget)
 
 from omr_core.export import Graded, write_excel, write_scorecards
+from omr_core.marking import write_marked_sheets
 from omr_core import sending
 from omr_core.report import write_reports
 
@@ -302,6 +303,11 @@ class ResultsPage(ShownPage):
         self.excel.clicked.connect(lambda: self.export("Excel", "xlsx", write_excel))
         self.pdf = QPushButton("Scorecards (PDF)…")
         self.pdf.clicked.connect(lambda: self.export("PDF", "pdf", write_scorecards))
+        self.marked = QPushButton("Marked sheets (PDF)…", toolTip="Each student's sheet with right answers ringed "
+                                  "green, wrong red and the missed right answer blue, one page each")
+        self.marked.clicked.connect(lambda: self.export(
+            "PDF", "pdf", lambda path, name, t, graded, institute: write_marked_sheets(
+                path, name, t, graded, self.check.store.image, institute), "marked sheets"))
         self.csv = QPushButton("Results (CSV)…", toolTip="Pick the columns and their order, then save a CSV for Excel")
         self.reports = QPushButton("Student reports…", toolTip="Each student's scorecard as a page that opens in any "
                                    "browser or phone, and as a PDF, named by roll number, in a folder or a zip")
@@ -314,6 +320,7 @@ class ResultsPage(ShownPage):
         top.addStretch()
         top.addWidget(self.excel)
         top.addWidget(self.pdf)
+        top.addWidget(self.marked)
         top.addWidget(self.reports)
         top.addWidget(self.send)
         top.addWidget(self.csv)
@@ -335,6 +342,7 @@ class ResultsPage(ShownPage):
                               "Written marks tab.")
         self.excel.setEnabled(bool(self.graded))
         self.pdf.setEnabled(bool(self.graded))
+        self.marked.setEnabled(bool(self.graded))
         self.reports.setEnabled(bool(self.graded))
         self.send.setEnabled(bool(self.graded))
         self.csv.setEnabled(bool(c.sheets))
@@ -419,12 +427,12 @@ class ResultsPage(ShownPage):
         progress.close()
         self.window().statusBar().showMessage(f"Saved {done} student reports in {path}", 8000)
 
-    def export(self, kind: str, ext: str, write):
+    def export(self, kind: str, ext: str, write, what: str = ""):
         c = self.check
         if not self._checked_first():
             return
         name = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in c.exam.name).strip() or "results"
-        default = f"{name} {'merit list' if ext == 'xlsx' else 'scorecards'}.{ext}"
+        default = f"{name} {what or ('merit list' if ext == 'xlsx' else 'scorecards')}.{ext}"
         path, _ = QFileDialog.getSaveFileName(self, f"Save {kind}", default, f"{kind} (*.{ext})")
         if not path:
             return

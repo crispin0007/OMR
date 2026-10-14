@@ -93,8 +93,9 @@ on the **Templates** screen.
 **Scan and read**
 - **Start scanning** from any Windows (WIA) scanner with a feeder, both sides at once, blank backs
   skipped.
-- **Live view**: each sheet appears as it is read, with right answers ringed green, wrong ones red
-  and anything doubtful boxed, plus a running list of roll numbers and scores.
+- **Live view**: each sheet appears as it is read, with right answers ringed green, wrong ones red,
+  the missed right answer blue and anything doubtful boxed, plus a running list of roll numbers and
+  scores. **Show every bubble position** checks the sheet lines up with the paper.
 - Also reads a **folder your scanner software saves into**, and **scanned PDFs or images**
   (photocopies and phone photos too).
 - Every page is **saved the moment it is read**, so a paper jam or power cut never loses a sheet.
@@ -121,6 +122,7 @@ on the **Templates** screen.
 - **Merit list in Excel** with every answer coloured right or wrong, plus **item analysis**
   (difficulty and discrimination per question).
 - **One PDF scorecard per student**, with your institute's letterhead, signature line and footer.
+- **Marked sheets (PDF)**: each student's own sheet, coloured right, wrong and missed, one page each.
 - **Student reports**: a page per student that opens offline in any phone browser (score, rank,
   section and topic bars, every question), plus a PDF, in a folder or one zip named by roll number.
 - **Institute branding**: name, logo, address, colour, motto and signature, kept once and used on

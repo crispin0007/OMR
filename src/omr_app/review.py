@@ -10,6 +10,7 @@ from PySide6.QtGui import QImage, QKeySequence, QPixmap
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
                                QSplitter, QVBoxLayout, QWidget)
 
+from omr_core.marking import mark_sheet
 from omr_core.reader import SCALE
 from omr_core.template import Grid, Template
 
@@ -210,10 +211,16 @@ class ReviewPage(QWidget):
             self.picture.setText("No image saved for this page")
             return
         _, around, mark = found
-        h, w = image.shape
+        h, w = image.shape[:2]
         x0, y0, x1, y1 = (round(v * SCALE) for v in around)
         x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, w), min(y1, h)
-        crop = cv2.cvtColor(image[y0:y1, x0:x1], cv2.COLOR_GRAY2BGR)
+        sheet = next((s for s in self.check.sheets if s.id == page_id), None)
+        if sheet is not None and sheet.result is not None:  # the marking around it: is the bubble where it should be?
+            key = self.check.keys.get(sheet.result.set_code, self.check.keys.get(""))
+            image = mark_sheet(image, self.check.exam.template, sheet.result,
+                               dict(zip(self.check.questions, key or [])), every_bubble=True)
+        crop = image[y0:y1, x0:x1] if image.ndim == 3 else cv2.cvtColor(image[y0:y1, x0:x1], cv2.COLOR_GRAY2BGR)
+        crop = np.ascontiguousarray(crop)
         accent = tokens()["accent"].lstrip("#")
         colour = tuple(int(accent[k:k + 2], 16) for k in (4, 2, 0))  # BGR
         mx0, my0, mx1, my1 = (round(v * SCALE) for v in mark)

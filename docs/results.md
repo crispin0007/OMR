@@ -37,6 +37,14 @@ page says so.
 
 ![A student's scorecard with the institute's letterhead](images/scorecard-branded.png)
 
+## Marked sheets
+
+Press **Marked sheets (PDF)…** to save **one page per student**: their name, roll number, score and
+rank above a picture of their own sheet, with right answers ringed green, wrong ones red, the right
+answer they missed in blue, and a legend. Useful for showing a student or parent exactly where marks
+were lost, and for checking that every bubble was read where it was filled. A sheet whose picture
+wasn't saved is left out.
+
 ## Student reports
 
 Press **Student reports…** to make, for every student, a **report page** that opens in any phone or

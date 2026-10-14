@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QKeySequence, QPixmap, QShortcut
-from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFileDialog, QHBoxLayout, QInputDialog,
+from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QInputDialog,
                                QLabel, QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QProgressDialog,
                                QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFile
 from omr_core.export import Graded, csv_columns, grade, single_questions, write_csv
 from omr_core.grading import (BONUS, DROPPED, EITHER, Section, format_topics, full_marks, key_changes, marks_for,
                               parse_key, parse_topics, score)
+from omr_core.marking import LEGEND
 from omr_core.parallel import PageReader
 from omr_core.reader import read_or_reason
 from omr_core.sources import read_pages
@@ -37,7 +38,7 @@ from .institutes import InstituteSettings
 from .paths import data_dir
 from .new_exam import Deduction
 from .review import ReviewPage
-from .scan import ScanPage
+from .scan import ScanPage, marked_sheet
 from .sections import SectionsDialog
 
 APP = "OMR Checker"
@@ -184,10 +185,31 @@ class CheckPage(QWidget):
         scroll = QScrollArea()
         scroll.setWidget(self.page_view)
         scroll.setWidgetResizable(True)
+        self.mark = QCheckBox("Mark the answers", checked=True,
+                              toolTip="Green right, red wrong, blue the right answer missed, purple read with "
+                                      "nothing to mark, orange to check")
+        self.every_bubble = QCheckBox("Show every bubble position",
+                                      toolTip="A thin circle where the sheet's template expects each bubble: each "
+                                              "should sit on a printed bubble")
+        for box in (self.mark, self.every_bubble):
+            box.toggled.connect(lambda _: self.show_sheet())
+        self.legend = QLabel(objectName="muted", wordWrap=True, textFormat=Qt.RichText)
+        self.legend.setText("&nbsp;&nbsp; ".join(f'<span style="color: rgb({c[2]},{c[1]},{c[0]})">●</span>&nbsp;'
+                                                 + text.replace(" ", "&nbsp;") for c, text in LEGEND))
+        view = QWidget()
+        view_layout = QVBoxLayout(view)
+        view_layout.setContentsMargins(0, 0, 0, 0)
+        marks_row = QHBoxLayout()
+        marks_row.addWidget(self.mark)
+        marks_row.addWidget(self.every_bubble)
+        marks_row.addStretch()
+        view_layout.addLayout(marks_row)
+        view_layout.addWidget(self.legend)
+        view_layout.addWidget(scroll, 1)
         self.review_list = QListWidget()
         self.answers_view = QPlainTextEdit(readOnly=True)
         side = QSplitter(Qt.Vertical)
-        for w in (scroll, self.review_list, self.answers_view):
+        for w in (view, self.review_list, self.answers_view):
             side.addWidget(w)
         side.setSizes([500, 120, 120])
         split = QSplitter()
@@ -538,7 +560,13 @@ class CheckPage(QWidget):
         if a is None:
             self.page_view.setText("No image saved for this page")
             return
-        image = QImage(a.data, a.shape[1], a.shape[0], a.strides[0], QImage.Format_Grayscale8).copy()
+        key = self.keys.get(r.set_code, self.keys.get(""))
+        if self.mark.isChecked() or self.every_bubble.isChecked():
+            a = marked_sheet(a, self.exam.template, r, dict(zip(self.questions, key or [])) if self.mark.isChecked()
+                             else {}, self.every_bubble.isChecked())
+            image = QImage(a.data, a.shape[1], a.shape[0], a.strides[0], QImage.Format_BGR888).copy()
+        else:
+            image = QImage(a.data, a.shape[1], a.shape[0], a.strides[0], QImage.Format_Grayscale8).copy()
         self.page_view.setPixmap(QPixmap.fromImage(image).scaledToWidth(
             max(self.page_view.width() - 20, 300), Qt.SmoothTransformation))
         self.review_list.addItems([f"{where}: {why}" for where, why in r.flags] or ["Nothing to check"])
