@@ -23,33 +23,34 @@ there too; see [Templates](templates.md).
 **Before the exam**
 
 3. [Create an exam](create-an-exam.md): the New exam steps, one screen at a time.
-4. [Templates](templates.md): ready-made exam patterns and your own.
-5. [Print the answer sheets](print-sheets.md): printing, saving a PDF, and sheet numbers.
-6. [Use a sheet you already print](map-printed-sheet.md): Map printed sheet.
+4. [Programs and categories](programs.md): IOE, Medical, CMAT… each with its own exams.
+5. [Templates](templates.md): ready-made exam patterns and your own.
+6. [Print the answer sheets](print-sheets.md): printing, saving a PDF, and sheet numbers.
+7. [Use a sheet you already print](map-printed-sheet.md): Map printed sheet.
 
 **After the exam**
 
-7. [Scan the filled sheets](scanning.md): the scanner, a folder, or files, and the live view.
-8. [The answer key](answer-key.md): giving the right answers.
-9. [Marks, sections, topics and written marks](marks-and-sections.md): how scores are worked out.
-10. [Review: checking unclear marks](review.md): what the app wasn't sure about.
-11. [Students](students.md): names from Excel, and who was absent.
-12. [Results, Excel, scorecards and test series](results.md): sharing the results.
-13. [Your institute](institute.md): name, logo and letterhead on scorecards and exports.
+8. [Scan the filled sheets](scanning.md): the scanner, a folder, or files, and the live view.
+9. [The answer key](answer-key.md): giving the right answers.
+10. [Marks, sections, topics and written marks](marks-and-sections.md): how scores are worked out.
+11. [Review: checking unclear marks](review.md): what the app wasn't sure about.
+12. [Students](students.md): names from Excel, and who was absent.
+13. [Results, Excel, scorecards and test series](results.md): sharing the results.
+14. [Your institute](institute.md): name, logo and letterhead on scorecards and exports.
 
 **Looking after your data**
 
-14. [Backup, restore and settings](backup-and-settings.md): keeping exams safe, moving PCs, the look
+15. [Backup, restore and settings](backup-and-settings.md): keeping exams safe, moving PCs, the look
     of the app.
 
 **When something goes wrong**
 
-15. [Troubleshooting](troubleshooting.md): problems and how to fix them.
-16. [FAQ](faq.md): short answers to common questions.
+16. [Troubleshooting](troubleshooting.md): problems and how to fix them.
+17. [FAQ](faq.md): short answers to common questions.
 
 **On paper**
 
-17. [Cheat sheet](cheat-sheet.md): one printable page to keep next to the scanner.
+18. [Cheat sheet](cheat-sheet.md): one printable page to keep next to the scanner.
 
 ## Where to find help in the app
 

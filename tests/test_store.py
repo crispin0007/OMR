@@ -414,3 +414,44 @@ def test_a_deleted_exam_waits_in_the_trash_then_is_purged(tmp_path):
     s.move_to_trash(gone, now=day)
     assert s.purge_trash(now=day + timedelta(days=30)) == ["Mock 2"]
     assert s.trash() == [] and s.pages(gone) == []
+
+
+def test_programs_and_categories_hold_exams_and_give_them_an_institute(tmp_path):
+    from omr_core.branding import Institute
+    s = Store(tmp_path / "omr.db")
+    ioe = s.save_folder("IOE", colour="#1565c0")
+    mocks = s.save_folder("Full mocks", ioe)
+    medical = s.save_folder("Medical")
+    with pytest.raises(ValueError, match="already a program"):
+        s.save_folder("ioe")
+    with pytest.raises(ValueError, match="a category goes in a program"):
+        s.save_folder("Deeper", mocks)
+    with pytest.raises(ValueError, match="can't go inside another program"):
+        s.save_folder("IOE", medical, folder_id=ioe)
+    s.save_folder("Full mocks", medical)  # the same name in another program is fine
+
+    first = s.save_institute(Institute("First Academy"))
+    branch = s.save_institute(Institute("Branch School"))
+    s.save_folder("IOE", None, "#1565c0", branch, folder_id=ioe)
+    one, two, loose = (s.create_exam(n, TEMPLATE) for n in ("Mock 1", "Mock 2", "Loose"))
+    s.set_exam_folder(one, mocks)
+    s.set_exam_folder(two, ioe)
+    assert s.institute_for(one).name == "Branch School" and s.institute_for(loose).name == "First Academy"
+    s.set_exam_institute(one, first)
+    assert s.institute_for(one).name == "First Academy"  # the exam's own choice wins
+
+    backup = tmp_path / "backup.db"
+    s.backup(backup)
+    other = Store(tmp_path / "other.db")
+    other.save_folder("IOE")
+    other.restore(backup)
+    names = {f.id: f.name for f in other.folders()}
+    assert sorted(names.values()) == ["Full mocks", "Full mocks", "IOE", "Medical"]  # IOE wasn't added twice
+    moved = {other.exam(i).name: names.get(f) for i, f in other.exam_folders().items()}
+    assert moved == {"Mock 1": "Full mocks", "Mock 2": "IOE", "Loose": None}
+
+    s.delete_folder(mocks)
+    assert s.exam_folders()[one] == ioe  # a category's exams go to its program
+    s.delete_folder(ioe)
+    assert s.exam_folders()[one] is None and s.exam_folders()[two] is None
+    assert [f.name for f in s.folders()] == ["Full mocks", "Medical"] and len(s.exams()) == 3

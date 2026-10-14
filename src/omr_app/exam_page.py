@@ -465,6 +465,10 @@ class ExamSettings(QWidget):
         institute_row = QHBoxLayout()
         institute_row.addWidget(QLabel("Institute"))
         institute_row.addWidget(self.institute, 1)
+        self.folder = QComboBox(toolTip="The program and category this exam is listed under on Exams")
+        self.folder.activated.connect(self.set_folder)
+        institute_row.addWidget(QLabel("Program"))
+        institute_row.addWidget(self.folder, 1)
         self.about = QLabel(objectName="muted", wordWrap=True)
         change = QPushButton("Change sheet…")
         change.clicked.connect(self.change_sheet)
@@ -506,6 +510,16 @@ class ExamSettings(QWidget):
         chosen = exam.details.get("institute") if exam else None
         self.institute.setCurrentIndex(max(0, self.institute.findData(chosen)) if chosen is not None else 0)
         self.institute.setEnabled(bool(rows))
+        folders = self.check.store.folders()
+        names = {f.id: f.name for f in folders}
+        self.folder.clear()
+        self.folder.addItem("No program", None)
+        for f in sorted(folders, key=lambda f: (names.get(f.parent, f.name).lower(), f.parent is not None,
+                                                f.name.lower())):
+            self.folder.addItem(f"{names[f.parent]} › {f.name}" if f.parent in names else f.name, f.id)
+        where = self.check.store.exam_folders().get(exam.id) if exam else None
+        self.folder.setCurrentIndex(max(0, self.folder.findData(where)) if where is not None else 0)
+        self.folder.setEnabled(bool(folders))
         self.archive.setText("Put back on the exam list" if exam and exam.archived else "Archive exam")
         self.about.setText("\n".join([*when(exam), f"Sheet: {exam.template.name}, {len(self.check.questions)} "
                                        f"questions.  Created {exam.created.replace('T', ' ')}."]) if exam else "")
@@ -520,6 +534,10 @@ class ExamSettings(QWidget):
 
     def set_institute(self):
         self.check.store.set_exam_institute(self.check.exam.id, self.institute.currentData())
+        self.changed.emit()
+
+    def set_folder(self):
+        self.check.store.set_exam_folder(self.check.exam.id, self.folder.currentData())
         self.changed.emit()
 
     def set_series(self):

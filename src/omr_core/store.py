@@ -43,7 +43,15 @@ CREATE TABLE IF NOT EXISTS exam (
                                           -- "topics", "institute" (an institute id)
     written_out_of REAL NOT NULL DEFAULT 0, -- marks of the written part, typed in; 0 for none
     archived INTEGER NOT NULL DEFAULT 0,    -- finished and put away: off the exam list, kept everywhere else
-    deleted_at TEXT                         -- when it was moved to the Trash; NULL when it isn't there
+    deleted_at TEXT,                        -- when it was moved to the Trash; NULL when it isn't there
+    folder_id INTEGER                       -- its program or category; NULL for none
+);
+CREATE TABLE IF NOT EXISTS folder (      -- a program (IOE, Medical, CMAT), or a category inside one
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    parent_id INTEGER REFERENCES folder(id) ON DELETE CASCADE,  -- the program of a category; NULL for a program
+    colour TEXT NOT NULL DEFAULT '',
+    institute_id INTEGER                    -- the institute its exams print, unless an exam picks its own
 );
 CREATE TABLE IF NOT EXISTS page (
     id INTEGER PRIMARY KEY,
@@ -135,6 +143,15 @@ class Exam:
 
 
 @dataclass
+class Folder:
+    id: int
+    name: str
+    parent: int | None  # the program a category is in; None for a program
+    colour: str = ""
+    institute: int | None = None
+
+
+@dataclass
 class StoredPage:
     id: int
     batch: str
@@ -155,7 +172,7 @@ class Store:
         columns = [r[1] for r in self.db.execute("PRAGMA table_info(exam)")]
         for column, kind in (("sections", "TEXT NOT NULL DEFAULT '[]'"), ("details", "TEXT NOT NULL DEFAULT '{}'"),
                              ("written_out_of", "REAL NOT NULL DEFAULT 0"), ("archived", "INTEGER NOT NULL DEFAULT 0"),
-                             ("deleted_at", "TEXT")):  # a database from before them
+                             ("deleted_at", "TEXT"), ("folder_id", "INTEGER")):  # a database from before them
             if column not in columns:
                 with self.db:
                     self.db.execute(f"ALTER TABLE exam ADD COLUMN {column} {kind}")
@@ -329,12 +346,64 @@ class Store:
                             (institute_id, exam_id))
 
     def institute_for(self, exam_id: int) -> Institute | None:
-        """The exam's own institute, else the default, else None when there are none."""
-        chosen = self.exam(exam_id).details.get("institute")
+        """The exam's own institute, else its category's or program's, else the default, else None when there are
+        none."""
         rows = {i: (inst, d) for i, inst, d in self.institutes()}
-        if chosen in rows:
-            return rows[chosen][0]
+        folders = {f.id: f for f in self.folders()}
+        folder = folders.get(self.exam_folders().get(exam_id))
+        for chosen in (self.exam(exam_id).details.get("institute"), folder and folder.institute,
+                       folder and folder.parent in folders and folders[folder.parent].institute):
+            if chosen in rows:
+                return rows[chosen][0]
         return next((inst for inst, d in rows.values() if d), None)
+
+    def folders(self) -> list[Folder]:
+        """Programs and their categories, by name."""
+        return [Folder(*r) for r in self.db.execute("SELECT id, name, parent_id, colour, institute_id FROM folder "
+                                                     "ORDER BY name COLLATE NOCASE")]
+
+    def save_folder(self, name: str, parent: int | None = None, colour: str = "", institute: int | None = None,
+                    folder_id: int | None = None) -> int:
+        """Add a program (no parent) or a category in a program, or change one; its id. Raises ValueError for an
+        empty name, a name its program (or the programs) already have, or a category inside a category."""
+        name = " ".join(name.split())
+        if not name:
+            raise ValueError("it needs a name")
+        folders = {f.id: f for f in self.folders()}
+        if parent is not None and (parent not in folders or folders[parent].parent is not None):
+            raise ValueError("a category goes in a program")
+        if folder_id is not None and parent is not None and any(f.parent == folder_id for f in folders.values()):
+            raise ValueError("a program with categories can't go inside another program")
+        if any(f.name.lower() == name.lower() and f.parent == parent and f.id != folder_id for f in folders.values()):
+            raise ValueError(f"there is already a {'category' if parent else 'program'} called “{name}”")
+        with self.db:
+            if folder_id is None:
+                return self.db.execute("INSERT INTO folder (name, parent_id, colour, institute_id) VALUES "
+                                       "(?, ?, ?, ?)", (name, parent, colour, institute)).lastrowid
+            self.db.execute("UPDATE folder SET name = ?, parent_id = ?, colour = ?, institute_id = ? WHERE id = ?",
+                            (name, parent, colour, institute, folder_id))
+        return folder_id
+
+    def delete_folder(self, folder_id: int):
+        """Delete a program with its categories, or one category. Their exams are kept: a category's go to its
+        program, a program's to no program."""
+        parent = self.db.execute("SELECT parent_id FROM folder WHERE id = ?", (folder_id,)).fetchone()
+        if parent is None:
+            return
+        inside = [folder_id, *(i for (i,) in self.db.execute("SELECT id FROM folder WHERE parent_id = ?",
+                                                             (folder_id,)))]
+        with self.db:
+            self.db.execute(f"UPDATE exam SET folder_id = ? WHERE folder_id IN ({','.join('?' * len(inside))})",
+                            (parent[0], *inside))
+            self.db.execute("DELETE FROM folder WHERE id = ?", (folder_id,))
+
+    def set_exam_folder(self, exam_id: int, folder_id: int | None):
+        with self.db:
+            self.db.execute("UPDATE exam SET folder_id = ? WHERE id = ?", (folder_id, exam_id))
+
+    def exam_folders(self) -> dict[int, int | None]:
+        """Exam id to its program or category id (None for none)."""
+        return dict(self.db.execute("SELECT id, folder_id FROM exam"))
 
     def rename_exam(self, exam_id: int, name: str):
         name = name.strip()
@@ -374,6 +443,16 @@ class Store:
                         institutes[old] = known.get((body, logo)) or self.db.execute(
                             "INSERT INTO institute (body, logo, is_default) VALUES (?, ?, NOT EXISTS "
                             "(SELECT 1 FROM institute))", (body, logo)).lastrowid
+                    folders = {}  # backup's id to the id here; a program or category already here is reused
+                    for old, name, parent, colour, inst in self.db.execute(
+                            "SELECT id, name, parent_id, colour, institute_id FROM b.folder "
+                            "ORDER BY parent_id IS NOT NULL, id").fetchall():
+                        parent = folders.get(parent)
+                        same = self.db.execute("SELECT id FROM folder WHERE name = ? AND parent_id IS ?",
+                                               (name, parent)).fetchone()
+                        folders[old] = same[0] if same else self.db.execute(
+                            "INSERT INTO folder (name, parent_id, colour, institute_id) VALUES (?, ?, ?, ?)",
+                            (name, parent, colour, institutes.get(inst))).lastrowid
                     for old, name, created in self.db.execute("SELECT id, name, created FROM b.exam ORDER BY id"
                                                               ).fetchall():
                         if (name, created) in here:
@@ -384,6 +463,8 @@ class Store:
                             "details, written_out_of, archived, deleted_at) SELECT name, template, answer_key, "
                             "correct, wrong, blank, created, sections, details, written_out_of, archived, deleted_at "
                             "FROM b.exam WHERE id = ?", (old,)).lastrowid
+                        self.db.execute("UPDATE exam SET folder_id = ? WHERE id = ?", (folders.get(
+                            self.db.execute("SELECT folder_id FROM b.exam WHERE id = ?", (old,)).fetchone()[0]), exam))
                         chosen = self.db.execute("SELECT json_extract(details, '$.institute') FROM exam WHERE id = ?",
                                                  (exam,)).fetchone()[0]
                         if chosen is not None:

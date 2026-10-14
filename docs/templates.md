@@ -1,6 +1,6 @@
 # Templates
 
-[Guide home](index.md) · Previous: [Create an exam](create-an-exam.md) · Next: [Print the answer sheets](print-sheets.md)
+[Guide home](index.md) · Previous: [Programs and categories](programs.md) · Next: [Print the answer sheets](print-sheets.md)
 
 A **template** is a ready-made exam pattern: the number of questions and sections, options, roll
 number digits, sets, marks and the look of the sheet. Starting **New exam** from a template saves

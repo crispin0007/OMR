@@ -1,6 +1,6 @@
 # Create an exam
 
-[Guide home](index.md) · Previous: [Quick start](quick-start.md) · Next: [Templates](templates.md)
+[Guide home](index.md) · Previous: [Quick start](quick-start.md) · Next: [Programs and categories](programs.md)
 
 An **exam** in OMR Checker holds everything for one test: its answer sheet, the answer key, the
 marks, the scanned sheets and the results. You make one with **New exam…**.
@@ -104,4 +104,4 @@ The exam opens on its own page, with the sheet ready to print.
 
 ![The Exam settings tab](images/exam-settings.png)
 
-[Guide home](index.md) · Next: [Templates](templates.md)
+[Guide home](index.md) · Next: [Programs and categories](programs.md)

@@ -1469,3 +1469,35 @@ def test_the_student_directory_is_kept_once_and_an_exam_takes_a_batch(app, tmp_p
     w.students.use_batch()
     assert sorted(w.check.students) == ["00034", "00056"] and w.check.students["00034"].batch == "IOE"
     assert w.students.table.item(0, 3).text() == "IOE"
+
+
+def test_exams_are_organised_by_program_and_category(app, tmp_path, monkeypatch):
+    from omr_app.exams import FolderDialog
+    w = window(tmp_path)
+    mock = w.check.exam.id
+    e = w.exams
+    w.go("Exams")
+    dialog = FolderDialog(e, w.store, None, None)
+    dialog.name.setText("IOE")
+    dialog.save()
+    ioe = dialog.saved
+    e.redraw()
+    e.tree.setCurrentItem(next(e._items(ioe)))
+    assert e.table.rowCount() == 0 and e.new_category.isEnabled()
+    dialog = FolderDialog(e, w.store, None, e.program_chosen())
+    dialog.name.setText("Full mocks")
+    dialog.save()
+    assert w.store.folders()[0].parent == ioe
+
+    w.open_exam(mock)
+    w.go("Exam settings")
+    s = w.exam_settings
+    assert [s.folder.itemText(i) for i in range(s.folder.count())] == ["No program", "IOE", "IOE › Full mocks"]
+    s.folder.setCurrentIndex(2)
+    s.set_folder()
+    w.go("Exams")
+    e.tree.setCurrentItem(next(e._items(ioe)))
+    assert e.table.rowCount() == 1 and e.table.item(0, 4).text() == "IOE › Full mocks"
+    assert e.tree.currentItem().text(0) == "IOE (1)" and e.note.text().startswith("IOE: 1 exam, 0 test series")
+    e.search.setText("nothing like it")
+    assert e.table.rowCount() == 0

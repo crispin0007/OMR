@@ -8,10 +8,13 @@ from datetime import date, datetime
 from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths, Qt, Signal
-from PySide6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QProgressDialog,
-                               QPushButton, QTabBar, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtWidgets import (QApplication, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
+                               QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressDialog, QPushButton,
+                               QTabBar, QTableWidget, QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+                               QWidget)
 
-from omr_core.store import TRASH_DAYS, Store
+from omr_core.store import TRASH_DAYS, Folder, Store
 
 from .dashboard import ShownPage
 from .help import steps_html
@@ -65,8 +68,12 @@ class ExamsPage(ShownPage):
         self.delete_button.clicked.connect(self.delete_for_good)
         self.empty = QPushButton("Empty Trash…")
         self.empty.clicked.connect(self.empty_trash)
+        self.search = QLineEdit(placeholderText="Search exams", clearButtonEnabled=True)
+        self.search.setMaximumWidth(260)
+        self.search.textChanged.connect(lambda _: self.redraw())
         actions = QHBoxLayout()
         actions.addWidget(self.views)
+        actions.addWidget(self.search)
         actions.addStretch()
         for b in (self.open_button, self.unarchive, self.restore_button, self.delete_button, self.empty):
             actions.addWidget(b)
@@ -74,8 +81,7 @@ class ExamsPage(ShownPage):
                             textFormat=Qt.RichText)
         self.start.setContentsMargins(20, 12, 20, 12)
         self.start.setMaximumWidth(760)
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Exam", "Created", "Sheets", "Students", ""])
+        self.table = QTableWidget(0, 6)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.SingleSelection)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -83,11 +89,37 @@ class ExamsPage(ShownPage):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.cellClicked.connect(self.clicked)
         self.table.itemSelectionChanged.connect(self.enable)
+        self.tree = QTreeWidget(headerHidden=True)
+        self.tree.setMaximumWidth(260)
+        self.tree.currentItemChanged.connect(lambda *_: self.redraw_list())
+        self.new_program = QPushButton("New program…", toolTip="A course you prepare students for, e.g. IOE, "
+                                       "Medical or CMAT, with its own exams and test series")
+        self.new_program.clicked.connect(lambda: self.edit_folder(None, None))
+        self.new_category = QPushButton("New category…", toolTip="A group of exams inside the chosen program, "
+                                        "e.g. Chapter tests or Full mocks")
+        self.new_category.clicked.connect(lambda: self.edit_folder(None, self.program_chosen()))
+        self.change_folder = QPushButton("Change…")
+        self.change_folder.clicked.connect(lambda: self.edit_folder(self.folder_chosen(), None))
+        self.delete_folder = QPushButton("Delete…")
+        self.delete_folder.clicked.connect(self.remove_folder)
+        side = QVBoxLayout()
+        side.addWidget(QLabel("Programs", objectName="muted"))
+        side.addWidget(self.tree, 1)
+        for b in (self.new_program, self.new_category, self.change_folder, self.delete_folder):
+            side.addWidget(b)
+        self.side = QWidget()
+        self.side.setLayout(side)
+        self.side.setMaximumWidth(260)
+        right = QVBoxLayout()
+        right.addLayout(actions)
+        right.addWidget(self.table, 1)
+        body = QHBoxLayout()
+        body.addWidget(self.side)
+        body.addLayout(right, 1)
         layout = QVBoxLayout(self)
         layout.addLayout(top)
         layout.addWidget(self.note)
-        layout.addLayout(actions)
-        layout.addWidget(self.table, 1)
+        layout.addLayout(body, 1)
         layout.addWidget(self.start, 0, Qt.AlignTop)
         layout.addStretch()
         self.refresh()
@@ -101,38 +133,121 @@ class ExamsPage(ShownPage):
         return ("active", "archived", "trash")[self.views.currentIndex()]
 
     def redraw(self):
+        self.fill_tree()
+        self.redraw_list()
+
+    def fill_tree(self):
+        """Programs with their categories, and how many exams each has (theirs and their categories')."""
+        chosen = self.tree.currentItem().data(0, Qt.UserRole) if self.tree.currentItem() else "all"
+        folders = self.store.folders()
+        where = self.store.exam_folders()
+        kept = [i for i, *_ in self.store.exams("kept")]
+        parents = {f.id: f.parent for f in folders}
+
+        def count(folder) -> int:
+            return sum(where.get(i) == folder or parents.get(where.get(i)) == folder for i in kept)
+        self.tree.blockSignals(True)
+        self.tree.clear()
+        top = QTreeWidgetItem([f"All exams ({len(kept)})"])
+        top.setData(0, Qt.UserRole, "all")
+        self.tree.addTopLevelItem(top)
+        items = {"all": top}
+        for f in folders:
+            if f.parent is None:
+                items[f.id] = self._folder_item(f, count(f.id))
+                self.tree.addTopLevelItem(items[f.id])
+        for f in folders:
+            if f.parent in items:
+                items[f.id] = self._folder_item(f, count(f.id))
+                items[f.parent].addChild(items[f.id])
+        if folders:
+            none = QTreeWidgetItem([f"No program ({sum(where.get(i) is None for i in kept)})"])
+            none.setData(0, Qt.UserRole, "none")
+            self.tree.addTopLevelItem(none)
+            items["none"] = none
+        self.tree.expandAll()
+        self.tree.setCurrentItem(items.get(chosen, top))
+        self.tree.blockSignals(False)
+
+    @staticmethod
+    def _folder_item(f: Folder, n: int) -> QTreeWidgetItem:
+        item = QTreeWidgetItem([f"{f.name} ({n})"])
+        item.setData(0, Qt.UserRole, f.id)
+        if f.colour:
+            dot = QPixmap(12, 12)
+            dot.fill(QColor(f.colour))
+            item.setIcon(0, dot)
+        return item
+
+    def folder_chosen(self) -> int | None:
+        """The program or category picked in the tree; None for All exams or No program."""
+        item = self.tree.currentItem()
+        data = item.data(0, Qt.UserRole) if item else None
+        return data if isinstance(data, int) else None
+
+    def program_chosen(self) -> int | None:
+        """The program picked, or the program of the category picked."""
+        folder = self.folder_chosen()
+        parents = {f.id: f.parent for f in self.store.folders()}
+        return parents.get(folder) or folder
+
+    def redraw_list(self):
         view = self.view()
-        exams = self.store.exams(view) if view != "trash" else []
         trash = self.store.trash()
+        folders = {f.id: f for f in self.store.folders()}
+        where = self.store.exam_folders()
+        picked = self.tree.currentItem().data(0, Qt.UserRole) if self.tree.currentItem() else "all"
+        words = self.search.text().lower().split()
+
+        def shown(exam_id: int, name: str) -> bool:
+            folder = where.get(exam_id)
+            inside = (picked == "all" or view == "trash" or picked == "none" and folder is None
+                      or folder == picked or folder in folders and folders[folder].parent == picked)
+            return inside and all(w in name.lower() for w in words)
+
+        def path(exam_id: int) -> str:
+            f = folders.get(where.get(exam_id))
+            return "" if f is None else f"{folders[f.parent].name} › {f.name}" if f.parent in folders else f.name
+        exams = [e for e in self.store.exams(view) if shown(e[0], e[1])] if view != "trash" else []
+        trash = [t for t in trash if shown(t[0], t[1])] if view == "trash" else trash
         archived = len(self.store.exams("archived"))
         self.views.setTabText(1, f"Archived ({archived})" if archived else "Archived")
-        self.views.setTabText(2, f"Trash ({len(trash)})" if trash else "Trash")
-        self.views.setVisible(bool(archived or trash or view != "active"))
-        anything = bool(self.store.exams("kept") or trash)
+        self.views.setTabText(2, f"Trash ({len(self.store.trash())})" if self.store.trash() else "Trash")
+        anything = bool(self.store.exams("kept") or self.store.trash())
+        self.views.setVisible(bool(archived or self.store.trash() or view != "active"))
         notes = {"active": "Click an exam to open it: scan, check, set the key and marks, see results and print its "
                            "sheet. Everything is saved as you work."
-                           if exams else "Create an exam to start: New exam walks you through it and makes its sheet."
+                           if exams or words or picked != "all" else
+                           "Create an exam to start: New exam walks you through it and makes its sheet."
                            if not anything else "No exams on the list. Archived exams and the Trash are above.",
                  "archived": "Finished exams put away from the list. They keep their sheets and results, stay in "
                              "test series and backups, and open as usual.",
                  "trash": f"Deleted exams, with everything read for them. Each is deleted for good {TRASH_DAYS} days "
                           "after it was moved here; until then Restore brings it back as it was."}
         note = notes[view]
+        if isinstance(picked, int) and picked in folders and view != "trash":
+            ids = {e[0] for e in exams}
+            series = {self.store.exam(i).details.get("series") for i in ids} - {None, ""}
+            note = (f"{folders[picked].name}: {len(exams)} exam{'s' if len(exams) != 1 else ''}, "
+                    f"{len(series)} test series, {sum(e[3] for e in exams):,} sheets read. New exam puts the new one "
+                    "here.  " + note)
         if self.purged:
             note += (f"\n\nDeleted for good after {TRASH_DAYS} days in the Trash: {', '.join(self.purged)}.")
         self.note.setText(note)
-        self.table.setVisible(bool(exams) or view == "trash" and bool(trash))
+        self.side.setVisible(anything)
+        self.search.setVisible(anything)
+        self.table.setVisible(anything)
         self.series.setVisible(bool(self.store.series_names()))
         self.shrink.setVisible(self.store.png_pages() > 0)
         self.start.setVisible(not anything)  # first run: what to do, in order
         if view == "trash":
             now = datetime.now()
-            self.table.setHorizontalHeaderLabels(["Exam", "Deleted", "Sheets", "Deleted for good", ""])
-            rows = [(i, (name, at.replace("T", "  "), str(pages), _left(at, now), ""))
+            self.table.setHorizontalHeaderLabels(["Exam", "Deleted", "Sheets", "Deleted for good", "Program", ""])
+            rows = [(i, (name, at.replace("T", "  "), str(pages), _left(at, now), path(i), ""))
                     for i, name, at, pages in trash]
         else:
-            self.table.setHorizontalHeaderLabels(["Exam", "Created", "Sheets", "Students", ""])
-            rows = [(i, (name, created.replace("T", "  "), str(pages), str(students or ""),
+            self.table.setHorizontalHeaderLabels(["Exam", "Created", "Sheets", "Students", "Program", ""])
+            rows = [(i, (name, created.replace("T", "  "), str(pages), str(students or ""), path(i),
                          "open now" if i == self.open_id else "")) for i, name, created, pages, students in exams]
         self.table.setRowCount(len(rows))
         for row, (id_, texts) in enumerate(rows):
@@ -143,6 +258,34 @@ class ExamsPage(ShownPage):
         self.table.clearSelection()
         self.table.resizeColumnsToContents()
         self.enable()
+        chosen = self.folder_chosen()
+        self.new_category.setEnabled(self.program_chosen() is not None)
+        self.change_folder.setEnabled(chosen is not None)
+        self.delete_folder.setEnabled(chosen is not None)
+
+    def edit_folder(self, folder_id: int | None, parent: int | None):
+        folder = next((f for f in self.store.folders() if f.id == folder_id), None)
+        dialog = FolderDialog(self, self.store, folder, parent)
+        if dialog.exec():
+            self.redraw()
+            self.tree.setCurrentItem(next(self._items(dialog.saved), self.tree.currentItem()))
+
+    def _items(self, folder_id: int):
+        stack = [self.tree.topLevelItem(i) for i in range(self.tree.topLevelItemCount())]
+        while stack:
+            item = stack.pop()
+            if item.data(0, Qt.UserRole) == folder_id:
+                yield item
+            stack += [item.child(i) for i in range(item.childCount())]
+
+    def remove_folder(self):
+        folder = next(f for f in self.store.folders() if f.id == self.folder_chosen())
+        what = "category" if folder.parent else "program and its categories"
+        to = "its program" if folder.parent else "No program"
+        if QMessageBox.question(self, "Delete", f"Delete the {what} “{folder.name}”? Its exams are kept and move to "
+                                f"{to}.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
+            self.store.delete_folder(folder.id)
+            self.redraw()
 
     def enable(self):
         view, chosen = self.view(), self.chosen() is not None
@@ -162,12 +305,12 @@ class ExamsPage(ShownPage):
 
     def put_back_archived(self):
         self.store.set_archived(self.chosen(), False)
-        self.redraw()
+        self.redraw_list()
 
     def restore_from_trash(self):
         exam = self.chosen()
         self.store.put_back(exam)
-        self.redraw()
+        self.redraw_list()
 
     def delete_for_good(self):
         exam = self.chosen()
@@ -193,6 +336,7 @@ class ExamsPage(ShownPage):
     def new_exam(self):
         wizard = NewExamWizard(self, self.store)
         if wizard.exec():
+            self.store.set_exam_folder(wizard.exam_id, self.folder_chosen())
             self.opened.emit(wizard.exam_id)
 
     def backup(self):
@@ -273,3 +417,58 @@ def _left(deleted_at: str, now: datetime) -> str:
     """When an exam moved to the Trash at `deleted_at` is deleted for good, in days from `now`."""
     days = TRASH_DAYS - (now - datetime.fromisoformat(deleted_at)).days
     return "today" if days <= 0 else "tomorrow" if days == 1 else f"in {days} days"
+
+
+class FolderDialog(QDialog):
+    """A program or a category: its name, colour and the institute its exams print."""
+
+    def __init__(self, parent, store: Store, folder: Folder | None, program: int | None):
+        super().__init__(parent)
+        self.store, self.folder = store, folder
+        self.parent_id = folder.parent if folder else program
+        kind = "category" if self.parent_id else "program"
+        self.setWindowTitle(f"Change {kind}" if folder else f"New {kind}")
+        self.saved: int | None = None
+        self.name = QLineEdit(folder.name if folder else "")
+        self.name.setPlaceholderText("e.g. Full mocks" if self.parent_id else "e.g. IOE, Medical or CMAT")
+        self.colour = folder.colour if folder else ""
+        self.colour_button = QPushButton()
+        self.colour_button.clicked.connect(self.pick_colour)
+        self.institute = QComboBox()
+        self.institute.addItem("The default" if not self.parent_id else "As its program", None)
+        for i, inst, _ in store.institutes():
+            self.institute.addItem(inst.name, i)
+        if folder and folder.institute is not None:
+            self.institute.setCurrentIndex(max(0, self.institute.findData(folder.institute)))
+        self.institute.setEnabled(self.institute.count() > 1)
+        self.problem = QLabel(objectName="error", wordWrap=True)
+        form = QFormLayout(self)
+        form.addRow("Name", self.name)
+        form.addRow("Colour", self.colour_button)
+        form.addRow("Institute", self.institute)
+        form.addRow(self.problem)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.save)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+        self.show_colour()
+
+    def show_colour(self):
+        self.colour_button.setText(self.colour or "None")
+        self.colour_button.setStyleSheet(f"QPushButton {{ background: {self.colour}; color: white; }}"
+                                         if self.colour else "")
+
+    def pick_colour(self):
+        colour = QColorDialog.getColor(QColor(self.colour or "#1565c0"), self, "Colour")
+        if colour.isValid():
+            self.colour = colour.name()
+            self.show_colour()
+
+    def save(self):
+        try:
+            self.saved = self.store.save_folder(self.name.text(), self.parent_id, self.colour,
+                                                self.institute.currentData(), self.folder.id if self.folder else None)
+        except ValueError as e:
+            self.problem.setText(f"Not saved: {e}.")
+            return
+        self.accept()
