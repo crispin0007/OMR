@@ -631,6 +631,7 @@ class MainWindow(QMainWindow):
         self.store = Store(db_path)
         self.check = CheckPage(self.store)
         self.exams = ExamsPage(self.store)
+        self.exams.purged = self.store.purge_trash()
         self.exams.opened.connect(self.open_exam)
         self.dashboard = DashboardPage(self.check)
         self.results = ResultsPage(self.check)
@@ -645,6 +646,7 @@ class MainWindow(QMainWindow):
         self.exam_settings = ExamSettings(self.check)
         self.exam_settings.changed.connect(lambda: self.open_exam(self.check.exam.id))
         self.exam_settings.deleted.connect(lambda: self.open_exam(None))
+        self.exam_settings.archived.connect(lambda: self.exams.refresh())
         self.exam_page = ExamPage(self.check, [
             ("Scan", self.scan), ("Scanned sheets", self.check), ("Review", self.review),
             ("Answer key", self.check.key_tab), ("Marks and sections", self.check.marks_tab),
@@ -725,7 +727,7 @@ class MainWindow(QMainWindow):
         QApplication.styleHints().colorSchemeChanged.connect(lambda _: self.apply_prefs(self.prefs))  # Windows switched
 
         last = theme.settings().value("last_exam")
-        known = {e[0] for e in self.store.exams()}
+        known = {e[0] for e in self.store.exams("kept")}
         last = int(last) if str(last).isdigit() and int(last) in known else None
         self.open_exam(last, go=False)
         self.go("Dashboard" if last else "Exams")

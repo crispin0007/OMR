@@ -36,10 +36,20 @@ made before anything changes), then converts the pictures to a much smaller kind
 1,000 sheets goes from about 2.2 GB to under 400 MB. Marks, corrections and results don't change.
 It can take a few minutes; you can keep it running and do nothing else.
 
-## Delete an exam
+## Archive, Trash and deleting an exam
 
-On the exam's **Exam settings** tab, **Delete exam…** removes the exam and every sheet read for it.
-It asks first. Back up before deleting if you might need it again.
+On the exam's **Exam settings** tab:
+
+- **Archive exam** takes a finished exam off the exam list. It keeps its sheets and results, still
+  counts in its test series, is in every backup, and opens from **Exams, Archived**. **Put back on
+  the list** undoes it.
+- **Move to Trash…** deletes the exam with everything read for it, but not straight away. It waits
+  in **Exams, Trash** for 30 days, where **Restore** brings it back exactly as it was. After 30 days
+  it is deleted for good the next time the app starts, and the Exams page says which ones went.
+- In the Trash, **Delete for good…** and **Empty Trash…** delete at once. They ask first; this can't be
+  undone.
+
+A backup includes archived exams and the Trash too.
 
 ## Settings
 

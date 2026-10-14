@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog
 from omr_core.reader import read_or_reason
 from omr_core.sheet import render
 from omr_core.sources import read_pages
+from omr_core.store import TRASH_DAYS
 from omr_core.students import absent, read_students
 from omr_core.template import parse
 
@@ -406,6 +407,7 @@ def print_check(page, template) -> str:
 class ExamSettings(QWidget):
     changed = Signal()  # renamed, or a new sheet
     deleted = Signal()
+    archived = Signal()
 
     def __init__(self, check):
         super().__init__()
@@ -437,8 +439,10 @@ class ExamSettings(QWidget):
         self.about = QLabel(objectName="muted", wordWrap=True)
         change = QPushButton("Change sheet…")
         change.clicked.connect(self.change_sheet)
-        delete = QPushButton("Delete exam…")
+        delete = QPushButton("Move to Trash…")
         delete.clicked.connect(self.delete)
+        self.archive = QPushButton()
+        self.archive.clicked.connect(self.toggle_archived)
         layout = QVBoxLayout(self)
         layout.addLayout(row)
         layout.addLayout(series_row)
@@ -449,7 +453,12 @@ class ExamSettings(QWidget):
                                 "every page is read again with it.", objectName="muted", wordWrap=True))
         layout.addWidget(change, 0, Qt.AlignLeft)
         layout.addSpacing(24)
-        layout.addWidget(QLabel("Deleting removes the exam and every sheet read for it.", objectName="muted"))
+        layout.addWidget(QLabel("Archive a finished exam to take it off the exam list; it keeps its results and "
+                                "opens from Exams, Archived.", objectName="muted", wordWrap=True))
+        layout.addWidget(self.archive, 0, Qt.AlignLeft)
+        layout.addSpacing(24)
+        layout.addWidget(QLabel(f"An exam moved to the Trash can be restored from Exams, Trash for {TRASH_DAYS} days; "
+                                "then it is deleted for good.", objectName="muted", wordWrap=True))
         layout.addWidget(delete, 0, Qt.AlignLeft)
         layout.addStretch()
 
@@ -468,6 +477,7 @@ class ExamSettings(QWidget):
         chosen = exam.details.get("institute") if exam else None
         self.institute.setCurrentIndex(max(0, self.institute.findData(chosen)) if chosen is not None else 0)
         self.institute.setEnabled(bool(rows))
+        self.archive.setText("Put back on the exam list" if exam and exam.archived else "Archive exam")
         self.about.setText("\n".join([*when(exam), f"Sheet: {exam.template.name}, {len(self.check.questions)} "
                                        f"questions.  Created {exam.created.replace('T', ' ')}."]) if exam else "")
 
@@ -521,8 +531,16 @@ class ExamSettings(QWidget):
 
     def delete(self):
         exam = self.check.exam
-        if QMessageBox.question(self, "Delete exam", f"Delete “{exam.name}” and every sheet read for it? This can't "
-                                "be undone.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+        if QMessageBox.question(self, "Move to Trash", f"Move “{exam.name}” and every sheet read for it to the Trash? "
+                                f"You can restore it from Exams, Trash for {TRASH_DAYS} days.",
+                                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
             return
-        self.check.store.delete_exam(exam.id)
+        self.check.store.move_to_trash(exam.id)
         self.deleted.emit()
+
+    def toggle_archived(self):
+        exam = self.check.exam
+        self.check.store.set_archived(exam.id, not exam.archived)
+        exam.archived = not exam.archived
+        self.refresh()
+        self.archived.emit()

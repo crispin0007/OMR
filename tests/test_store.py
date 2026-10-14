@@ -385,3 +385,32 @@ def test_institutes_have_a_default_and_each_exam_can_pick_one_and_they_travel_in
     assert sorted(i.name for _, i, _ in other.institutes()) == ["Evening Campus", "Sunrise Academy"]
     s.delete_institute(first)  # the default goes: the other one takes its place
     assert [(i.name, d) for _, i, d in s.institutes()] == [("Evening Campus", True)]
+
+
+def test_a_deleted_exam_waits_in_the_trash_then_is_purged(tmp_path):
+    from datetime import datetime, timedelta
+    s = Store(tmp_path / "omr.db")
+    kept = s.create_exam("Mock 1", TEMPLATE, {"series": "CEE"})
+    gone = s.create_exam("Mock 2", TEMPLATE, {"series": "CEE"})
+    s.add_page(gone, "b", "scan.png", 1, PageResult("123", "A", {1: "B"}, [], None))
+    day = datetime(2026, 10, 1, 9)
+    s.move_to_trash(gone, now=day)
+    assert [e[0] for e in s.exams()] == [kept] and [t[:2] for t in s.trash()] == [(gone, "Mock 2")]
+    assert s.series_exams("CEE") == [kept] and len(s.pages(gone)) == 1  # out of the series, sheets kept
+
+    s.set_archived(kept, True)
+    assert s.exams() == [] and [e[0] for e in s.exams("archived")] == [kept] and s.exam(kept).archived
+    assert s.series_exams("CEE") == [kept]  # an archived exam still counts in its series
+
+    backup = tmp_path / "backup.db"
+    s.backup(backup)
+    other = Store(tmp_path / "other.db")
+    other.restore(backup)
+    assert [e[1] for e in other.exams("archived")] == ["Mock 1"] and [t[1] for t in other.trash()] == ["Mock 2"]
+
+    assert s.purge_trash(now=day + timedelta(days=29)) == []
+    s.put_back(gone)
+    assert s.trash() == [] and {e[0] for e in s.exams()} == {gone}
+    s.move_to_trash(gone, now=day)
+    assert s.purge_trash(now=day + timedelta(days=30)) == ["Mock 2"]
+    assert s.trash() == [] and s.pages(gone) == []

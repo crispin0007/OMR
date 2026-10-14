@@ -661,6 +661,28 @@ def test_clicking_an_exam_opens_its_page(app, tmp_path, monkeypatch):
     w.exam_settings.delete()
     assert w.check.exam is None and w.showing() is w.exams and [e[0] for e in w.store.exams()] == [made]
 
+    # in the Trash: restored as it was, or deleted for good
+    w.exams.views.setCurrentIndex(2)
+    assert w.exams.table.rowCount() == 1 and w.exams.views.tabText(2) == "Trash (1)"
+    assert w.exams.table.item(0, 3).text() == "in 30 days"
+    w.exams.table.selectRow(0)
+    w.exams.restore_button.click()
+    assert {e[0] for e in w.store.exams()} == {made, mapped} and w.exams.table.rowCount() == 0
+
+    w.open_exam(made)
+    w.exam_settings.archive.click()
+    assert w.store.exam(made).archived and [e[0] for e in w.store.exams()] == [mapped]
+    w.exams.views.setCurrentIndex(1)
+    w.exams.table.selectRow(0)
+    w.exams.unarchive.click()
+    assert not w.store.exam(made).archived
+
+    w.store.move_to_trash(made)
+    w.exams.views.setCurrentIndex(2)
+    w.exams.table.selectRow(0)
+    w.exams.delete_button.click()
+    assert w.store.trash() == [] and [e[0] for e in w.store.exams()] == [mapped]
+
 
 def test_the_installer_recipe_finds_everything_it_bundles():
     from pathlib import Path

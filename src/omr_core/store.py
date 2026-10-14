@@ -11,7 +11,7 @@ import shutil
 import sqlite3
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import cv2
@@ -24,6 +24,7 @@ from .students import Student
 from .template import Template, parse
 
 JPEG_QUALITY = 60
+TRASH_DAYS = 30  # an exam in the Trash is deleted for good after this many days
 PNG_MAGIC = b"\x89PNG"
 
 SCHEMA = """
@@ -39,7 +40,9 @@ CREATE TABLE IF NOT EXISTS exam (
     sections TEXT NOT NULL DEFAULT '[]',  -- JSON [Section, ...]
     details TEXT NOT NULL DEFAULT '{}',   -- JSON {"class", "date", "time", "minutes", "series"} from New exam,
                                           -- "topics", "institute" (an institute id)
-    written_out_of REAL NOT NULL DEFAULT 0  -- marks of the written part, typed in; 0 for none
+    written_out_of REAL NOT NULL DEFAULT 0, -- marks of the written part, typed in; 0 for none
+    archived INTEGER NOT NULL DEFAULT 0,    -- finished and put away: off the exam list, kept everywhere else
+    deleted_at TEXT                         -- when it was moved to the Trash; NULL when it isn't there
 );
 CREATE TABLE IF NOT EXISTS page (
     id INTEGER PRIMARY KEY,
@@ -116,6 +119,7 @@ class Exam:
     sections: list[Section]
     details: dict
     written_out_of: float = 0
+    archived: bool = False
 
 
 @dataclass
@@ -138,7 +142,8 @@ class Store:
         self.db.executescript(SCHEMA)
         columns = [r[1] for r in self.db.execute("PRAGMA table_info(exam)")]
         for column, kind in (("sections", "TEXT NOT NULL DEFAULT '[]'"), ("details", "TEXT NOT NULL DEFAULT '{}'"),
-                             ("written_out_of", "REAL NOT NULL DEFAULT 0")):  # a database from before them
+                             ("written_out_of", "REAL NOT NULL DEFAULT 0"), ("archived", "INTEGER NOT NULL DEFAULT 0"),
+                             ("deleted_at", "TEXT")):  # a database from before them
             if column not in columns:
                 with self.db:
                     self.db.execute(f"ALTER TABLE exam ADD COLUMN {column} {kind}")
@@ -174,14 +179,15 @@ class Store:
 
     def series_names(self) -> list[str]:
         """Every test series an exam belongs to, by name."""
-        return sorted({n for (n,) in self.db.execute("SELECT json_extract(details, '$.series') FROM exam") if n})
+        return sorted({n for (n,) in self.db.execute("SELECT json_extract(details, '$.series') FROM exam "
+                                                     "WHERE deleted_at IS NULL") if n})
 
     def series_exams(self, series: str) -> list[int]:
         """The exams of a test series, oldest first; none for the empty name."""
         if not series.strip():
             return []
         return [i for (i,) in self.db.execute("SELECT id FROM exam WHERE json_extract(details, '$.series') = ? "
-                                              "ORDER BY created, id", (series.strip(),))]
+                                              "AND deleted_at IS NULL ORDER BY created, id", (series.strip(),))]
 
     def set_series(self, exam_id: int, series: str):
         """Put an exam in a test series by name, or take it out with ""."""
@@ -189,19 +195,53 @@ class Store:
             self.db.execute("UPDATE exam SET details = json_set(details, '$.series', ?) WHERE id = ?",
                             (series.strip(), exam_id))
 
-    def exams(self) -> list[tuple[int, str, str, int, int]]:
-        """(id, name, created, pages, students) for every exam, newest first."""
+    def exams(self, view: str = "active") -> list[tuple[int, str, str, int, int]]:
+        """(id, name, created, pages, students), newest first, for the exams in use ("active"), the archived ones
+        ("archived"), both ("kept") or those in the Trash ("trash")."""
+        where = {"active": "deleted_at IS NULL AND NOT archived", "archived": "deleted_at IS NULL AND archived",
+                 "kept": "deleted_at IS NULL", "trash": "deleted_at IS NOT NULL"}[view]
         return self.db.execute(
             "SELECT e.id, e.name, e.created, (SELECT COUNT(*) FROM page p WHERE p.exam_id = e.id), "
-            "(SELECT COUNT(*) FROM student s WHERE s.exam_id = e.id) FROM exam e ORDER BY e.id DESC").fetchall()
+            f"(SELECT COUNT(*) FROM student s WHERE s.exam_id = e.id) FROM exam e WHERE {where} "
+            "ORDER BY e.id DESC").fetchall()
+
+    def trash(self) -> list[tuple[int, str, str, int]]:
+        """(id, name, moved to the Trash at, pages) for the exams in the Trash, most recently deleted first."""
+        return self.db.execute("SELECT e.id, e.name, e.deleted_at, (SELECT COUNT(*) FROM page p WHERE p.exam_id = "
+                               "e.id) FROM exam e WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id DESC"
+                               ).fetchall()
+
+    def move_to_trash(self, exam_id: int, now: datetime | None = None):
+        """Put an exam in the Trash with everything read for it; `put_back` brings it back until it is purged."""
+        with self.db:
+            self.db.execute("UPDATE exam SET deleted_at = ? WHERE id = ?",
+                            ((now or datetime.now()).isoformat(timespec="seconds"), exam_id))
+
+    def put_back(self, exam_id: int):
+        """Take an exam out of the Trash, as it was."""
+        with self.db:
+            self.db.execute("UPDATE exam SET deleted_at = NULL WHERE id = ?", (exam_id,))
+
+    def set_archived(self, exam_id: int, archived: bool):
+        with self.db:
+            self.db.execute("UPDATE exam SET archived = ? WHERE id = ?", (int(archived), exam_id))
+
+    def purge_trash(self, days: int = TRASH_DAYS, now: datetime | None = None) -> list[str]:
+        """Delete for good the exams in the Trash for `days` days or more; their names."""
+        cutoff = ((now or datetime.now()) - timedelta(days=days)).isoformat(timespec="seconds")
+        old = self.db.execute("SELECT id, name FROM exam WHERE deleted_at IS NOT NULL AND deleted_at <= ?",
+                              (cutoff,)).fetchall()
+        for i, _ in old:
+            self.delete_exam(i)
+        return [name for _, name in old]
 
     def exam(self, exam_id: int) -> Exam:
         row = self.db.execute("SELECT id, name, template, answer_key, correct, wrong, blank, created, sections, "
-                              "details, written_out_of FROM exam WHERE id = ?", (exam_id,)).fetchone()
+                              "details, written_out_of, archived FROM exam WHERE id = ?", (exam_id,)).fetchone()
         if row is None:
             raise KeyError(exam_id)
         return Exam(row[0], row[1], parse(json.loads(row[2])), *row[2:8], sections_from_json(json.loads(row[8])),
-                    json.loads(row[9]), row[10])
+                    json.loads(row[9]), row[10], bool(row[11]))
 
     def save_scheme(self, exam_id: int, answer_key: str, correct: float, wrong: float, blank: float,
                     changes: list[tuple[str, int, str, str]] = (), user: str = ""):
@@ -325,8 +365,9 @@ class Store:
                             continue
                         exam = self.db.execute(
                             "INSERT INTO exam (name, template, answer_key, correct, wrong, blank, created, sections, "
-                            "details, written_out_of) SELECT name, template, answer_key, correct, wrong, blank, "
-                            "created, sections, details, written_out_of FROM b.exam WHERE id = ?", (old,)).lastrowid
+                            "details, written_out_of, archived, deleted_at) SELECT name, template, answer_key, "
+                            "correct, wrong, blank, created, sections, details, written_out_of, archived, deleted_at "
+                            "FROM b.exam WHERE id = ?", (old,)).lastrowid
                         chosen = self.db.execute("SELECT json_extract(details, '$.institute') FROM exam WHERE id = ?",
                                                  (exam,)).fetchone()[0]
                         if chosen is not None:
@@ -376,6 +417,7 @@ class Store:
             self.db.execute("DELETE FROM exam_template WHERE name = ?", (name,))
 
     def delete_exam(self, exam_id: int):
+        """Delete an exam and everything read for it, for good."""
         with self.db:
             self.db.execute("DELETE FROM exam WHERE id = ?", (exam_id,))
 
