@@ -19,6 +19,7 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfgen import canvas
 
+from . import pdftext
 from .branding import Institute
 from .grading import BONUS, DROPPED, Section, changed_questions, marks_for, parse_key, rank, score, status
 from .store import StoredPage, to_review
@@ -303,20 +304,19 @@ def write_scorecards(path: str | Path, exam_name: str, t: Template, graded: list
     for g in sorted(graded, key=lambda g: g.page.result.roll_number):
         r = g.page.result
         d = _letterhead(c, institute, w, h) if institute else 0.0  # mm the letterhead pushes the rest down
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(18 * mm, h - (20 + d) * mm, exam_name)
-        c.setFont("Helvetica", 11)
+        pdftext.draw(c, 18 * mm, h - (20 + d) * mm, exam_name, "Helvetica-Bold", 16)
         s = g.student
         who = f"{s.name}    " + (f"Class {s.class_name}    " if s.class_name else "") if s else ""
-        c.drawString(18 * mm, h - (28 + d) * mm, f"{who}Roll number {r.roll_number}    Set {r.set_code}")
+        pdftext.draw(c, 18 * mm, h - (28 + d) * mm, f"{who}Roll number {r.roll_number}    Set {r.set_code}",
+                     "Helvetica", 11)
         c.setFont("Helvetica-Bold", 13)
         c.drawString(18 * mm, h - (38 + d) * mm, f"Score {g.score:g}    Rank {g.rank} of {out_of}    "
                                                  f"Percentile {g.percentile:.1f}")
-        c.setFont("Helvetica", 10)
         parts = (f"Sheet {g.omr:g}    Written {g.written:g}    " if g.written is not None
                  else "Sheet {:g}    Written not given    ".format(g.omr) if has_written(graded) else "")
-        c.drawString(18 * mm, h - (45 + d) * mm, f"{parts}Right {g.right}    Wrong {g.wrong}    Blank {g.blank}    "
-                     + "    ".join(f"{name} {v:g}" for name, v in g.sections.items()))
+        pdftext.draw(c, 18 * mm, h - (45 + d) * mm, f"{parts}Right {g.right}    Wrong {g.wrong}    Blank {g.blank}    "
+                     + "    ".join(f"{name} {v:g}" for name, v in g.sections.items()), "Helvetica", 10)
+        c.setFont("Helvetica", 10)
         top, row_h = h - (60 + d) * mm, 4.4 * mm
         if g.to_check:
             c.setFillColor(colors.HexColor("#c27c00"))
@@ -324,10 +324,9 @@ def write_scorecards(path: str | Path, exam_name: str, t: Template, graded: list
             c.setFillColor(colors.black)
         if g.topics:
             text = "By topic:  " + "  ·  ".join(f"{t} {r}/{n} ({_share((r, n)):g}%)" for t, (r, n) in g.topics.items())
-            lines = simpleSplit(text, "Helvetica", 9, w - 36 * mm)
-            c.setFont("Helvetica", 9)
+            lines = pdftext.split(text, "Helvetica", 9, w - 36 * mm)
             for k, line in enumerate(lines):
-                c.drawString(18 * mm, h - (57 + d + 4.2 * k) * mm, line)
+                pdftext.draw(c, 18 * mm, h - (57 + d + 4.2 * k) * mm, line, "Helvetica", 9)
             top -= 4.2 * len(lines) * mm
         changes = changed_questions(g.key, qs)
         notes = simpleSplit("Answer key changed: " + "  ·  ".join(f"Q{q} {c}" for q, c in changes), "Helvetica", 8,
@@ -356,15 +355,13 @@ def write_scorecards(path: str | Path, exam_name: str, t: Template, graded: list
             c.setStrokeColor(colors.black)
             c.line(w - 78 * mm, base + 9 * mm, w - 18 * mm, base + 9 * mm)
             c.setFillColor(colors.black)
-            c.setFont("Helvetica", 9)
-            c.drawCentredString(w - 48 * mm, base + 5 * mm, institute.signer_name)
-            c.setFont("Helvetica", 8)
-            c.drawCentredString(w - 48 * mm, base + 1.5 * mm, institute.signer_title)
+            pdftext.draw(c, w - 48 * mm, base + 5 * mm, institute.signer_name, "Helvetica", 9, "centre")
+            pdftext.draw(c, w - 48 * mm, base + 1.5 * mm, institute.signer_title, "Helvetica", 8, "centre")
         c.setFont("Helvetica", 8)
         c.setFillColor(colors.grey)
         c.drawString(18 * mm, 12 * mm, "Columns: question, answer given, correct answer, result.")
         if institute and institute.footer:
-            c.drawCentredString(w / 2, 7 * mm, institute.footer)
+            pdftext.draw(c, w / 2, 7 * mm, institute.footer, "Helvetica", 8, "centre")
         c.setFillColor(colors.black)
         c.showPage()
     c.save()
@@ -382,17 +379,15 @@ def _letterhead(c: canvas.Canvas, inst: Institute, w: float, h: float) -> float:
         x += lw * scale + 5 * mm
     y = 14.0
     c.setFillColor(colors.HexColor(inst.colour))
-    c.setFont("Helvetica-Bold", 15)
-    c.drawString(x, h - y * mm, inst.name)
+    pdftext.draw(c, x, h - y * mm, inst.name, "Helvetica-Bold", 15)
     c.setFillColor(colors.HexColor("#333333"))
-    lines = [("Helvetica", line) for line in simpleSplit(inst.address.replace("\n", ", "), "Helvetica", 9,
-                                                          w - 18 * mm - x)[:2]]
+    lines = [("Helvetica", line) for line in pdftext.split(inst.address.replace("\n", ", "), "Helvetica", 9,
+                                                            w - 18 * mm - x)[:2]]
     lines += [("Helvetica", inst.contact())] if inst.contact() else []
     lines += [("Helvetica-Oblique", inst.motto)] if inst.motto else []
     for font, line in lines:
         y += 4.6
-        c.setFont(font, 9)
-        c.drawString(x, h - y * mm, line)
+        pdftext.draw(c, x, h - y * mm, line, font, 9)
     rule = max(30.0 if inst.logo else 0.0, y + 3)
     c.setStrokeColor(colors.HexColor(inst.colour))
     c.setLineWidth(1.2)

@@ -18,6 +18,7 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
+from . import pdftext
 from .branding import Institute
 from .grading import BONUS, DROPPED, EITHER, status
 from .reader import SCALE, PageResult, row_shifts
@@ -135,12 +136,10 @@ def write_marked_sheets(path: str | Path, exam_name: str, t: Template, graded: l
         marked = with_legend(mark_sheet(image, t, r, dict(zip(t.questions(), g.key)), every_bubble), every_bubble)
         jpeg = cv2.imencode(".jpg", marked, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
         who = g.student.name + "   " if g.student and g.student.name else ""
-        c.setFont("Helvetica-Bold", 11)
-        c.drawString(12 * mm, h - 12 * mm, f"{institute.name}: {exam_name}" if institute and institute.name
-                     else exam_name)
-        c.setFont("Helvetica", 10)
-        c.drawString(12 * mm, h - 18 * mm, f"{who}Roll number {r.roll_number}    Score {g.score:g}    Rank {g.rank}"
-                     f"    Right {g.right}  Wrong {g.wrong}  Blank {g.blank}")
+        pdftext.draw(c, 12 * mm, h - 12 * mm, f"{institute.name}: {exam_name}" if institute and institute.name
+                     else exam_name, "Helvetica-Bold", 11)
+        pdftext.draw(c, 12 * mm, h - 18 * mm, f"{who}Roll number {r.roll_number}    Score {g.score:g}    "
+                     f"Rank {g.rank}    Right {g.right}  Wrong {g.wrong}  Blank {g.blank}", "Helvetica", 10)
         ih, iw = marked.shape[:2]
         scale = min((w - 24 * mm) / iw, (h - 30 * mm) / ih)
         c.drawImage(ImageReader(io.BytesIO(jpeg)), 12 * mm, h - 22 * mm - ih * scale,

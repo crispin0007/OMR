@@ -24,11 +24,12 @@ import pypdfium2 as pdfium
 from reportlab.graphics.barcode.code128 import Code128
 from reportlab.lib import colors
 from reportlab.lib.units import mm
-from reportlab.lib.utils import ImageReader, simpleSplit
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
+from . import pdftext
 from .template import parse
 
 PAGE = (210.0, 297.0)  # sheets are laid out on A4 and printed scaled to fit other paper
@@ -435,7 +436,7 @@ def _instruction_lines(instructions: list[str], box) -> tuple[list[tuple[str, st
         leading = size * 0.42
         lines = []
         for n, text in enumerate(instructions, 1):
-            for k, part in enumerate(simpleSplit(text, REGULAR, size, width)):
+            for k, part in enumerate(pdftext.split(text, REGULAR, size, width)):
                 lines.append((f"{n}." if k == 0 else "", part))
         if len(lines) * leading <= INSTRUCTION_BOTTOM - INSTRUCTION_TOP:
             return lines, size, leading
@@ -490,8 +491,7 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4", n
 
     def text(x, base, s, size, font=REGULAR, colour=colors.black, align="left"):
         c.setFillColor(colour)
-        c.setFont(font, size)
-        {"left": c.drawString, "centre": c.drawCentredString, "right": c.drawRightString}[align](x * mm, y(base), s)
+        pdftext.draw(c, x * mm, y(base), s, font, size, align)
 
     def banded(x0, y0, x1, title, size=8.5):
         box(x0, y0, x1, y0 + BAND, fill=band)
@@ -540,7 +540,7 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4", n
         logo_right = LEFT + 5 + lw
     room = 2 * (w / 2 - logo_right - 3) * mm
     size = 12.0
-    while size > 7 and pdfmetrics.stringWidth(style["heading"], BOLD, size) > room:
+    while size > 7 and pdftext.width(style["heading"], BOLD, size) > room:
         size -= 0.5
     text(w / 2, 14.5, style["heading"], size, BOLD, align="centre")
 
@@ -681,6 +681,13 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4", n
                     text(cx, ry0 + BAND + 5.9, digit, 12, BOLD, align="centre")
                     pill(cx, roll_grid.centre(int(digit), col)[1], "", colors.black)
             for word, boxes in zip(_name_words(name), name_boxes()):
+                if pdftext.is_devanagari(word):  # its letters join, so the word is written across the boxes
+                    (bx, by, _, bh), (lx, _, lw, _) = boxes[0], boxes[-1]
+                    word, cx = _fit(word, BOLD, 10, lx + lw - bx - 2), (bx + lx + lw) / 2
+                    half = pdftext.width(word, BOLD, 10) / mm / 2 + 1
+                    box(cx - half, by + 0.3, cx + half, by + bh - 0.3, fill=colors.white, stroke=False)
+                    text(cx, by + bh - 1.4, word, 10, BOLD, align="centre")
+                    continue
                 for letter, (bx, by, bw, bh) in zip(word, boxes):
                     text(bx + bw / 2, by + bh - 1.4, letter, 10, BOLD, align="centre")
         if t.serial:
@@ -709,20 +716,21 @@ def _printed_roll(roll: str, grid) -> str:
 
 def _name_words(name: str) -> list[str]:
     """A name in the first, middle and last name boxes: two words go first and last, more fill the middle box
-    without spaces; each cut to the boxes there are."""
+    without spaces; each cut to the boxes there are. A Devanagari name keeps its spaces and isn't cut: its
+    letters join, so each word is written across its boxes."""
     words = name.upper().split()
     if len(words) <= 1:
         out = words + ["", ""]
     elif len(words) == 2:
         out = [words[0], "", words[1]]
     else:
-        out = [words[0], "".join(words[1:-1]), words[-1]]
-    return [w[:len(name_boxes()[0])] for w in out[:3]]
+        out = [words[0], (" " if pdftext.is_devanagari(name) else "").join(words[1:-1]), words[-1]]
+    return [w if pdftext.is_devanagari(w) else w[:len(name_boxes()[0])] for w in out[:3]]
 
 
 def _fit(s: str, font: str, size: float, room_mm: float) -> str:
     """The text cut with an ellipsis to fit the room."""
-    while s and pdfmetrics.stringWidth(s, font, size) > room_mm * mm:
+    while s and pdftext.width(s, font, size) > room_mm * mm:
         s = s[:-2] + "…"
     return s
 

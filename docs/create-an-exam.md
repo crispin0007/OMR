@@ -78,7 +78,8 @@ With sections, each section can have its own marks in the table.
 
 ![New exam, Sheet look step, with a preview of the sheet](images/wizard-sheet-look.png)
 
-- **Heading**: your school or exam name, printed at the top.
+- **Heading**: your school or exam name, printed at the top. It can be in Hindi or another
+  Devanagari language, as can the instructions: see [Sheets in Hindi](print-sheets.md#sheets-in-hindi-marathi-or-nepali).
 - **Colour** and **Bubbles** (pill, oval, circle, rounded or rectangle).
 - **Sheet number**: tick **Print a sheet number on every sheet** to give every printed copy its
   own number. See [Sheet numbers](print-sheets.md#sheet-numbers).

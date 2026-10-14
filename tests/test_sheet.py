@@ -4,9 +4,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pytest
+from reportlab.pdfbase import pdfmetrics
 
 from omr_core.reader import UnreadablePage, read_page
-from omr_core.sheet import PAPERS, SheetSection, SheetSpec, layout, logo_jpeg, render, write_pdf
+from omr_core.sheet import BOLD, PAPERS, SheetSection, SheetSpec, _name_words, layout, logo_jpeg, render, write_pdf
 from omr_core.store import Store
 from omr_core.template import load, parse
 from sheets import draw, fill, photo, random_marks, reprint, scan
@@ -327,3 +328,23 @@ def test_a_sheet_printed_for_a_student_reads_their_roll_number(tmp_path):
         write_pdf(d, io.BytesIO(), people=[("12345", "Too Long")])
     with pytest.raises(ValueError, match="doesn't fit"):
         write_pdf(d, io.BytesIO(), people=[("A12", "Not Digits")])
+
+
+def test_a_sheet_in_hindi_prints_its_letters_joined_and_still_reads(tmp_path):
+    import io
+
+    import pypdfium2
+
+    from omr_core import pdftext
+    joined = "परीक्षा"  # क्ष is one joined letter, narrower than क, ् and ष side by side
+    assert pdftext.width(joined, BOLD, 12) < pdfmetrics.stringWidth(joined, pdftext.DEVANAGARI_BOLD, 12)
+    assert pdftext.font("Mock 7", BOLD) == BOLD and pdftext.font(joined, BOLD) == pdftext.DEVANAGARI_BOLD
+    d = layout(SheetSpec("साप्ताहिक परीक्षा", 20, roll_digits=4, sets=0, heading="साप्ताहिक परीक्षा: कक्षा 10",
+                         instructions=["केवल काले या नीले पेन का प्रयोग करें।", "Fill one bubble for each question."]))
+    t = parse(d)
+    buf = io.BytesIO()
+    write_pdf(d, buf, people=[("105", "आशा कुमारी राय")], program="कक्षा 10")
+    assert b"NotoSansDevanagari" in buf.getvalue()
+    page = pypdfium2.PdfDocument(buf.getvalue())[0].render(scale=200 / 72).to_numpy()
+    assert read_page(page, t).roll_number == "0105"
+    assert _name_words("आशा कुमारी देवी राय") == ["आशा", "कुमारी देवी", "राय"]  # spaces kept, nothing cut

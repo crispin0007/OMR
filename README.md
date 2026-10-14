@@ -125,6 +125,8 @@ on the **Templates** screen.
 - **Marked sheets (PDF)**: each student's own sheet, coloured right, wrong and missed, one page each.
 - **Student reports**: a page per student that opens offline in any phone browser (score, rank,
   section and topic bars, every question), plus a PDF, in a folder or one zip named by roll number.
+- **Hindi, Marathi and Nepali** headings, instructions, names and letterheads print with their
+  letters joined, on sheets, scorecards and marked sheets.
 - **Results website**: a folder to upload where each student opens their own report with their roll
   number and a private code that stays the same in every exam.
 - **Institute branding**: name, logo, address, colour, motto and signature, kept once and used on
@@ -344,4 +346,6 @@ Please don't attach scans of real students' sheets to issues.
 redistribute the software, with an explicit patent grant.
 
 Printed sheets use the Poppins font, under the SIL Open Font License
-([src/omr_core/fonts/OFL.txt](src/omr_core/fonts/OFL.txt)).
+([src/omr_core/fonts/OFL.txt](src/omr_core/fonts/OFL.txt)), and Noto Sans Devanagari for Hindi,
+Marathi and Nepali text, under the same licence
+([src/omr_core/fonts/OFL-NotoSansDevanagari.txt](src/omr_core/fonts/OFL-NotoSansDevanagari.txt)).

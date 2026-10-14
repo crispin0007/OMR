@@ -39,6 +39,7 @@ student, in roll number order:
 - their **roll number** is written in its boxes and **its bubbles are already filled**, so it is
   read exactly and a student can't fill it wrongly;
 - their **name** is written in the name boxes, one letter a box (a long middle name runs together);
+  a name in Hindi is written across each word's boxes, since its letters join;
 - the exam's name is written on the **Program** line.
 
 ![A sheet printed for one student, with the name and roll number filled in](images/personal-sheet.png)
@@ -46,6 +47,20 @@ student, in roll number order:
 Hand each student their own sheet. With sheet numbers ticked, each student's page also gets the
 next sheet number. A roll number that doesn't fit the sheet's roll number digits stops the printing
 and says which one.
+
+## Sheets in Hindi, Marathi or Nepali
+
+Type the heading, instructions, section names or students' names in Hindi, Marathi, Nepali or any
+language written in Devanagari, and they print with their letters joined properly. English and
+Devanagari can share a sheet, even a line. The labels the app prints itself (such as *Roll number*)
+stay in English. Scorecards and marked sheets print your institute's name, address and students'
+names in Devanagari the same way.
+
+![A sheet with its heading, instructions and a student's name in Hindi](images/hindi-sheet.png)
+
+Handwritten names are read in English letters only. A name handwritten in Devanagari comes out
+wrong and shows with a **?** to check, so for Hindi names go by the roll number, or print a sheet for
+each student.
 
 ## Sheet numbers
 

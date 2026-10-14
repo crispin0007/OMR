@@ -10,7 +10,8 @@ dependencies = [
     "opencv-python-headless>=4.9",
     "pypdfium2>=4.30",
     "openpyxl>=3.1",
-    "reportlab>=4.0",
+    "reportlab>=4.2",
+    "uharfbuzz>=0.39",  # joins Hindi letters in printed PDFs; Apache-2.0, HarfBuzz is MIT
     "zxing-cpp>=2.2",
 ]
 
