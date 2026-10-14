@@ -312,8 +312,8 @@ class ResultsPage(ShownPage):
         self.reports = QPushButton("Student reports…", toolTip="Each student's scorecard as a page that opens in any "
                                    "browser or phone, and as a PDF, named by roll number, in a folder or a zip")
         self.reports.clicked.connect(self.save_reports)
-        self.send = QPushButton("Send to students…", toolTip="Email or text each student their result; set it up "
-                                "under Settings, Send results")
+        self.send = QPushButton("Send to students…", toolTip="Each student's result by WhatsApp, or by email or SMS "
+                                "once set up under Settings, Send results")
         self.send.clicked.connect(self.send_results)
         self.csv.clicked.connect(check.save_csv)
         top = QHBoxLayout()

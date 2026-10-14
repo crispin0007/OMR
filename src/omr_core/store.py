@@ -904,9 +904,9 @@ class Store:
                                                              status, detail))
 
     def sent_to(self, exam_id: int, channel: str) -> set[str]:
-        """Roll numbers this exam's result was already sent to by `channel`."""
+        """Roll numbers this exam's result was already sent to by `channel` (for WhatsApp: opened to send)."""
         return {r for (r,) in self.db.execute("SELECT roll_number FROM send_log WHERE exam_id = ? AND channel = ? "
-                                              "AND status = 'sent'", (exam_id, channel))}
+                                              "AND status IN ('sent', 'opened')", (exam_id, channel))}
 
     def send_times(self, channel: str, since: datetime) -> list[datetime]:
         """When each message was sent by `channel` since then, over every exam, for the provider's limits."""

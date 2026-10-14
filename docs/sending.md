@@ -1,10 +1,11 @@
-# Send results by email or SMS
+# Send results by WhatsApp, email or SMS
 
 [Guide home](index.md) · Previous: [Results](results.md) · Next: [Your institute](institute.md)
 
-OMR Checker can email each student their result with their scorecard attached, or text it to their
-phone. It is **off until you set it up**, and the rest of the app works without it, offline.
-Messages go from your own email account or SMS account; nothing passes through any server of ours.
+OMR Checker can open each student's result in WhatsApp, ready for you to send, email it with their
+scorecard attached, or text it to their phone. WhatsApp needs no setting up; email and SMS are **off
+until you set them up**, and the rest of the app works without them, offline. Messages go from your
+own WhatsApp, email account or SMS account; nothing passes through any server of ours.
 
 ## 1. Add emails and phone numbers
 
@@ -68,13 +69,32 @@ message with your provider first and make the message match it exactly.
 An SMS holds 160 plain characters, or 70 when it has Devanagari or other non-Latin letters; the
 preview says how many SMS each message takes.
 
+## WhatsApp
+
+WhatsApp needs nothing set up: pick **WhatsApp** in **Send by** on the send window (below).
+
+![Sending results by WhatsApp: each student's chat opens with the message typed in](images/send-whatsapp.png)
+
+- Type your **Country code** (for example `+977` or `+91`) once; it goes in front of phone numbers
+  saved without one.
+- Press **Open the next in WhatsApp**. The student's chat opens in the WhatsApp app (or WhatsApp
+  Web) with their result typed in. **Check it and press Send in WhatsApp**, then come back and open
+  the next. Nothing is sent without you pressing Send.
+- Each chat opened is logged as *Opened* and isn't offered again, unless you tick **Send again**.
+- `*stars*` around words make them bold in WhatsApp. The scorecard can't be attached this way; send
+  the [student report](results.md) file yourself if you want it in the chat.
+
+The app opens chats one at a time on purpose: WhatsApp blocks numbers that send many messages
+automatically. Fully automatic sending needs Meta's paid WhatsApp Business service, which this app
+doesn't use.
+
 ## 4. Send
 
 On the exam's **Results** tab, press **Send to students…**.
 
 ![Sending results: the message, its preview and who gets what](images/send-results.png)
 
-1. Pick **Send by**: Email or SMS.
+1. Pick **Send by**: Email, SMS or WhatsApp.
 2. Edit the **Subject** and **Message**. Fields in braces are filled for each student: `{name}`,
    `{roll}`, `{exam}`, `{institute}`, `{score}`, `{out_of}`, `{percent}`, `{rank}`, `{of}`,
    `{percentile}`, `{sections}` and `{date}`. A misspelt field is shown at once.

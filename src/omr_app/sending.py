@@ -10,16 +10,17 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import datetime, timedelta
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
                                QInputDialog, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QProgressBar,
                                QPushButton, QSpinBox, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout,
                                QWidget)
 
 from omr_core import sending
-from omr_core.sending import (EMAIL_BODY, FIELDS, GATEWAYS, LIMITS, SERVERS, SMS_BODY, SUBJECT, EmailSettings,
-                              Mailer, Message, SmsSettings, check_email_settings, check_sms_settings, international,
-                              send_sms, sms_parts, to_whom, wait)
+from omr_core.sending import (EMAIL_BODY, FIELDS, GATEWAYS, LIMITS, SERVERS, SMS_BODY, SUBJECT, WHATSAPP_BODY,
+                              EmailSettings, Mailer, Message, SmsSettings, check_email_settings, check_sms_settings,
+                              international, send_sms, sms_parts, to_whom, wait, whatsapp_link)
 from omr_core.store import Store
 from omr_core.students import same_roll
 
@@ -344,10 +345,16 @@ class SendDialog(QDialog):
         for label, key in (("Email", "email"), ("SMS", "sms")):
             if load(key)[0]:
                 self.channel.addItem(label, key)
+        self.channel.addItem("WhatsApp (you press Send for each)", "whatsapp")  # needs no setting up
+        self.code = QLineEdit(str(settings().value("sending/whatsapp_code", "") or load("sms")[1].get("code", "")),
+                              placeholderText="e.g. +977 or +91", maxLength=5)
+        self.code.setToolTip("Put in front of phone numbers saved without their country code")
+        self.code.textChanged.connect(self.update)
         self.channel.activated.connect(lambda _: self.update())
         self.subject = QLineEdit(saved.get("subject", SUBJECT))
         self.body = QPlainTextEdit()
-        self.texts = {"email": saved.get("email", EMAIL_BODY), "sms": saved.get("sms", SMS_BODY)}
+        self.texts = {"email": saved.get("email", EMAIL_BODY), "sms": saved.get("sms", SMS_BODY),
+                      "whatsapp": saved.get("whatsapp", WHATSAPP_BODY)}
         self.pdf = QCheckBox("Attach the PDF scorecard", checked=saved.get("pdf", True))
         self.html = QCheckBox("Attach the report page (opens in any browser)", checked=saved.get("html", False))
         self.again = QCheckBox("Send again to students already sent this exam's result")
@@ -385,15 +392,20 @@ class SendDialog(QDialog):
         self.stop_button.hide()
         form = QFormLayout()
         form.addRow("Send by", self.channel)
+        form.addRow("Country code", self.code)
+        self.code_label = form.labelForField(self.code)
         form.addRow("Subject", self.subject)
+        self.subject_label = form.labelForField(self.subject)
         form.addRow("Message", self.body)
         form.addRow("", QLabel("Fields: " + ", ".join(f"{{{k}}} {v}" for k, v in FIELDS.items()), objectName="muted",
                                wordWrap=True))
-        attach = QHBoxLayout()
+        self.attach_row = QWidget()
+        attach = QHBoxLayout(self.attach_row)
+        attach.setContentsMargins(0, 0, 0, 0)
         attach.addWidget(self.pdf)
         attach.addWidget(self.html)
         attach.addStretch()
-        form.addRow("", attach)
+        form.addRow("", self.attach_row)
         buttons = QHBoxLayout()
         buttons.addWidget(self.again)
         buttons.addStretch()
@@ -424,9 +436,14 @@ class SendDialog(QDialog):
             self.body.blockSignals(True)
             self.body.setPlainText(self.texts[kind])
             self.body.blockSignals(False)
-        email = kind == "email"
+        email, whatsapp = kind == "email", kind == "whatsapp"
         for w in (self.subject, self.pdf, self.html):
             w.setEnabled(email)
+        for w in (self.code, self.code_label):
+            w.setVisible(whatsapp)
+        for w in (self.subject, self.subject_label, self.attach_row):
+            w.setVisible(not whatsapp)  # a chat has no subject, and a link can't carry a file
+        self.send_button.setText("Open the next in WhatsApp" if whatsapp else "Send…")
         self.messages: list[Message] = []
         problem = ""
         if not kind:
@@ -440,10 +457,12 @@ class SendDialog(QDialog):
                                              not self.store.rolls_change)
         except ValueError as e:
             problem = f"{e}."
-        if kind == "sms":
-            code = load("sms")[1].get("code", "")
+        if kind in ("sms", "whatsapp"):
+            code = load("sms")[1].get("code", "") if kind == "sms" else self.code.text().strip()
             for m in self.messages:
                 m.to = international(m.to, code)
+        if whatsapp and not problem and any(m.to and not m.to.startswith("+") for m in self.messages):
+            problem = "Some phone numbers have no country code. Type it in Country code, e.g. +977."
         self.problem.setText(problem)
         first = self.messages[0] if self.messages else None
         if first:
@@ -451,19 +470,24 @@ class SendDialog(QDialog):
                 f"To: {first.to or '(no number)'}  ·  {sms_parts(first.body)} SMS\n\n")
             self.preview.setText(head + first.body)
         sent = self.store.sent_to(self.exam_id, kind) if kind else set()
+        if whatsapp:
+            self.preview.setText(f"To: {first.to or '(no number)'} on WhatsApp\n\n{first.body}" if first else "")
         ready, missing, shared = to_whom(self.messages)
         self.queue = [m for m in ready if self.again.isChecked() or m.roll not in sent]
         queued = {m.roll for m in self.queue}
         shared_rolls = {r for rolls in shared.values() for r in rolls}
         self.table.setRowCount(len(self.messages))
         for row, m in enumerate(self.messages):
-            status = ("No address" if not m.to else "Already sent" if m.roll not in queued else
-                      "Shares an address" if m.roll in shared_rolls else "Will send")
+            status = ("No address" if not m.to else ("Opened" if whatsapp else "Already sent") if m.roll not in queued
+                      else "Shares an address" if m.roll in shared_rolls else "To open" if whatsapp else "Will send")
             for col, text in enumerate((m.roll, m.name, m.to, status)):
                 self.table.setItem(row, col, QTableWidgetItem(text))
         self.table.resizeColumnsToContents()
-        self.note.setText(f"{len(self.queue)} will be sent, {len(missing)} have no {'email' if email else 'phone'} "
-                          f"(add it in the Student directory), {len(ready) - len(self.queue)} already sent."
+        self.note.setText((f"Each chat opens in WhatsApp with the message typed in; press Send there, then come back "
+                           f"for the next. {len(self.queue)} to open, " if whatsapp else
+                           f"{len(self.queue)} will be sent, ")
+                          + f"{len(missing)} have no {'email' if email else 'phone'} (add it in the Student directory), "
+                          f"{len(ready) - len(self.queue)} already {'opened' if whatsapp else 'sent'}."
                           + (f" {len(shared)} addresses are shared by more than one student; they get one message "
                              "each." if shared else ""))
         self.fill_log()
@@ -482,25 +506,28 @@ class SendDialog(QDialog):
     def remember(self):
         self.texts[self.kind() or "email"] = self.body.toPlainText()
         self.store.set_messages(self.exam_id, {"subject": self.subject.text(), "email": self.texts["email"],
-                                               "sms": self.texts["sms"], "pdf": self.pdf.isChecked(),
-                                               "html": self.html.isChecked()})
+                                               "sms": self.texts["sms"], "whatsapp": self.texts["whatsapp"],
+                                               "pdf": self.pdf.isChecked(), "html": self.html.isChecked()})
+        settings().setValue("sending/whatsapp_code", self.code.text().strip())
 
     def test(self):
         kind = self.kind()
         s, extra = load(kind)
         to, ok = QInputDialog.getText(self, "Send a test to me", "Your email" if kind == "email" else
-                                      "Your phone number", text=s.sender if kind == "email" else "")
+                                      "Your phone number", text=s.sender if kind == "email" and s else "")
         if not ok or not to.strip():
             return
         m = self.messages[0]
-        test = Message(m.roll, m.name, to.strip(), f"TEST: {m.subject}", m.body, self.attach(m))
+        to = international(to.strip(), self.code.text().strip()) if kind == "whatsapp" else to.strip()
+        test = Message(m.roll, m.name, to, f"TEST: {m.subject}", m.body, self.attach(m))
         try:
             self.deliver(kind, test, close=True)
         except Exception as e:  # each is a message for the person
             QMessageBox.warning(self, "The test didn't go", str(e))
             return
-        QMessageBox.information(self, "Test sent", f"The first student's message went to {to.strip()} only. "
-                                "Check it, then Send….")
+        QMessageBox.information(self, "Test sent", f"The first student's message is open in WhatsApp for {to}. Send it "
+                                "there and check it." if kind == "whatsapp" else
+                                f"The first student's message went to {to} only. Check it, then Send….")
 
     def attach(self, m: Message) -> list:
         if self.kind() != "email":
@@ -509,6 +536,9 @@ class SendDialog(QDialog):
         return sending.attachments(self.exam, g, self.pdf.isChecked(), self.html.isChecked())
 
     def start(self):
+        if self.kind() == "whatsapp":
+            self.open_next()
+            return
         n = len(self.queue)
         typed, ok = QInputDialog.getText(
             self, "Send results", f"Send {n} {'emails' if self.kind() == 'email' else 'SMS'} now? A result sent "
@@ -525,8 +555,26 @@ class SendDialog(QDialog):
         self.test_button.setEnabled(False)
         self.timer.start()
 
+    def open_next(self):
+        """Open the next student's chat in WhatsApp, logged as opened: whether it was sent, only WhatsApp knows."""
+        self.remember()
+        m = self.queue[0]
+        try:
+            self.deliver("whatsapp", m)
+        except ValueError as e:
+            self.store.log_send(self.exam_id, m.roll, "whatsapp", m.to, "failed", str(e)[:300])
+            self.status.setText(f"Not opened: {e}")
+        else:
+            self.store.log_send(self.exam_id, m.roll, "whatsapp", m.to, "opened", "opened to send by hand")
+            self.status.setText(f"{m.name}'s chat is open in WhatsApp. Press Send there, then Open the next.")
+        self.update()
+
     def deliver(self, kind: str, m: Message, close: bool = False):
         """Send one message, on the sending thread or here for a test. Raises what the server or gateway raised."""
+        if kind == "whatsapp":
+            if not QDesktopServices.openUrl(QUrl(whatsapp_link(m.to, m.body))):
+                raise ValueError("this PC has no browser or WhatsApp to open the chat in")
+            return
         s, extra = load(kind)
         secret = get_secret(secret_name(kind, s))
         if kind == "sms":

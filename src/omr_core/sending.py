@@ -40,6 +40,10 @@ Your scorecard is attached.
 
 {institute}"""
 SMS_BODY = "{institute}: {name} ({roll}) scored {score}/{out_of} in {exam}, rank {rank} of {of}."
+WHATSAPP_BODY = """{name} ({roll}) scored *{score} out of {out_of}* ({percent}%) in {exam}, rank {rank} of {of}.
+{sections}
+
+{institute}"""
 
 # Sending limits by provider: (per minute, per hour, per day). What providers publish changes, so these start
 # the settings and can be typed over.
@@ -340,6 +344,15 @@ def attachments(exam: Exam, g, pdf: bool, html: bool) -> list[tuple[str, bytes, 
                               exam.written_out_of)
         out.append((f"{stem}.html", page.encode("utf-8"), "text/html"))
     return out
+
+
+def whatsapp_link(phone: str, text: str) -> str:
+    """A link that opens a WhatsApp chat with this number, the message typed in and ready to send (in the
+    WhatsApp app when it is installed, else WhatsApp Web). Nothing is sent until a person presses Send there.
+    Raises ValueError for a number without its country code, which WhatsApp needs."""
+    if not phone.startswith("+") or not phone[1:].isdigit():
+        raise ValueError(f"{phone or 'no number'}: WhatsApp needs the number with its country code, e.g. +977…")
+    return f"https://wa.me/{phone[1:]}?text={urllib.parse.quote(text, safe='')}"
 
 
 def international(phone: str, code: str) -> str:

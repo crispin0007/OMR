@@ -168,3 +168,11 @@ def test_a_country_code_goes_in_front_of_a_local_number_only():
     assert international("9800000001", "+977") == "+9779800000001"
     assert international("09800000001", "+91") == "+919800000001"
     assert international("+15005550006", "+977") == "+15005550006" and international("98", "") == "98"
+
+
+def test_a_whatsapp_link_carries_the_number_and_the_message():
+    from omr_core.sending import whatsapp_link
+    assert whatsapp_link("+9779800000001", "Asha: 80/100 & rank 1") == (
+        "https://wa.me/9779800000001?text=Asha%3A%2080%2F100%20%26%20rank%201")
+    with pytest.raises(ValueError, match="country code"):
+        whatsapp_link("9800000001", "hi")

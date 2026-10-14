@@ -1580,7 +1580,8 @@ def test_results_are_emailed_and_texted_once_each_within_the_limits(app, tmp_pat
     assert not ui.load("email")[0]
     d = ui.SendDialog(r, w.store, exam, ui.sending.Exam("Mock", w.check.exam.template, r.graded, w.check.marks),
                       0)
-    assert "aren't set up" in d.problem.text() and not d.send_button.isEnabled()
+    assert d.kind() == "whatsapp" and d.channel.count() == 1  # needs no setting up
+    assert "no country code" in d.problem.text() and not d.send_button.isEnabled()
 
     server = FakeSmtp()
     ui.save("email", EmailSettings("127.0.0.1", server.port, "none", "", "results@example.org", "First Academy"),
@@ -1620,7 +1621,19 @@ def test_results_are_emailed_and_texted_once_each_within_the_limits(app, tmp_pat
         d.step()
         app.processEvents()
     assert texts == [("+9779800000001", texts[0][1])] and "Asha Rai (00012) scored 80/100" in texts[0][1]
+
+    opened = []
+    monkeypatch.setattr(ui.QDesktopServices, "openUrl", lambda url: opened.append(url.toString()) or True)
+    d.channel.setCurrentIndex(d.channel.findData("whatsapp"))
+    d.update()
+    assert d.code.text() == "+977" and d.send_button.text() == "Open the next in WhatsApp"
+    assert d.table.item(0, 3).text() == "To open" and "+9779800000001 on WhatsApp" in d.preview.text()
+    d.start()  # no number to type: nothing is sent until the person presses Send in WhatsApp
+    assert len(opened) == 1 and opened[0].startswith("https://wa.me/9779800000001?text=")
+    assert "opened to send by hand" in [r[5] for r in w.store.send_log(exam)]
+    assert d.table.item(0, 3).text() == "Opened" and not d.send_button.isEnabled()
     d.reject()
+    assert w.store.exam(exam).details["messages"]["whatsapp"].startswith("{name} ({roll}) scored *{score}")
 
     held = ui.SendDialog(r, w.store, exam, ui.sending.Exam("Mock", w.check.exam.template, r.graded, w.check.marks), 3)
     assert "3 marks still wait on Review" in held.problem.text() and not held.send_button.isEnabled()

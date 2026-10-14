@@ -129,8 +129,9 @@ on the **Templates** screen.
   sheets, scorecards, reports and Excel; several institutes, one default, a choice per exam.
 - **Test series**: combined leaderboard over several tests, with each test's rank, places gained or
   lost, improvement, best-of-N and weights, and analysis by test and section.
-- **Send results by email or SMS** (optional, off until set up): any email server, Twilio or your
-  own SMS gateway; preview, a test to yourself, sending limits, a send log, never sent twice.
+- **Send results by WhatsApp, email or SMS**: each student's chat opens in WhatsApp with their
+  result typed in, ready to send; email (any server) and SMS (Twilio or your own gateway) once set
+  up, with a preview, a test to yourself, sending limits, a send log, never sent twice.
 - **Back up and restore** every exam in one file.
 
 ## Screenshots

@@ -36,7 +36,7 @@ there too; see [Templates](templates.md).
 11. [Review: checking unclear marks](review.md): what the app wasn't sure about.
 12. [Students](students.md): names from Excel, and who was absent.
 13. [Results, Excel, scorecards and test series](results.md): sharing the results.
-14. [Send results by email or SMS](sending.md): each student's result, from your own account.
+14. [Send results by WhatsApp, email or SMS](sending.md): each student's result, from your own account.
 15. [Your institute](institute.md): name, logo and letterhead on scorecards and exports.
 
 **Looking after your data**
