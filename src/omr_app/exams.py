@@ -40,7 +40,7 @@ class ExamsPage(ShownPage):
         restore.clicked.connect(self.restore)
         self.series = QPushButton("Test series…", toolTip="Rank students on their combined score over the exams "
                                   "of a test series")
-        self.series.clicked.connect(lambda: SeriesDialog(self, self.store).exec())
+        self.series.clicked.connect(lambda: SeriesDialog(self, self.store, program=self.program_chosen()).exec())
         self.shrink = QPushButton("Make smaller…", toolTip="Sheets read by an older version keep a large picture "
                                   "of each page; save them the new, smaller way")
         self.shrink.clicked.connect(self.shrink_images)

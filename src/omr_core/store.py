@@ -118,6 +118,10 @@ CREATE TABLE IF NOT EXISTS institute (
     logo BLOB NOT NULL DEFAULT x'',  -- PNG
     is_default INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS series (      -- how a test series adds up; its exams carry its name in details
+    name TEXT PRIMARY KEY,
+    best_of INTEGER NOT NULL DEFAULT 0      -- count only each student's best N tests; 0 counts them all
+);
 CREATE TABLE IF NOT EXISTS exam_template (
     name TEXT PRIMARY KEY,
     body TEXT NOT NULL               -- JSON of a ready-made layout the user saved under their own name
@@ -221,6 +225,24 @@ class Store:
             return []
         return [i for (i,) in self.db.execute("SELECT id FROM exam WHERE json_extract(details, '$.series') = ? "
                                               "AND deleted_at IS NULL ORDER BY created, id", (series.strip(),))]
+
+    def series_settings(self, series: str) -> dict:
+        """{"best_of": N or 0 for every test, "weights": {exam id as text: weight}} for a series; each exam's
+        weight is kept with the exam (details["weight"], 1 when not set), so it travels in backups."""
+        row = self.db.execute("SELECT best_of FROM series WHERE name = ?", (series.strip(),)).fetchone()
+        weights = {str(i): float(self.exam(i).details.get("weight", 1)) for i in self.series_exams(series)}
+        return {"best_of": row[0] if row else 0, "weights": weights}
+
+    def save_series_settings(self, series: str, best_of: int, weights: dict[int, float]):
+        """Count each student's best `best_of` tests (0 for all), with these weights per exam id. Raises
+        ValueError for a negative number or a weight outside 0 to 10."""
+        if best_of < 0 or any(not 0 <= w <= 10 for w in weights.values()):
+            raise ValueError("best of can't be negative, and a weight goes from 0 to 10")
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO series (name, best_of) VALUES (?, ?)", (series.strip(), best_of))
+            for exam_id, w in weights.items():
+                self.db.execute("UPDATE exam SET details = json_set(details, '$.weight', ?) WHERE id = ?",
+                                (w, exam_id))
 
     def set_series(self, exam_id: int, series: str):
         """Put an exam in a test series by name, or take it out with ""."""
@@ -489,6 +511,7 @@ class Store:
                                         "FROM b.student WHERE exam_id = ?", (exam, old))
                         restored.append(name)
                     self.db.execute("INSERT OR IGNORE INTO exam_template SELECT name, body FROM b.exam_template")
+                    self.db.execute("INSERT OR IGNORE INTO series SELECT name, best_of FROM b.series")
                     # a student already in the directory here keeps their details
                     self.db.execute(f"INSERT OR IGNORE INTO directory ({STUDENT}) SELECT {STUDENT} FROM b.directory")
             finally:

@@ -1120,8 +1120,17 @@ def test_a_test_series_shares_students_and_ranks_them_together(app, tmp_path, mo
     d = series.SeriesDialog(w, store)
     assert d.series.currentText() == "JEE 2027" and d.table.rowCount() == 1
     assert [d.table.item(0, c).text() for c in range(d.table.columnCount())] == [
-        "1", "11111", "Asha", "12", "30", "absent", "30", "1", "30"]
+        "1", "11111", "Asha", "12", "", "30  (#1)", "absent", "30", "1", "30", "–", ""]
     assert "Not counted: Mock 2: no results yet" in d.note.text()
+    assert [d.tests.item(0, c).text() for c in range(4)] == ["Mock", "1", "30", "30"]
+    d.best_of.setValue(1)
+    d.save_settings({first: 2})
+    assert store.series_settings("JEE 2027") == {"best_of": 1, "weights": {str(first): 2.0, str(z.exam_id): 1.0}}
+    assert d.table.item(0, 7).text() == "60" and "best 1" in d.note.text()
+    d.top_n.setValue(1)
+    d.group.setCurrentText("12")
+    d.fill()
+    assert d.table.rowCount() == 1
     out = tmp_path / "series.xlsx"
     monkeypatch.setattr(series.QFileDialog, "getSaveFileName", lambda *a: (str(out), ""))
     monkeypatch.setattr(series.QMessageBox, "information", lambda *a: None)

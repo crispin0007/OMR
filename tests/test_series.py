@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from openpyxl import load_workbook
 
 from omr_core.reader import PageResult
@@ -37,8 +38,8 @@ def test_series_ranks_students_on_their_combined_score(tmp_path):
     write_series_excel(tmp_path / "series.xlsx", "JEE", exams, rows)
     ws = load_workbook(tmp_path / "series.xlsx")["Series merit list"]
     assert [c.value for c in ws[2]] == ["Rank", "Roll number", "Name", "Class", "Mock 1", "Mock 2", "Total",
-                                        "Tests taken", "Average %"]
-    assert [c.value for c in ws[5]] == [3, "333", "Chet", "11", 50, "absent", 50, 1, 50]
+                                        "Tests taken", "Average %", "Movement", "Improvement %"]
+    assert [c.value for c in ws[5]] == [3, "333", "Chet", "11", 50, "absent", 50, 1, 50, 0, None]
 
 
 def test_an_exam_without_a_key_is_named_not_counted(tmp_path):
@@ -48,3 +49,35 @@ def test_an_exam_without_a_key_is_named_not_counted(tmp_path):
     assert series_results(s, "JEE")[2] == ["Mock 1: no results yet (no answer key, or no sheets read)"]
     s.save_scheme(exam, "AE", 1, 0, 0)
     assert "Mock 1: line 1: E is not an option" in series_results(s, "JEE")[2][0]
+
+
+def test_weights_best_of_movement_and_strengths(tmp_path):
+    from omr_core.grading import Section
+    from omr_core.series import exam_summary
+    s = Store(tmp_path / "omr.db")
+    exams = [s.create_exam(f"Mock {n}", TEMPLATE, {"series": "CEE"}) for n in (1, 2, 3)]
+    s.set_students(exams[0], [Student("111", "Asha", "12", "Morning"), Student("222", "Bina", "12", "Day")])
+    results = [[("111", 50), ("222", 70)], [("111", 60), ("222", 40)], [("111", 90)]]
+    for exam, sheets in zip(exams, results):
+        s.save_scheme(exam, "A" * 100, 1, 0, 0)
+        s.save_sections(exam, [Section("Physics", 1, 50, 1, 0, 0), Section("Chemistry", 51, 100, 1, 0, 0)])
+        for roll, right in sheets:
+            s.add_page(exam, "b", f"{roll}.png", 1, sheet(roll, right))
+    _, rows, _ = series_results(s, "CEE")
+    asha, bina = rows
+    assert (asha.total, asha.rank, bina.total) == (200, 1, 110)
+    assert asha.exam_ranks == [2, 1, 1] and bina.exam_ranks == [1, 2, None] and asha.batch == "Morning"
+    # after Mock 2 Asha led 110 to 110, tied first; Mock 3 kept her first and dropped Bina to second
+    assert (asha.movement, bina.movement) == (0, -1)
+    assert asha.improvement == 40.0 and bina.improvement == -30.0
+    assert asha.sections == {"Physics": 100.0, "Chemistry": 33.3}  # 150 of 150 and 50 of 150
+    assert exam_summary(["Mock 1", "Mock 2", "Mock 3"], rows)[2] == ("Mock 3", 1, 90.0, 90.0)
+
+    with pytest.raises(ValueError):
+        s.save_series_settings("CEE", 1, {exams[2]: 11})
+    s.save_series_settings("CEE", 2, {exams[2]: 2})  # the final mock counts double; best 2 of 3
+    _, rows, _ = series_results(s, "CEE")
+    asha = next(r for r in rows if r.roll_number == "111")
+    assert asha.counted == [False, True, True] and asha.total == 60 + 2 * 90
+    assert asha.average == round((60 + 2 * 90) / 3, 1)
+    assert s.series_settings("CEE")["best_of"] == 2

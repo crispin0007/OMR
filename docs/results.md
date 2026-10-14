@@ -90,8 +90,26 @@ A **test series** is a set of tests you rank together, like weekly mock tests.
    (**Save series**). Each new exam in the series starts with the series' student list.
 2. On **Exams**, press **Test series…** and pick the series.
 
-You get a combined ranking on total score, with each test's score (*absent* where the student has
-no sheet), the number of tests taken, and the average percentage. **Series merit list (Excel)…**
-saves it.
+Each exam keeps its own Results tab and ranking. The series window adds them up.
+
+**Leaderboard**: the combined ranking on total score, with each test's score and the student's
+rank in that test, for example `72 (#3)`. A test with no sheet shows *absent* and scores nothing.
+It also shows the number of tests taken and the average percentage.
+- **Movement** shows the places gained (▲) or lost (▼) with the latest test.
+- **Improvement %** is the latest test's percentage minus the first one's.
+- **Show** narrows the list to the top 10 (or any number), or to one batch or class. Ranks stay the
+  series ranks.
+
+**Count**: how the total is made.
+- **best N** counts only each student's best N tests, so one bad day or a missed test doesn't sink
+  them. The tests left out show *not counted*.
+- **Weights…** makes a test count more (2 counts double, for example the final mock) or leaves it
+  out (0).
+
+**Analysis**: how the class did in each test (students who sat it, average and top percentage) and
+in each section over the whole series (class average, lowest and highest).
+
+**Series merit list (Excel)…** saves the leaderboard and the analysis, under the institute's name.
+On **Exams**, choosing a program first lists only that program's series.
 
 [Guide home](index.md) · Next: [Your institute](institute.md)
