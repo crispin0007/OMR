@@ -2,13 +2,14 @@
 
 [Guide home](index.md) · Previous: [Use a sheet you already print](map-printed-sheet.md) · Next: [Several PCs on one exam](several-pcs.md)
 
-After the exam, the filled sheets go into the computer in one of three ways:
+After the exam, the filled sheets go into the computer in one of these ways:
 
 1. **From the scanner's feeder (ADF)**: the fastest way for a whole class.
 2. **From a folder** your scanner's own software saves into, for scanners Windows can't drive directly.
 3. **From files** you already have: scanned PDFs, images or phone photos.
+4. **With a phone** on the same Wi-Fi, without a scanner: see [Scan with a phone](phone-scanning.md).
 
-All three end up in the same place and are read the same way.
+All of them end up in the same place and are read the same way.
 
 You can scan before or after typing the answer key. Scores fill in as soon as the key is there.
 

@@ -127,6 +127,8 @@ on the **Templates** screen.
   section and topic bars, every question), plus a PDF, in a folder or one zip named by roll number.
 - **Hindi, Marathi and Nepali** headings, instructions, names and letterheads print with their
   letters joined, on sheets, scorecards and marked sheets.
+- **Scan with a phone**: a phone on the same Wi-Fi opens the PC's QR code and photographs sheets
+  one after another, taking each by itself and saying the roll number read; no app or internet.
 - **Several PCs on one exam**: scan on two or three PCs at once into the main PC's exam over your
   office network; pages wait safely on each PC until the main PC has them. Operator logins with PINs,
   and every correction logged under who made it.
@@ -308,8 +310,9 @@ Yes. **Map printed sheet** turns one scan of your sheet into a template: click t
 marks and box the bubble blocks.
 
 **Can it read a mobile phone photo of an OMR sheet?**
-Yes, for checking or a few sheets: import the photo. For whole classes a scanner is faster and
-more reliable.
+Yes. Press **Scan with a phone…** and point a phone on the same Wi-Fi at the QR code: it takes
+each sheet by itself as you put it down and says the roll number read. Photos you already have
+can be imported too. For thousands of sheets a scanner's feeder is still faster.
 
 **Does it support negative marking, sections and multiple sets?**
 Yes: marks for right, wrong and blank per section, up to 8 question paper sets with a key each,

@@ -2,9 +2,13 @@
 a main PC's exam from a scanning PC."""
 
 import threading
+
+import numpy as np
+import zxingcpp
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QHeaderView,
                                QLabel, QLineEdit, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
@@ -339,3 +343,57 @@ class Sender(QObject):
             store.close()
             self.busy = False
         self.done.emit(exam_id, sent, refused, error)
+
+
+def qr_pixmap(text: str, size: int = 260) -> QPixmap:
+    make = getattr(zxingcpp, "create_barcode", None)  # zxing-cpp 3; write_barcode before it
+    image = np.ascontiguousarray(make(text, zxingcpp.BarcodeFormat.QRCode).to_image(scale=8, add_quiet_zones=True)
+                                 if make else zxingcpp.write_barcode(zxingcpp.BarcodeFormat.QRCode, text, size, size))
+    q = QImage(image.data, image.shape[1], image.shape[0], image.strides[0], QImage.Format_Grayscale8).copy()
+    return QPixmap.fromImage(q).scaled(size, size, Qt.KeepAspectRatio, Qt.FastTransformation)
+
+
+class PhoneDialog(QDialog):
+    """The QR code a phone on the same Wi-Fi opens to photograph sheets into the open exam, and how many came."""
+
+    def __init__(self, parent, links: tuple[str, str], exam_name: str, arrived):
+        super().__init__(parent)
+        self.setWindowTitle("Scan with a phone")
+        secure, plain = links
+        code = QLabel(alignment=Qt.AlignCenter)
+        code.setPixmap(qr_pixmap(secure or plain))
+        self.count, self.got = QLabel(objectName="muted"), 0
+        self.count.setText("Waiting for the first sheet…")
+        arrived.connect(self.one_more)
+        self.finished.connect(lambda _: arrived.disconnect(self.one_more))
+        steps = QLabel(wordWrap=True, textInteractionFlags=Qt.TextSelectableByMouse)
+        steps.setText(
+            f"<b>Photograph the sheets of {exam_name} with a phone</b><ol>"
+            "<li>Connect the phone to the same Wi-Fi as this PC.</li>"
+            "<li>Open the phone's camera and point it at this QR code, then open the link.</li>"
+            + ("<li>The phone warns that the connection isn't private, because the address belongs to this PC and "
+               "not to a website. That is expected here: tap <b>Advanced</b>, then <b>Proceed</b> (or "
+               "<b>Show details</b>, then <b>visit this website</b> on an iPhone). It asks once.</li>"
+               "<li>Allow the camera. Put each sheet down flat in good light and hold the phone over it with the "
+               "four corner marks inside the box: it takes the photo by itself, says the roll number read, and "
+               "waits for the next sheet.</li></ol>" if secure else
+               "<li>Press <b>Photos…</b> for each sheet.</li></ol>")
+            + f"<p>Without the warning, open <a href='{plain}'>{plain}</a> instead, and press <b>Photos…</b> "
+              "for each sheet.</p>"
+            "<p>Each sheet is read here; a photo that can't be read is never saved, and the phone asks for it "
+            "again. Keep the phone's page open until it says everything is sent.</p>")
+        steps.setOpenExternalLinks(False)
+        close = QDialogButtonBox(QDialogButtonBox.Close)
+        close.rejected.connect(self.reject)
+        row = QHBoxLayout()
+        row.addWidget(code)
+        row.addWidget(steps, 1)
+        layout = QVBoxLayout(self)
+        layout.addLayout(row)
+        layout.addWidget(self.count)
+        layout.addWidget(close)
+        self.resize(760, 0)
+
+    def one_more(self, _exam_id: int):
+        self.got += 1
+        self.count.setText(f"Sheets received while this is open: {self.got}. They're on Scanned sheets.")

@@ -41,7 +41,7 @@ from .paths import data_dir
 from .new_exam import Deduction
 from .review import ReviewPage
 from .scan import ScanPage, marked_sheet
-from .several_pcs import LoginDialog, PcsSettings, Sender, refresh_copy
+from .several_pcs import LoginDialog, PcsSettings, PhoneDialog, Sender, refresh_copy
 from .sections import SectionsDialog
 
 APP = "OMR Checker"
@@ -829,6 +829,7 @@ class MainWindow(QMainWindow):
         self.admin = True
         self.server: lan.MainServer | None = None
         self.server_error = ""
+        self.phone_tokens: dict[tuple[int, str], str] = {}  # a phone's link per exam and operator, this session
         self.check = CheckPage(self.store)
         self.exams = ExamsPage(self.store)
         self.exams.purged = self.store.purge_trash()
@@ -856,6 +857,7 @@ class MainWindow(QMainWindow):
             ("Exam settings", self.exam_settings)])
         self.exam_page.back.connect(lambda: self.go("Exams"))
         self.exam_page.scan_wanted.connect(self.start_scanning)
+        self.scan.phone_wanted.connect(self.scan_with_phone)
         self.dashboard.scan_wanted.connect(self.start_scanning)
         self.exams_area = QStackedWidget()  # the list of exams, or one exam's page
         self.exams_area.addWidget(self.exams)
@@ -1055,19 +1057,40 @@ class MainWindow(QMainWindow):
         self.pcs_settings.refresh()
         self.setWindowTitle(f"{self.windowTitle()}  ·  {name}")
 
-    def let_pcs_in(self, on: bool):
-        """Answer other PCs scanning into this PC's exams, or stop."""
+    def let_pcs_in(self, on: bool, remember: bool = True):
+        """Answer other PCs and phones scanning into this PC's exams, or stop; `remember` keeps it for next time."""
         if self.server:
             self.server.stop()
             self.server = None
         self.server_error = ""
         if on:
             try:
-                self.server = lan.MainServer(self.store_path, lan.PORT, self.arrived.emit)
+                cert = lan.make_cert(self.store_path.parent)
+            except (ImportError, OSError, ValueError):
+                cert = None  # phones can still send photos taken with their own camera
+            try:
+                self.server = lan.MainServer(self.store_path, lan.PORT, self.arrived.emit, cert)
             except OSError as e:
                 self.server_error = f"Can't let other PCs in: {e}. Is another copy of OMR Checker open?"
-        theme.settings().setValue("let_pcs_in", "true" if on else "false")
+        if remember:
+            theme.settings().setValue("let_pcs_in", "true" if on else "false")
         self.pcs_settings.refresh()
+
+    def scan_with_phone(self):
+        """Show the QR code a phone on the same Wi-Fi opens to photograph sheets into the open exam."""
+        exam = self.check.exam
+        if exam is None:
+            return
+        if self.server is None:
+            self.let_pcs_in(True, remember=False)
+        if self.server is None:
+            QMessageBox.warning(self, "Can't scan with a phone", self.server_error)
+            return
+        who = self.check.user if self.store.operators() else ""
+        if (exam.id, who) not in self.phone_tokens:
+            self.phone_tokens[exam.id, who] = self.store.add_station(who, "Phone")
+        PhoneDialog(self, self.server.phone_links(exam.id, self.phone_tokens[exam.id, who]), exam.name,
+                    self.arrived).exec()
 
     def send_waiting(self):
         """Send the open exam's waiting pages to its main PC, when it is a copy of one."""

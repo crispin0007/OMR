@@ -13,6 +13,7 @@ dependencies = [
     "reportlab>=4.2",
     "uharfbuzz>=0.39",  # joins Hindi letters in printed PDFs; Apache-2.0, HarfBuzz is MIT
     "zxing-cpp>=2.2",
+    "cryptography>=42",  # the certificate for phones' secure link; Apache-2.0 or BSD
 ]
 
 [project.optional-dependencies]

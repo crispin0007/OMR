@@ -120,3 +120,55 @@ def test_the_main_pc_refuses_what_isnt_a_page(tmp_path):
     main.delete_exam(exam)
     with pytest.raises(KeyError):
         main.receive_page(exam, "pc:2", good, None, by)
+
+
+def test_a_phone_photographs_sheets_into_the_exam_and_is_told_to_retake_a_bad_photo(tmp_path):
+    import base64
+    import ssl
+    import urllib.request
+
+    import cv2
+
+    from omr_core.lan import make_cert
+    from omr_core.template import load
+    from sheets import draw, photo, random_marks
+
+    main = Store(tmp_path / "omr.db")
+    exam = main.create_exam("Mock 7", TEMPLATE)
+    token = main.add_station("Ravi", "Phone")
+    cert = make_cert(tmp_path / "cert")
+    assert make_cert(tmp_path / "cert") == cert and b"PRIVATE KEY" in cert[1].read_bytes()  # made once, kept
+    seen = []
+    server = MainServer(tmp_path / "omr.db", port=0, on_page=seen.append, cert=cert)
+    try:
+        secure, plain = server.phone_links(exam, token)
+        assert secure.startswith("https://") and plain.startswith("http://") and f"t={token}" in secure
+        insecure = ssl.create_default_context()
+        insecure.check_hostname, insecure.verify_mode = False, ssl.CERT_NONE  # as the phone, once told to trust it
+        base = f"https://127.0.0.1:{server.secure_port}"
+        page = urllib.request.urlopen(f"{base}/phone?exam={exam}&t={token}", context=insecure).read().decode()
+        assert "Mock 7" in page and "getUserMedia" in page and token in page and "http://" not in page
+        with pytest.raises(urllib.error.HTTPError, match="401"):
+            urllib.request.urlopen(f"{base}/phone?exam={exam}&t=wrong", context=insecure)
+        assert "Mock 7" in urllib.request.urlopen(f"http://127.0.0.1:{server.port}/phone?exam={exam}&t={token}"
+                                                  ).read().decode()  # the plain link, for the upload button
+
+        def send(image, uid):
+            jpeg = base64.b64encode(cv2.imencode(".jpg", image)[1].tobytes()).decode()
+            req = urllib.request.Request(f"{base}/exams/{exam}/photo", method="POST", headers={"X-Token": token},
+                                         data=json.dumps({"uid": uid, "image": jpeg}).encode())
+            return json.loads(urllib.request.urlopen(req, context=insecure).read())
+
+        t = load(Path(__file__).parent.parent / "templates" / "test-100.json")
+        marks, answers, roll, _ = random_marks(t, 5)
+        sheet = photo(draw(t, marks), width=1800, quality=80)
+        assert send(sheet, "phone:1") == {"ok": True, "new": True, "roll": roll, "to_check": 0}
+        assert send(sheet, "phone:1")["new"] is False  # sent again after a dropped answer
+        assert send(sheet, "phone:2")["new"] is False  # the same sheet taken twice in a row
+        retake = send(np.full((900, 700, 3), 230, np.uint8), "phone:3")
+        assert retake["ok"] is False and "corner marks" in retake["why"]
+        (got,) = main.pages(exam)
+        assert got.result.roll_number == roll and got.result.answers == answers and seen == [exam]
+        assert got.batch.startswith("Phone, Ravi")
+    finally:
+        server.stop()

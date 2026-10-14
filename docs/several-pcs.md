@@ -1,6 +1,6 @@
 # Several PCs on one exam, and logins
 
-[Guide home](index.md) · Previous: [Scan the filled sheets](scanning.md) · Next: [The answer key](answer-key.md)
+[Guide home](index.md) · Previous: [Scan the filled sheets](scanning.md) · Next: [Scan with a phone](phone-scanning.md)
 
 After a big mock test you can scan on two or three PCs at once, each with its own scanner, into one
 exam. One PC keeps the exam (the **main PC**); the others scan into it over your office network. Only
@@ -63,4 +63,4 @@ fingerprint is kept, never the PIN itself; an admin can give anyone a new PIN wi
 The join code and PINs keep strangers out, but what goes between the PCs isn't encrypted. Use it on
 your institute's own network, not on public Wi-Fi.
 
-[Guide home](index.md) · Next: [The answer key](answer-key.md)
+[Guide home](index.md) · Next: [Scan with a phone](phone-scanning.md)

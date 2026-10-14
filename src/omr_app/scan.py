@@ -68,6 +68,8 @@ class ScanThread(QThread):
 
 
 class ScanPage(QWidget):
+    phone_wanted = Signal()
+
     def __init__(self, check):
         super().__init__()
         self.check = check
@@ -108,12 +110,16 @@ class ScanPage(QWidget):
         self.import_button = QPushButton("Import scans…")
         self.import_button.setToolTip("Read PDFs or images of sheets scanned earlier, shown here as they are read")
         self.import_button.clicked.connect(self.import_files)
+        self.phone_button = QPushButton("Scan with a phone…")
+        self.phone_button.setToolTip("Photograph sheets with a phone on the same Wi-Fi: it shows a QR code to open")
+        self.phone_button.clicked.connect(self.phone_wanted.emit)
         top = QHBoxLayout()
         top.addWidget(self.start_button)
         top.addWidget(self.pause_button)
         top.addWidget(self.stop_button)
         top.addSpacing(12)
         top.addWidget(self.ready, 1)
+        top.addWidget(self.phone_button)
         top.addWidget(self.import_button)
         options = QGridLayout()
         options.addWidget(QLabel("Scanner"), 0, 0)
@@ -235,6 +241,7 @@ class ScanPage(QWidget):
         running = self.running
         self.start_button.setEnabled(self.check.exam is not None and not running)
         self.import_button.setEnabled(self.check.exam is not None and not running)
+        self.phone_button.setEnabled(self.check.exam is not None)
         self.stop_button.setEnabled(running)
         self.pause_button.setEnabled(running)
         self.pause_button.setText("Resume" if self.paused else "Pause")

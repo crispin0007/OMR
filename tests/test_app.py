@@ -17,7 +17,7 @@ from omr_app.scan import FOLDER  # noqa: E402
 from omr_app.window import TEMPLATES, MainWindow  # noqa: E402
 from omr_core.reader import SCALE, read_page  # noqa: E402
 from omr_core.template import load, parse  # noqa: E402
-from sheets import draw, random_marks, scan  # noqa: E402
+from sheets import draw, photo, random_marks, scan  # noqa: E402
 
 
 @pytest.fixture
@@ -1859,3 +1859,50 @@ def test_a_second_pc_scans_into_the_main_pcs_exam_and_operators_log_in(app, tmp_
     assert main.check.user == "Ravi" and not main.check.key_edit.isEnabled()
     assert not main.exam_page.tabs.isTabEnabled(main.exam_page.names.index("Answer key"))
     assert not main.pcs_settings.operators.isEnabled()
+
+
+def test_a_phone_shown_the_qr_code_photographs_sheets_into_the_open_exam(app, tmp_path, monkeypatch):
+    import base64
+    import json
+    import urllib.request
+
+    import zxingcpp
+    from omr_app import several_pcs
+    from omr_core import lan
+    monkeypatch.setattr(lan, "PORT", 0)
+    shown = []
+    monkeypatch.setattr(several_pcs.PhoneDialog, "exec", lambda d: shown.append(d))
+    w = window(tmp_path)
+    w.scan.phone_button.click()
+    try:
+        (dialog,) = shown
+        secure, plain = w.server.phone_links(w.check.exam.id, next(iter(w.phone_tokens.values())))
+        qr = dialog.findChildren(several_pcs.QLabel)[0].pixmap().toImage()
+        qr = qr.convertToFormat(qr.Format.Format_Grayscale8)
+        pixels = np.array(qr.constBits(), np.uint8).reshape(qr.height(), qr.bytesPerLine())[:, :qr.width()]
+        assert [b.text for b in zxingcpp.read_barcodes(pixels)] == [secure]  # the phone's camera opens this
+        assert str(theme_settings_value()) != "true"  # showing the code doesn't let PCs in for good
+
+        t = load(TEMPLATES / "test-100.json")
+        marks, answers, roll, _ = random_marks(t, 8)
+        jpeg = base64.b64encode(cv2.imencode(".jpg", photo(draw(t, marks), width=1800, quality=85))[1]).decode()
+        token = plain.split("t=")[1]
+        url = plain.split("/phone")[0].replace(plain.split("//")[1].split(":")[0], "127.0.0.1")
+        req = urllib.request.Request(f"{url}/exams/{w.check.exam.id}/photo", method="POST",
+                                     headers={"X-Token": token},
+                                     data=json.dumps({"uid": "phone:1", "image": jpeg}).encode())
+        assert json.loads(urllib.request.urlopen(req).read())["roll"] == roll
+        for _ in range(100):
+            app.processEvents()
+            if w.check.sheets:
+                break
+            time.sleep(0.02)
+        assert [s.result.answers for s in w.check.sheets] == [answers]
+        assert dialog.count.text().startswith("Sheets received while this is open: 1.")
+    finally:
+        w.let_pcs_in(False)
+
+
+def theme_settings_value():
+    from omr_app import theme
+    return theme.settings().value("let_pcs_in", "false")

@@ -32,27 +32,28 @@ there too; see [Templates](templates.md).
 
 8. [Scan the filled sheets](scanning.md): the scanner, a folder, or files, and the live view.
 9. [Several PCs on one exam, and logins](several-pcs.md): scanning on two or more PCs at once.
-10. [The answer key](answer-key.md): giving the right answers.
-11. [Marks, sections, topics and written marks](marks-and-sections.md): how scores are worked out.
-12. [Review: checking unclear marks](review.md): what the app wasn't sure about.
-13. [Students](students.md): names from Excel, and who was absent.
-14. [Results, Excel, scorecards and test series](results.md): sharing the results.
-15. [Send results by WhatsApp, email or SMS](sending.md): each student's result, from your own account.
-16. [Your institute](institute.md): name, logo and letterhead on scorecards and exports.
+10. [Scan with a phone](phone-scanning.md): photograph sheets with a phone on the same Wi-Fi.
+11. [The answer key](answer-key.md): giving the right answers.
+12. [Marks, sections, topics and written marks](marks-and-sections.md): how scores are worked out.
+13. [Review: checking unclear marks](review.md): what the app wasn't sure about.
+14. [Students](students.md): names from Excel, and who was absent.
+15. [Results, Excel, scorecards and test series](results.md): sharing the results.
+16. [Send results by WhatsApp, email or SMS](sending.md): each student's result, from your own account.
+17. [Your institute](institute.md): name, logo and letterhead on scorecards and exports.
 
 **Looking after your data**
 
-17. [Backup, restore and settings](backup-and-settings.md): keeping exams safe, moving PCs, the look
+18. [Backup, restore and settings](backup-and-settings.md): keeping exams safe, moving PCs, the look
     of the app.
 
 **When something goes wrong**
 
-18. [Troubleshooting](troubleshooting.md): problems and how to fix them.
-19. [FAQ](faq.md): short answers to common questions.
+19. [Troubleshooting](troubleshooting.md): problems and how to fix them.
+20. [FAQ](faq.md): short answers to common questions.
 
 **On paper**
 
-20. [Cheat sheet](cheat-sheet.md): one printable page to keep next to the scanner.
+21. [Cheat sheet](cheat-sheet.md): one printable page to keep next to the scanner.
 
 ## Where to find help in the app
 

@@ -5,18 +5,27 @@ Every request but joining carries the token the main PC gave when the PC joined.
 its own, so a page sent twice (the answer lost on the way back) is saved once."""
 
 import base64
+import ipaddress
 import json
 import re
 import socket
+import ssl
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
+import cv2
+import numpy as np
+
+from .phone_page import phone_page
+from .reader import read_or_reason
 from .store import Store
 
-PORT = 47615
+PORT = 47615  # and PORT + 1 for the secure address phones' cameras need
 MAX_BODY = 20_000_000  # a page's image is well under 1 MB; anything this big isn't a page
 TIMEOUT = 15
 
@@ -65,9 +74,45 @@ class _Handler(BaseHTTPRequestHandler):
             raise ValueError("not a request")
         return body
 
+    def _page(self, html: str, status: int = 200):
+        data = html.encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _photo(self, exam_id: int, by: tuple[str, str]):
+        """A phone's photo of a sheet: read here, and saved only when it reads, else the phone is told to retake."""
+        b = self._body()
+        photo = cv2.imdecode(np.frombuffer(base64.b64decode(str(b.get("image", "")), validate=True), np.uint8),
+                             cv2.IMREAD_COLOR)
+        if photo is None:
+            raise ValueError("that isn't a photo")
+        store = self.server.store
+        result, problem = read_or_reason(photo, store.exam(exam_id).template)
+        if result is None:
+            why = problem.removeprefix("unreadable: ")
+            return self._reply(200, {"ok": False, "why": f"{why}. Get all four corner marks in, flat and in "
+                                                             "good light."})
+        page_id, new = store.receive_photo(exam_id, b.get("uid"), result, by)
+        if new and self.server.on_page:
+            self.server.on_page(exam_id)
+        return self._reply(200, {"ok": True, "new": new, "roll": result.roll_number, "to_check": len(result.flags)})
+
     def _handle(self, method: str):
         store = self.server.store
         try:
+            url = urllib.parse.urlsplit(self.path)
+            if method == "GET" and url.path == "/phone":
+                q = urllib.parse.parse_qs(url.query)
+                token, exam = q.get("t", [""])[0], q.get("exam", [""])[0]
+                by = store.station(token)
+                if by is None or not exam.isdigit():
+                    return self._page("<p>This link has been taken out. Scan the QR code on the PC again.</p>", 401)
+                e = store.exam(int(exam))
+                return self._page(phone_page(e.id, e.name, token, by[0] or by[1]))
             if method == "POST" and self.path == "/join":
                 b = self._body()
                 token = store.join(str(b.get("code", "")), str(b.get("name", "")), str(b.get("pin", "")),
@@ -80,6 +125,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._reply(200, [{"id": i, "name": n, "created": c} for i, n, c, *_ in store.exams()])
             if m := re.fullmatch(r"/exams/(\d+)", self.path):
                 return self._reply(200, store.exam_copy(int(m[1])))
+            if method == "POST" and (m := re.fullmatch(r"/exams/(\d+)/photo", self.path)):
+                return self._photo(int(m[1]), by)
             if method == "POST" and (m := re.fullmatch(r"/exams/(\d+)/pages", self.path)):
                 b = self._body()
                 image = base64.b64decode(b["image"], validate=True) if b.get("image") is not None else None
@@ -106,30 +153,88 @@ class _Server(HTTPServer):
     store: Store
     on_page = None
 
+    def handle_error(self, request, client_address):
+        pass  # a phone turning down the certificate, or a dropped connection: nothing to do or to print
+
 
 class MainServer:
-    """The main PC answering other PCs, on its own thread with its own connection to the database at `db_path`.
-    `on_page(exam_id)` is called on that thread after each page is saved."""
+    """The main PC answering other PCs and phones, each address on its own thread with its own connection to the
+    database at `db_path`. With `cert` (certificate and key files) phones also get a secure address, on the next
+    port, for their camera. `on_page(exam_id)` is called on a server's thread after each page is saved."""
 
-    def __init__(self, db_path: str | Path, port: int = PORT, on_page=None):
-        self.httpd = _Server(("", port), _Handler)
-        self.httpd.on_page = on_page
-        self.port = self.httpd.server_address[1]
+    def __init__(self, db_path: str | Path, port: int = PORT, on_page=None, cert: tuple[Path, Path] | None = None):
         self.db_path = db_path
-        self.thread = threading.Thread(target=self._serve, daemon=True)
-        self.thread.start()
+        self.servers = [_Server(("", port), _Handler)]
+        self.port = self.servers[0].server_address[1]
+        self.secure_port = None
+        if cert:
+            secure = _Server(("", self.port + 1 if port else 0), _Handler)
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(*cert)
+            secure.socket = context.wrap_socket(secure.socket, server_side=True, do_handshake_on_connect=False)
+            self.servers.append(secure)
+            self.secure_port = secure.server_address[1]
+        self.threads = []
+        for httpd in self.servers:
+            httpd.on_page = on_page
+            self.threads.append(threading.Thread(target=self._serve, args=(httpd,), daemon=True))
+            self.threads[-1].start()
 
-    def _serve(self):
-        self.httpd.store = Store(self.db_path)
+    def _serve(self, httpd: "_Server"):
+        httpd.store = Store(self.db_path)
         try:
-            self.httpd.serve_forever()
+            httpd.serve_forever()
         finally:
-            self.httpd.store.close()
+            httpd.store.close()
 
     def stop(self):
-        self.httpd.shutdown()
-        self.httpd.server_close()
-        self.thread.join()
+        for httpd in self.servers:
+            httpd.shutdown()
+            httpd.server_close()
+        for t in self.threads:
+            t.join()
+
+    def phone_links(self, exam_id: int, token: str) -> tuple[str, str]:
+        """(the secure link with the live camera, or "" without a certificate; the plain link) for a phone."""
+        host = addresses()[0]
+        query = urllib.parse.urlencode({"exam": exam_id, "t": token})
+        return (f"https://{host}:{self.secure_port}/phone?{query}" if self.secure_port else "",
+                f"http://{host}:{self.port}/phone?{query}")
+
+
+def make_cert(folder: str | Path) -> tuple[Path, Path]:
+    """A certificate for this PC's addresses, made here and kept in `folder`, for phones' secure link: made again
+    when the PC's address changed. Phones warn once that nobody vouches for it, which is expected on a local
+    network."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+    folder = Path(folder)
+    cert, key = folder / "phone-cert.pem", folder / "phone-key.pem"
+    wanted = {ipaddress.ip_address(a) for a in addresses()} | {ipaddress.ip_address("127.0.0.1")}
+    if cert.exists() and key.exists():
+        try:
+            have = x509.load_pem_x509_certificate(cert.read_bytes()).extensions.get_extension_for_class(
+                x509.SubjectAlternativeName).value.get_values_for_type(x509.IPAddress)
+            if wanted <= set(have):
+                return cert, key
+        except (ValueError, x509.ExtensionNotFound):
+            pass  # made again below
+    private = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"OMR Checker on {pc_name()}")])
+    now = datetime.now(timezone.utc)
+    made = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(private.public_key())
+            .serial_number(x509.random_serial_number()).not_valid_before(now - timedelta(days=1))
+            .not_valid_after(now + timedelta(days=3650))
+            .add_extension(x509.SubjectAlternativeName([x509.IPAddress(a) for a in sorted(wanted, key=str)]
+                                                       + [x509.DNSName("localhost")]), critical=False)
+            .sign(private, hashes.SHA256()))
+    folder.mkdir(parents=True, exist_ok=True)
+    key.write_bytes(private.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                          serialization.NoEncryption()))
+    cert.write_bytes(made.public_bytes(serialization.Encoding.PEM))
+    return cert, key
 
 
 class MainPC:

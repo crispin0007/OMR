@@ -1143,6 +1143,37 @@ class Store:
             self.db.execute("INSERT INTO received (uid, page_id) VALUES (?, ?)", (uid, page_id))
         return page_id
 
+    def add_station(self, operator: str, pc: str) -> str:
+        """Let a device in without the join code, such as a phone shown this PC's QR code: its token."""
+        token = secrets.token_urlsafe(24)
+        with self.db:
+            self.db.execute("INSERT INTO station (token, operator, pc, joined) VALUES (?, ?, ?, ?)",
+                            (token, operator, pc, datetime.now().isoformat(timespec="seconds")))
+        return token
+
+    def receive_photo(self, exam_id: int, uid: str, result: PageResult, by: tuple[str, str]) -> tuple[int, bool]:
+        """Save a sheet a phone photographed and this PC read: (its page id, whether it is new). A photo sent
+        again, or the same sheet photographed twice in a row, isn't saved again."""
+        if not self.db.execute("SELECT 1 FROM exam WHERE id = ? AND deleted_at IS NULL AND NOT archived",
+                               (exam_id,)).fetchone():
+            raise KeyError(exam_id)
+        if not isinstance(uid, str) or not 0 < len(uid) <= 100:
+            raise ValueError("not a photo")
+        done = self.db.execute("SELECT page_id FROM received WHERE uid = ?", (uid,)).fetchone()
+        if done:
+            return done[0], False
+        batch = f"{by[1]}" + (f", {by[0]}" if by[0] else "") + f"  ·  {datetime.now():%d %b}"
+        last = self.db.execute("SELECT id, roll_number, set_code, answers FROM page WHERE exam_id = ? AND batch = ? "
+                               "ORDER BY id DESC LIMIT 1", (exam_id, batch)).fetchone()
+        values, _ = _row(result)
+        if last and tuple(last[1:]) == values[:3]:
+            return last[0], False  # the sheet before, taken again while the phone was held over it
+        n = self.db.execute("SELECT COUNT(*) FROM page WHERE exam_id = ? AND batch = ?", (exam_id, batch)).fetchone()[0]
+        page = self.add_page(exam_id, batch, by[1], n + 1, result)
+        with self.db:
+            self.db.execute("INSERT INTO received (uid, page_id) VALUES (?, ?)", (uid, page.id))
+        return page.id, True
+
     def pages_after(self, exam_id: int, page_id: int) -> list[StoredPage]:
         """An exam's pages saved after `page_id`, such as the ones other PCs sent."""
         return [p for p in self._pages("exam_id = ?", exam_id) if p.id > page_id]
