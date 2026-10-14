@@ -21,14 +21,22 @@ same Wi-Fi, quickly and without touching the screen for each sheet.
   upload button.
 - **Targets on the corner marks.** The camera view draws a target where each of the sheet's corner marks
   should be, the shape of the exam's own marks (square or ring), with the page fitted in the picture.
-  The page finds the dark mark-sized blob near each target. A mark found but out of its target shows
-  amber, with a hint (closer, back, left, right, up, down, more light); all four in their targets turn
-  green. The photo is taken when all four are in, their edges are sharp and the picture is still; the
-  next waits until the marks leave the targets. "Auto: any" keeps the earlier way (any bright, sharp,
-  still picture) for a sheet whose marks aren't found; "Take now" takes one at once.
+  The page finds each mark near its target as a mark-sized box darker than the even paper around it by
+  a share of that paper's brightness, so dim light, shadow, glare and thin printed rings still show as
+  marks, and the table at a sheet's corner doesn't. A mark found but well off its target shows amber,
+  with a hint (closer, back, left, right, up, down, more light); each mark roughly in place (within
+  about an eighth of the picture's width) turns green.
+- **Taken readily; the PC checks.** The photo is taken once all four are green, their shape is the
+  sheet's (allowing for a tipped phone), their edges aren't badly blurred and they have moved less than
+  about 1% of the picture since the last check, for two checks running (about a third of a second).
+  The next waits until the marks leave the targets. "Auto: any" keeps the earlier way (any bright,
+  sharp, still picture) for a sheet whose marks aren't found; "Take now" takes one at once.
+- **Details.** A button on the phone page shows, over the picture, each mark found or why not, and
+  each check's number against what it needs, to tell why a sheet isn't taken on a real phone.
 - **Read on the PC, at once.** Each photo is read with the exam's sheet. One that can't be read is not
   saved and the phone shows "Retake" and why; one that reads is saved and the phone shows the roll
-  number and how many marks are left to check.
+  number and how many marks are left to check. A photo whose corner marks are blurred (blurred camera
+  photos read wrong answers in tests) is not saved and gets "Retake" too.
 - **Nothing lost or doubled.** Each photo carries its own id and is resent until the PC answers; the
   PC saves an id once, and the same sheet taken twice in a row once.
 

@@ -25,6 +25,7 @@ CUT_MM = 0.5  # a corner mark closer than this to the scan's edge may be cut off
 CUT_MARK = "a corner mark is cut off at the edge of the scan"
 MAX_SKEW_MM = 1.5  # how far a corner mark may sit from where the other three put it (tilt, stretch, phone angle)
 MAX_LOST_ROWS = 0.25  # share of bubble rows found only at the edge of the search before the page counts as misaligned
+BLURRED = 0.08  # sharpness() below this: blurred camera photos read wrong answers in tests (Gaussian blur over ~0.5 mm)
 
 
 class UnreadablePage(Exception):
@@ -109,6 +110,24 @@ def read_or_reason(page: np.ndarray, template: Template) -> tuple[PageResult | N
         return None, f"unreadable: {e}"
 
 
+def sharpness(aligned: np.ndarray, t: Template) -> float:
+    """How sharp the corner marks' edges are on the aligned page, for photos from a camera: the steepest one-pixel
+    rise from ink to paper along a mark's middle rows and, apart, its middle columns, as a share of paper less
+    ink; the blurrier way, and the blurriest mark. About 0.4 for a sharp photo, under BLURRED when out of focus
+    or shaken."""
+    r, q = round(t.marker_size * SCALE * 0.9), max(1, round(t.marker_size * SCALE / 4))
+    out = []
+    for mx, my in t.markers:
+        cx, cy = round(mx * SCALE), round(my * SCALE)
+        y0, x0 = max(cy - r, 0), max(cx - r, 0)  # a mark near the page's edge has less paper on that side
+        p = aligned[y0:cy + r, x0:cx + r].astype(np.float32)
+        ink, paper = float(aligned[cy - q:cy + q + 1, cx - q:cx + q + 1].min()), float(np.percentile(p, 95))
+        across = np.abs(np.diff(p[cy - y0 - q:cy - y0 + q + 1, :], axis=1)).max(1)
+        down = np.abs(np.diff(p[:, cx - x0 - q:cx - x0 + q + 1], axis=0)).max(0)
+        out.append(min(np.median(across), np.median(down)) / max(10.0, paper - ink))
+    return min(out)
+
+
 def _barcode(page: np.ndarray, area: tuple[float, float, float, float]) -> str:
     """The text of the barcode or QR code in an area of the aligned page, or "" if none can be read."""
     x, y, w, h = (round(v * SCALE) for v in area)
@@ -184,7 +203,17 @@ def _align(gray: np.ndarray, t: Template) -> np.ndarray:
     other paper reads the same once its four corner marks are found.
     """
     try:
-        return _warp(gray, t, _whole(gray, t, _markers_near(gray, t)))
+        found = _whole(gray, t, _markers_near(gray, t))
+        s = gray.shape[1] / t.page[0]
+        k = _scale(found, t.markers)
+        if k is None or abs(k - s) > 0.1 * s:
+            # The page doesn't fill the picture's width, as in a phone photo with the table around it, so the
+            # marks were looked for in the wrong places and the table's edge may have been taken for one.
+            try:
+                return _warp(gray, t, _whole(gray, t, _markers_anywhere(gray, t)))
+            except UnreadablePage:
+                pass
+        return _warp(gray, t, found)
     except UnreadablePage as near:  # printed at another size or on other paper: look further for the marks
         try:
             return _warp(gray, t, _whole(gray, t, _markers_anywhere(gray, t)))

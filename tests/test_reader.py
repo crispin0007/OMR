@@ -156,3 +156,27 @@ def test_a_photo_with_dark_table_around_the_sheet_reads():
     picture[101:101 + 1238, 102:102 + 876] = (sheet * 0.85).astype(np.uint8)
     r = read_page(picture, t)
     assert (r.roll_number, r.answers) == (roll, answers)
+
+
+@pytest.mark.parametrize("light", [1.0, 0.6])
+def test_a_ring_mark_sheet_photographed_with_the_table_around_it_reads_unshifted(light):
+    # Looking where a sheet filling the picture has its marks found the table's edge below the sheet, and the
+    # rows read one question out without a flag. A page whose marks are not that far apart is looked for anywhere.
+    from omr_core.reader import BLURRED, sharpness
+    from omr_core.sheet import SheetSpec, layout, render
+    from sheets import camera, fill
+    d = layout(SheetSpec("Weekly", 40, roll_digits=4, sets=0))
+    t = parse(d)
+    marks, answers, roll, _ = random_marks(t, 7)
+    r = read_page(camera(fill(render(d), t, marks), t, light=light), t)
+    assert (r.roll_number, r.answers) == (roll, answers)
+    assert sharpness(r.aligned, t) > BLURRED
+
+
+def test_a_blurred_photo_shows_as_blurred():
+    from omr_core.reader import BLURRED, sharpness
+    from sheets import camera
+    marks, *_ = random_marks(TEMPLATE, 7)
+    page = draw(TEMPLATE, marks)
+    sharp, blurred = (read_page(camera(page, TEMPLATE, blur=b), TEMPLATE) for b in (0, 5))
+    assert sharpness(sharp.aligned, TEMPLATE) > 2 * BLURRED > 2 * sharpness(blurred.aligned, TEMPLATE)

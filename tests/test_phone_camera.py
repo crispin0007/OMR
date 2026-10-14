@@ -40,7 +40,7 @@ def run(tmp_path, template_json: str, sheets: list[np.ndarray], t) -> tuple[list
     store = Store(tmp_path / "omr.db")
     exam = store.create_exam("Mock", template_json)
     token = store.add_station("Ravi", "Phone")
-    frames = [frame(None, t)] * 10 + [frame(sheets[0], t, 0.85)] * 25  # too far away: never taken
+    frames = [frame(None, t)] * 10 + [frame(sheets[0], t, 0.8)] * 25  # too far away: never taken
     for s in sheets:
         frames += [frame(s, t)] * 30 + [frame(None, t)] * 10
     video = tmp_path / "camera.y4m"

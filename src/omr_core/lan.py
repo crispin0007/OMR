@@ -22,7 +22,7 @@ import cv2
 import numpy as np
 
 from .phone_page import phone_page
-from .reader import read_or_reason
+from .reader import BLURRED, read_or_reason, sharpness
 from .store import Store
 
 PORT = 47615  # and PORT + 1 for the secure address phones' cameras need
@@ -91,11 +91,15 @@ class _Handler(BaseHTTPRequestHandler):
         if photo is None:
             raise ValueError("that isn't a photo")
         store = self.server.store
-        result, problem = read_or_reason(photo, store.exam(exam_id).template)
+        template = store.exam(exam_id).template
+        result, problem = read_or_reason(photo, template)
         if result is None:
             why = problem.removeprefix("unreadable: ")
             return self._reply(200, {"ok": False, "why": f"{why}. Get all four corner marks in, flat and in "
                                                              "good light."})
+        if sharpness(result.aligned, template) < BLURRED:  # the phone takes photos loosely; this is the check
+            return self._reply(200, {"ok": False, "why": "the photo is blurred. Hold the phone still and let it "
+                                                         "focus."})
         page_id, new = store.receive_photo(exam_id, b.get("uid"), result, by)
         if new and self.server.on_page:
             self.server.on_page(exam_id)

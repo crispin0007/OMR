@@ -125,3 +125,45 @@ def fill(page: np.ndarray, t: Template, marks: dict[tuple[int, int, int], str], 
         cv2.ellipse(out, (round(x * s), round(y * s)), axes, 0, start, start + (180 if style == "half" else 360),
                     (INK["pen" if style == "half" else style],) * 3, -1)
     return out
+
+
+def camera(page: np.ndarray, t: Template, size: tuple[int, int] = (1080, 1440), scale: float = 1.0,
+           shift: tuple[float, float] = (0, 0), turn: float = 0, keystone: float = 0, blur: float = 0,
+           shake: float = 0, light: float = 1.0, shadow: float = 0, glare: float = 0, noise: float = 3,
+           quality: int = 70, table=(60, 70, 80), seed: int = 0) -> np.ndarray:
+    """A phone camera's video frame of a sheet on a table, placed where the phone page's targets put it (the page
+    fitted in 86% of the frame) and then off it as a hand holds it: `scale` times that size, moved by `shift`
+    (a share of the frame), turned `turn` degrees, `keystone` narrower at the top (the phone tipped), out of
+    focus (`blur`, px), shaken sideways (`shake`, px), lit at `light` with a `shadow` across one side (0 to 1,
+    the share of light lost), a `glare` spot (0 to 1) and sensor noise, then compressed as video is."""
+    W, H = size
+    h, w = page.shape[:2]
+    k = min(0.86 * W / t.page[0], 0.86 * H / t.page[1]) * scale  # px per mm, as the page's guide() fits it
+    sw, sh = t.page[0] * k, t.page[1] * k
+    corners = np.float64([[-sw / 2, -sh / 2], [sw / 2, -sh / 2], [sw / 2, sh / 2], [-sw / 2, sh / 2]])
+    corners[:2, 0] *= 1 - keystone
+    a = np.radians(turn)
+    corners = corners @ np.float64([[np.cos(a), np.sin(a)], [-np.sin(a), np.cos(a)]])
+    corners += (W / 2 + shift[0] * W, H / 2 + shift[1] * H)
+    m = cv2.getPerspectiveTransform(np.float32([[0, 0], [w, 0], [w, h], [0, h]]), np.float32(corners))
+    rng = np.random.default_rng(seed)
+    out = np.empty((H, W, 3), np.float32)
+    out[:] = table
+    out += rng.normal(0, 6, (H, W, 1))  # the table's grain
+    sheet = cv2.warpPerspective(page, m, (W, H), flags=cv2.INTER_AREA)
+    inside = cv2.warpPerspective(np.full((h, w), 255, np.uint8), m, (W, H))[..., None] / 255.0
+    out = out * (1 - inside) + sheet * 0.92 * inside
+    if blur:
+        out = cv2.GaussianBlur(out, (0, 0), blur)
+    if shake:
+        kernel = np.zeros((1, int(shake) * 2 + 1), np.float32)
+        kernel[:] = 1 / kernel.size
+        out = cv2.filter2D(out, -1, kernel)
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    lit = light * (1 - shadow * np.clip((xx / W - 0.3) / 0.5, 0, 1))  # darker towards the right
+    out = out * lit[..., None]
+    if glare:
+        spot = np.exp(-(((xx - 0.62 * W) / (0.12 * W)) ** 2 + ((yy - 0.3 * H) / (0.08 * H)) ** 2))
+        out = out + glare * 255 * spot[..., None]
+    out = np.clip(out + rng.normal(0, noise, out.shape), 0, 255).astype(np.uint8)
+    return cv2.imdecode(cv2.imencode(".jpg", out, [cv2.IMWRITE_JPEG_QUALITY, quality])[1], cv2.IMREAD_COLOR)

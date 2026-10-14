@@ -131,7 +131,7 @@ def test_a_phone_photographs_sheets_into_the_exam_and_is_told_to_retake_a_bad_ph
 
     from omr_core.lan import make_cert
     from omr_core.template import load
-    from sheets import draw, photo, random_marks
+    from sheets import camera, draw, photo, random_marks
 
     main = Store(tmp_path / "omr.db")
     exam = main.create_exam("Mock 7", TEMPLATE)
@@ -167,8 +167,11 @@ def test_a_phone_photographs_sheets_into_the_exam_and_is_told_to_retake_a_bad_ph
         assert send(sheet, "phone:2")["new"] is False  # the same sheet taken twice in a row
         retake = send(np.full((900, 700, 3), 230, np.uint8), "phone:3")
         assert retake["ok"] is False and "corner marks" in retake["why"]
-        (got,) = main.pages(exam)
-        assert got.result.roll_number == roll and got.result.answers == answers and seen == [exam]
+        blurred = send(camera(draw(t, random_marks(t, 6)[0]), t, blur=7), "phone:4")
+        assert blurred["ok"] is False and "blurred" in blurred["why"]
+        assert send(camera(draw(t, random_marks(t, 6)[0]), t, light=0.4, keystone=0.06), "phone:5")["ok"]
+        got, _ = main.pages(exam)
+        assert got.result.roll_number == roll and got.result.answers == answers and seen == [exam, exam]
         assert got.batch.startswith("Phone, Ravi")
     finally:
         server.stop()
