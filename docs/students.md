@@ -21,6 +21,19 @@ number, name, class, **batch** (for example "CEE morning" or "IOE weekend"), **e
 - Search by name, roll number, email or phone, or pick a batch. **Exams taken** counts the exams
   with a sheet read for that roll number.
 
+### A student's profile
+
+Choose a student and press **Profile…** (or double-click them). It shows every exam they took, with
+their score, percentage, rank and percentile, a line of their percentage in each exam (point at a
+dot to see the exam), and their average in each section, weakest first. Sheets are matched by roll
+number, so a sheet's `00123` is the directory's `123`.
+
+### Attendance
+
+**Attendance…** lists a batch's students against the exams of one program (or every exam): ✓ where a
+sheet was read for them, *absent* where not, and how many they sat. **Save as CSV…** saves it for
+Excel, to follow up with the students who missed tests.
+
 On an exam's **Students** tab, **Use a batch…** gives the exam the students of one batch (or
 everyone). Roll numbers get back the leading zeros Excel drops, and anyone whose roll number can't
 be on that sheet is listed and left out.

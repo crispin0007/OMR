@@ -117,3 +117,28 @@ def test_the_directory_keeps_students_once_and_an_exam_takes_a_batch(tmp_path):
     assert s.students(exam)["00014"].batch == "IOE"
     s.remove_students(["14"])
     assert [x.roll_number for x in s.directory()] == ["123456"] and "00014" in s.students(exam)
+
+
+def test_a_students_history_and_attendance_match_their_roll_number(tmp_path):
+    from omr_core.grading import Section
+    from omr_core.progress import attendance, history, section_averages
+    s = Store(tmp_path / "omr.db")
+    one, two, three = (s.create_exam(n, TEMPLATE, {"date": f"2026-10-0{k}"}) for k, n in
+                       enumerate(("Mock 1", "Mock 2", "Mock 3"), 1))
+    for exam, right in ((one, 40), (two, 70)):
+        s.save_scheme(exam, "A" * 100, 1, 0, 0)
+        s.save_sections(exam, [Section("Physics", 1, 50, 1, 0, 0), Section("Chemistry", 51, 100, 1, 0, 0)])
+        for roll, r in (("00012", right), ("00034", 50)):
+            s.add_page(exam, "b", "x.png", 1, PageResult(roll, "A", {q: "A" if q <= r else "B" for q in range(1, 101)},
+                                                         []))
+    s.add_page(three, "b", "x.png", 1, PageResult("00034", "A", {}, []))  # no key yet: left out
+    s.move_to_trash(s.create_exam("Gone", TEMPLATE))
+
+    entries = history(s, "12")  # the directory's 12 is the sheet's 00012
+    assert [(e.exam, e.date, e.score, e.percent, e.rank, e.of) for e in entries] == [
+        ("Mock 1", "2026-10-01", 40, 40.0, 2, 2), ("Mock 2", "2026-10-02", 70, 70.0, 1, 2)]
+    assert entries[1].sections == {"Physics": 100.0, "Chemistry": 40.0}
+    assert section_averages(entries) == [("Chemistry", 20.0, 2), ("Physics", 90.0, 2)]
+    assert attendance(s, ["12", "34", "56"], [one, three]) == {"12": [True, False], "34": [True, True],
+                                                               "56": [False, False]}
+    assert s.exams_taken() == {"12": 2, "34": 3}

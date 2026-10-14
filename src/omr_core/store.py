@@ -20,7 +20,7 @@ import numpy as np
 from .branding import Institute, check, from_json, to_json
 from .grading import Section, check_sections, sections_from_json, sections_to_json
 from .reader import PageResult
-from .students import Student, check_email, check_phone
+from .students import Student, check_email, check_phone, same_roll
 from .template import Template, parse
 
 JPEG_QUALITY = 60
@@ -769,11 +769,19 @@ class Store:
         with self.db:
             self.db.executemany("DELETE FROM directory WHERE roll_number = ?", [(r,) for r in rolls])
 
+    def rolls_read(self) -> list[tuple[int, str]]:
+        """(exam id, roll number) for every roll number read on a sheet, once per exam."""
+        return self.db.execute("SELECT DISTINCT exam_id, roll_number FROM page WHERE roll_number IS NOT NULL"
+                               ).fetchall()
+
     def exams_taken(self) -> dict[str, int]:
-        """Roll number to the number of exams (not in the Trash) with a sheet read for it."""
-        return dict(self.db.execute("SELECT p.roll_number, COUNT(DISTINCT p.exam_id) FROM page p JOIN exam e ON "
-                                    "e.id = p.exam_id WHERE e.deleted_at IS NULL AND p.roll_number IS NOT NULL "
-                                    "GROUP BY p.roll_number"))
+        """Roll number (as `same_roll` gives it) to the number of exams, not in the Trash, with a sheet read for it."""
+        kept = {i for i, *_ in self.exams("kept")}
+        rolls: dict[str, set[int]] = {}
+        for e, r in self.rolls_read():
+            if e in kept:
+                rolls.setdefault(same_roll(r), set()).add(e)
+        return {r: len(e) for r, e in rolls.items()}
 
     def batches(self) -> list[str]:
         """The directory's batches, by name."""

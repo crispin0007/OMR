@@ -8,9 +8,10 @@ from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog
                                QLineEdit, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout)
 
 from omr_core.store import Store
-from omr_core.students import Student, read_students
+from omr_core.students import Student, read_students, same_roll
 
 from .dashboard import ShownPage
+from .progress import AttendanceDialog, ProfileDialog
 
 ALL = "All batches"
 COLUMNS = ["Roll number", "Name", "Class", "Batch", "Email", "Phone", "Exams taken"]
@@ -67,13 +68,18 @@ class DirectoryPage(ShownPage):
         self.edit_button.clicked.connect(self.edit)
         self.remove_button = QPushButton("Remove…")
         self.remove_button.clicked.connect(self.remove)
+        self.profile_button = QPushButton("Profile…", toolTip="Every exam the student took, their trend and weak "
+                                          "sections")
+        self.profile_button.clicked.connect(self.profile)
+        attendance = QPushButton("Attendance…", toolTip="Who sat which exam, by batch and program")
+        attendance.clicked.connect(lambda: AttendanceDialog(self, self.store).exec())
         load = QPushButton("Import from Excel…", objectName="primary",
                            toolTip="Roll number and name columns, and optionally class, batch, email and phone")
         load.clicked.connect(self.import_students)
         top = QHBoxLayout()
         top.addWidget(QLabel("Student directory", objectName="title"))
         top.addStretch()
-        for b in (add, self.edit_button, self.remove_button, load):
+        for b in (self.profile_button, attendance, add, self.edit_button, self.remove_button, load):
             top.addWidget(b)
         filters = QHBoxLayout()
         filters.addWidget(self.search, 2)
@@ -85,8 +91,9 @@ class DirectoryPage(ShownPage):
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.verticalHeader().hide()
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setSortIndicator(0, Qt.AscendingOrder)
         self.table.itemSelectionChanged.connect(self.enable)
-        self.table.cellDoubleClicked.connect(lambda *_: self.edit())
+        self.table.cellDoubleClicked.connect(lambda *_: self.profile())
         layout = QVBoxLayout(self)
         layout.addLayout(top)
         layout.addWidget(self.note)
@@ -94,6 +101,10 @@ class DirectoryPage(ShownPage):
         layout.addWidget(self.table, 1)
         self.students: list[Student] = []
         self.refresh()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self.redraw()  # exams taken change as sheets are read elsewhere
 
     def redraw(self):
         everyone = self.store.directory()
@@ -114,7 +125,7 @@ class DirectoryPage(ShownPage):
         self.table.setRowCount(len(self.students))
         for row, s in enumerate(self.students):
             for col, value in enumerate((s.roll_number, s.name, s.class_name, s.batch, s.email, s.phone,
-                                         taken.get(s.roll_number, 0))):
+                                         taken.get(same_roll(s.roll_number), 0))):
                 item = QTableWidgetItem()
                 item.setData(Qt.DisplayRole, value)
                 item.setData(Qt.UserRole, s.roll_number)
@@ -130,7 +141,13 @@ class DirectoryPage(ShownPage):
     def enable(self):
         chosen = self.chosen()
         self.edit_button.setEnabled(len(chosen) == 1)
+        self.profile_button.setEnabled(len(chosen) == 1)
         self.remove_button.setEnabled(bool(chosen))
+
+    def profile(self):
+        chosen = self.chosen()
+        if len(chosen) == 1:
+            ProfileDialog(self, self.store, chosen[0]).exec()
 
     def add(self):
         if StudentDialog(self, self.store).exec():

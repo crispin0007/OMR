@@ -1510,3 +1510,28 @@ def test_exams_are_organised_by_program_and_category(app, tmp_path, monkeypatch)
     assert e.tree.currentItem().text(0) == "IOE (1)" and e.note.text().startswith("IOE: 1 exam, 0 test series")
     e.search.setText("nothing like it")
     assert e.table.rowCount() == 0
+
+
+def test_a_students_profile_and_attendance_come_from_every_exam(app, tmp_path):
+    from omr_app.progress import AttendanceDialog, ProfileDialog
+    from omr_core.reader import PageResult
+    from omr_core.students import Student
+    w = window(tmp_path)
+    exam = w.check.exam.id
+    w.store.save_scheme(exam, "A" * 100, 1, 0, 0)
+    w.store.add_page(exam, "b", "x.png", 1, PageResult("00012", "A", {q: "A" if q <= 60 else "B"
+                                                                      for q in range(1, 101)}, []))
+    w.store.add_to_directory([Student("12", "Asha Rai", batch="CEE"), Student("34", "Bikash Thapa", batch="CEE")])
+    w.go("Student directory")
+    d = w.directory
+    d.redraw()
+    assert d.table.item(0, 6).text() == "1"  # exams taken, though the sheet keeps its leading zeros
+    d.table.selectRow(0)
+    assert d.profile_button.isEnabled()
+    p = ProfileDialog(d, w.store, d.chosen()[0])
+    assert p.exams.rowCount() == 1 and p.exams.item(0, 4).text() == "60"
+    p.show()
+    p.chart.grab()  # paints without error
+    a = AttendanceDialog(d, w.store)
+    assert [a.table.item(1, c).text() for c in (1, 3, 4)] == ["Bikash Thapa", "absent", "0 of 1"]
+    assert "1 missed at least one" in a.note.text()

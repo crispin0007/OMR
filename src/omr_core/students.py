@@ -117,6 +117,12 @@ def absent(students: dict[str, Student], read_rolls: set[str]) -> list[Student]:
     return sorted((s for r, s in students.items() if r not in read_rolls), key=lambda s: s.roll_number)
 
 
+def same_roll(roll: str) -> str:
+    """A roll number as compared between a sheet and the directory: a sheet's grid keeps leading zeros that
+    Excel drops, so "00123" and "123" are the same student."""
+    return roll.lstrip("0") or "0" if roll.isdigit() else roll
+
+
 def for_sheet(students: list[Student], digits: int | None) -> tuple[list[Student], list[str]]:
     """Directory students for an exam whose sheet has a `digits`-digit roll number (None for a barcode): numeric
     roll numbers padded with the zeros Excel drops, and the ones that can't be on the sheet, with why."""
