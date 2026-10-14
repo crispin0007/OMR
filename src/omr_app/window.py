@@ -193,8 +193,8 @@ class CheckPage(QWidget):
                               toolTip="Green right, red wrong, blue the right answer missed, purple read with "
                                       "nothing to mark, orange to check")
         self.every_bubble = QCheckBox("Show every bubble position",
-                                      toolTip="A thin circle where the sheet's template expects each bubble: each "
-                                              "should sit on a printed bubble")
+                                      toolTip="A thin circle where each bubble was read: each should sit on a "
+                                              "printed bubble")
         for box in (self.mark, self.every_bubble):
             box.toggled.connect(lambda _: self.show_sheet())
         self.legend = QLabel(objectName="muted", wordWrap=True, textFormat=Qt.RichText)

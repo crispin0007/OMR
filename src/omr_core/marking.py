@@ -4,7 +4,8 @@ bubble of the template sits on a bubble of the paper.
 Green rings a filled bubble that is right, red one that is wrong, and blue the right answer the student missed
 (wrong or blank). Purple rings what was read where there is nothing to mark (the roll number, the set, a question
 with no key yet), grey a filled bubble on a dropped question, and orange boxes what waits on Review. With
-`every_bubble`, a thin circle shows where the template expects each bubble.
+`every_bubble`, a thin circle shows where each bubble was read: on a printed bubble when the sheet is mapped
+right.
 """
 
 import io
@@ -19,7 +20,7 @@ from reportlab.pdfgen import canvas
 
 from .branding import Institute
 from .grading import BONUS, DROPPED, EITHER, status
-from .reader import SCALE, PageResult
+from .reader import SCALE, PageResult, row_shifts
 from .template import Template
 
 # BGR
@@ -33,17 +34,20 @@ def mark_sheet(aligned: np.ndarray, t: Template, r: PageResult, key: dict[int, s
                boxes: list[tuple[float, float, float, float]] = ()) -> np.ndarray:
     """The aligned page in colour with the marking drawn on it. `key` is the answer for each question (none for a
     question without one); `boxes` are areas to check, in mm."""
+    gray = aligned if aligned.ndim == 2 else cv2.cvtColor(aligned, cv2.COLOR_BGR2GRAY)
     out = cv2.cvtColor(aligned, cv2.COLOR_GRAY2BGR) if aligned.ndim == 2 else aligned.copy()
     radius = round(max(t.bubble) / 2 * SCALE) + 3
+    shifts = {g: row_shifts(gray, g, t.bubble)[0] for g in t.grids}  # drawn where the reader found each row
 
     def at(g, row: int, col: int) -> tuple[int, int]:
         x, y = g.centre(row, col)
-        return round(x * SCALE), round(y * SCALE)
+        dx, dy = shifts[g][row]
+        return round(x * SCALE) + dx, round(y * SCALE) + dy
 
     def ring(g, row: int, col: int, colour, width: int = 3):
         cv2.circle(out, at(g, row, col), radius, colour, width, cv2.LINE_AA)
 
-    if every_bubble:  # where the template expects each bubble: it should sit on the printed one
+    if every_bubble:  # where each bubble was read: it should sit on the printed one
         for g in t.grids:
             for row in range(g.rows):
                 for col in range(g.cols):
@@ -89,7 +93,7 @@ def with_legend(marked: np.ndarray, every_bubble: bool = False) -> np.ndarray:
     w = marked.shape[1]
     strip = np.full((70, w, 3), 255, np.uint8)
     x = 20
-    for colour, text in LEGEND + ([(GUIDE, "where each bubble is expected")] if every_bubble else []):
+    for colour, text in LEGEND + ([(GUIDE, "where each bubble was read")] if every_bubble else []):
         cv2.circle(strip, (x + 12, 35), 12, colour, 3, cv2.LINE_AA)
         cv2.putText(strip, text, (x + 32, 43), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (60, 60, 60), 2, cv2.LINE_AA)
         x += 50 + cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0][0]

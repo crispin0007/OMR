@@ -45,6 +45,19 @@ def test_problems_are_flagged_not_guessed():
     assert ("roll number digit 1", "blank") in r.flags and r.roll_number[0] == "?"
 
 
+def test_roll_number_written_from_the_left_reads_with_its_zeros_and_is_flagged():
+    marks, _, _, _ = random_marks(TEMPLATE, 9)
+    marks = {k: v for k, v in marks.items() if k[0] != 0}
+    for col, digit in enumerate((1, 9, 5)):  # 195 in the first three of five columns
+        marks[0, digit, col] = "pen"
+    r = read_page(scan(draw(TEMPLATE, marks)), TEMPLATE)
+    assert r.roll_number == "00195"
+    assert [f for f in r.flags if f[0].startswith("roll")] == [("roll number", "filled from the left: read as 00195")]
+    marks[0, 4, 1] = "half"  # an unclear digit among them: left for a person, digit by digit
+    r = read_page(scan(draw(TEMPLATE, marks)), TEMPLATE)
+    assert r.roll_number.endswith("??") and ("roll number digit 4", "blank") in r.flags
+
+
 def test_blank_sheet_reads_blank():
     r = read_page(scan(draw(TEMPLATE, {})), TEMPLATE)
     assert set(r.answers.values()) == {""}

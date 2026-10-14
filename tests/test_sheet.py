@@ -292,3 +292,16 @@ def test_sheet_numbers_that_cant_print_or_read_are_refused(prefix, first, copies
     from omr_core.sheet import sheet_numbers
     with pytest.raises(ValueError):
         sheet_numbers(prefix, first, copies)
+
+
+def test_rows_still_line_up_when_every_bubble_has_a_bold_letter_in_it():
+    # Printed in black, the letters make even empty bubbles grey; the rows below the header still sit 1 mm off
+    # where the corners put them (a curled page, a phone scanning app), and must be found, not read half off.
+    d = layout(SheetSpec("Black print", 200, roll_digits=5, sets=0, colour="#000000"))
+    t = parse(d)
+    marks, answers, roll, _ = random_marks(t, 11)
+    page = fill(render(d), t, marks)
+    top, shift = page.shape[0] // 3, round(200 / 25.4)  # 1 mm at 200 dpi
+    page[top + shift:page.shape[0] * 9 // 10] = page[top:page.shape[0] * 9 // 10 - shift].copy()
+    r = read_page(scan(page, angle=0.3, seed=11), t)
+    assert (r.roll_number, r.answers, r.flags) == (roll, answers, [])

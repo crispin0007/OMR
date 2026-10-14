@@ -14,7 +14,9 @@ from .template import DIGITS, Grid, Template
 
 SCALE = 8  # pixels per mm in the aligned page, about 203 DPI
 MIN_MARKER_SCORE = 0.3
-SNAP_MM = 1.5  # how far a printed bubble may sit from its template position
+MARKED = 0.75  # a bubble whose inside is darker than this share of its row's lightest is taken as marked
+SNAP_MM = 1.5  # how far a printed bubble may sit from where the row before it was found
+MAX_DRIFT_MM = 3.0  # how far a row may drift from its template position in all
 MIN_RING_INK = 0.15  # share of a bubble-sized ring that must be ink for that bubble to vote
 MIN_GAP = 0.25  # darkness between empty and filled bubbles when a sheet has few or no marks
 FILLED, UNCLEAR = 0.45, 0.2  # share of that gap above the empty level
@@ -70,6 +72,7 @@ def read_page(page: np.ndarray, template: Template) -> PageResult:
             result.roll_number = "".join(
                 _single(result, filled[:, c], unclear[:, c], "0123456789", f"roll number digit {c + 1}")
                 for c in range(grid.cols))
+            _from_the_left(result, grid.cols)
         else:
             result.set_code = _single(result, filled[0], unclear[0], grid.options, "set code")
     if template.barcode:
@@ -122,6 +125,19 @@ def _number(result: PageResult, filled, unclear, where: str) -> str:
     elif "?" in digits:
         result.flags.append((where, "gap between digits"))
     return digits if "?" in digits or not digits else str(int(digits))
+
+
+def _from_the_left(result: PageResult, digits: int):
+    """A roll number written from the left with the last columns left empty ("195" in a five-digit grid) is
+    the number with its leading zeros, 00195. Still flagged, once, for a person to confirm."""
+    roll = result.roll_number
+    lead = roll.rstrip("?")
+    blank = {f"roll number digit {c + 1}" for c in range(len(lead), digits)}
+    if not lead or len(lead) == digits or "?" in lead or blank - {w for w, why in result.flags if why == "blank"}:
+        return
+    result.roll_number = lead.zfill(digits)
+    result.flags = [f for f in result.flags if f[0] not in blank]
+    result.flags.append(("roll number", f"filled from the left: read as {result.roll_number}"))
 
 
 def _single(result: PageResult, filled, unclear, labels: str, where: str) -> str:
@@ -317,24 +333,36 @@ def _marker_image(shape: str, d: float) -> np.ndarray:
     return cv2.GaussianBlur(img, (0, 0), max(d * 0.05, 0.5))
 
 
+def row_shifts(aligned: np.ndarray, grid: Grid, bubble: tuple[float, float]) -> tuple[list[tuple[int, int]], int]:
+    """Where each row's printed bubbles were found, as (dx, dy) pixels from the template; and how many rows were
+    found only at the edge of the search, or drifted further than MAX_DRIFT_MM, where a page aligned wrong puts
+    them."""
+    shifts, lost, dx, dy, edge = [], 0, 0, 0, round(SNAP_MM * SCALE) - 1
+    for r in range(grid.rows):
+        centres = [tuple(round(v * SCALE) for v in grid.centre(r, c)) for c in range(grid.cols)]
+        # Each row is searched for where the row above it was found: a curled page drifts a little at a time,
+        # further down the page than any one search reaches.
+        sx, sy = _row_offset(aligned, [(x + dx, y + dy) for x, y in centres], bubble)
+        dx, dy = dx + sx, dy + sy
+        lost += max(abs(sx), abs(sy)) >= edge or max(abs(dx), abs(dy)) >= round(MAX_DRIFT_MM * SCALE)
+        shifts.append((dx, dy))
+    return shifts, lost
+
+
 def _sample(aligned: np.ndarray, grid: Grid, bubble: tuple[float, float]) -> tuple[np.ndarray, int]:
     """Darkness 0 (paper) to 1 (ink) of the pixels inside each bubble, skipping its printed outline, shape
-    (rows, cols, pixels); and how many rows' printed bubbles were found only at the edge of the search, as far
-    off as SNAP_MM allows, where a page aligned wrong puts them.
+    (rows, cols, pixels), each row where its bubbles were found; and the rows lost, as `row_shifts` says.
     """
     ax, ay = max(1, int(bubble[0] * SCALE * 0.3)), max(1, int(bubble[1] * SCALE * 0.3))
     mask = np.zeros((2 * ay + 1, 2 * ax + 1), np.uint8)
     cv2.ellipse(mask, (ax, ay), (ax, ay), 0, 0, 360, 1, -1)
     mask = mask.astype(bool)
     out = np.empty((grid.rows, grid.cols, int(mask.sum())))
-    lost = 0
-    for r in range(grid.rows):
-        centres = [tuple(round(v * SCALE) for v in grid.centre(r, c)) for c in range(grid.cols)]
-        dx, dy = _row_offset(aligned, centres, bubble)
-        lost += max(abs(dx), abs(dy)) >= round(SNAP_MM * SCALE) - 1
-        for c, (x, y) in enumerate(centres):
-            x, y = x + dx, y + dy
-            out[r, c] = 1 - aligned[y - ay:y + ay + 1, x - ax:x + ax + 1][mask] / 255
+    shifts, lost = row_shifts(aligned, grid, bubble)
+    for r, (dx, dy) in enumerate(shifts):
+        for c in range(grid.cols):
+            x, y = (round(v * SCALE) for v in grid.centre(r, c))
+            out[r, c] = 1 - aligned[y + dy - ay:y + dy + ay + 1, x + dx - ax:x + dx + ax + 1][mask] / 255
     return out, lost
 
 
@@ -351,7 +379,7 @@ def _row_offset(aligned: np.ndarray, centres: list[tuple[int, int]], bubble: tup
     cv2.ellipse(ring, (w // 2 + 1, h // 2 + 1), (w // 2, h // 2), 0, 0, 360, 1, max(1, round(h * 0.15)))
     full = ring.sum() * 255
     reach = round(SNAP_MM * SCALE)
-    offsets = []
+    rois = []
     for x, y in centres:
         x0, y0 = x - ring.shape[1] // 2 - reach, y - ring.shape[0] // 2 - reach
         roi = aligned[max(y0, 0):y0 + ring.shape[0] + 2 * reach, max(x0, 0):x0 + ring.shape[1] + 2 * reach]
@@ -359,8 +387,14 @@ def _row_offset(aligned: np.ndarray, centres: list[tuple[int, int]], bubble: tup
             continue  # bubble too close to the page edge to search around
         inside = roi[reach + ring.shape[0] // 4:reach + ring.shape[0] * 3 // 4,
                      reach + ring.shape[1] // 4:reach + ring.shape[1] * 3 // 4]
-        if inside.mean() < 160:
-            continue  # marked
+        rois.append((roi, inside.mean()))
+    # Marked is darker than the row's lightest bubble, not darker than a fixed level: a letter printed bold
+    # inside every bubble makes even empty ones grey.
+    lightest = max((m for _, m in rois), default=0)
+    offsets = []
+    for roi, inside in rois:
+        if inside < MARKED * lightest:
+            continue
         ink = cv2.matchTemplate((255 - roi).astype(np.float32), ring, cv2.TM_CCORR)
         _, best, _, (lx, ly) = cv2.minMaxLoc(ink)
         if best >= MIN_RING_INK * full:

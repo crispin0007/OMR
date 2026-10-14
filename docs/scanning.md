@@ -94,9 +94,10 @@ the page, marked in the same colours, with a legend underneath.
   once your students are in the directory every sheet shows its name. Handwritten names on the sheet
   aren't read.
 - **Mark the answers** turns the colours on and off, to see the sheet as it was scanned.
-- **Show every bubble position** draws a thin circle where the sheet expects each bubble. Every
-  circle should sit on a printed bubble. If they drift off to one side or down the page, the
-  printed sheet doesn't match the exam's sheet: see [Map my printed sheet](map-printed-sheet.md).
+- **Show every bubble position** draws a thin circle where each bubble was read. Every circle
+  should sit on a printed bubble. The reader follows a curled or stretched page row by row, by up
+  to 3 mm. If the circles still sit off the bubbles, the printed sheet doesn't match the exam's
+  sheet: see [Map my printed sheet](map-printed-sheet.md).
 
 ![A sheet marked green, red and blue, with every bubble position shown](images/marked-sheet.png)
 
