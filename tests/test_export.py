@@ -52,6 +52,10 @@ def test_merit_list_and_scorecards(tmp_path):
     assert [(r[0], r[1], r[5]) for r in rows] == [(g.rank, g.page.result.roll_number, g.score) for g in graded]
     answers = wb["Answers"]
     assert answers["A2"].value == graded[0].page.result.roll_number and answers.max_column == 103
+    by_row = {answers.cell(r, 1).value: r for r in range(2, 6)}
+    colour = lambda roll, q: answers.cell(by_row[roll], 3 + q).fill.fgColor.rgb[-6:]  # noqa: E731
+    assert (colour("222", 1), colour("222", 2), colour("444", 1), colour("111", 1)) == (
+        "FFC7CE", "C6EFCE", "000000", "C6EFCE")  # wrong red, right green, blank plain, on every row
     write_scorecards(tmp_path / "cards.pdf", "Mock 1", t, graded)
     pdf = pypdfium2.PdfDocument(tmp_path / "cards.pdf")
     assert len(pdf) == 4

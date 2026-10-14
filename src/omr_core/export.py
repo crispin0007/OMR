@@ -6,6 +6,7 @@ topics, each student's share right per topic goes on their scorecard and on a To
 
 import csv
 from collections import Counter
+from copy import copy
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -198,13 +199,20 @@ def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Grad
     answers = wb.create_sheet("Answers")
     answers.append(["Roll number", "Name", "Set", *(f"Q{q}" for q in qs)])
     fills = {"right": PatternFill("solid", fgColor="C6EFCE"), "wrong": PatternFill("solid", fgColor="FFC7CE")}
-    for g in graded:
+    styles = {}  # status to the style of the first cell given that fill; copying it skips openpyxl's slow lookup
+    for row, g in enumerate(graded, start=2):  # max_row would scan the whole sheet on every row
         r = g.page.result
         answers.append([r.roll_number, g.student.name if g.student else "", r.set_code, *(r.answers[q] for q in qs)])
         for col, (q, k) in enumerate(zip(qs, g.key), start=4):
-            fill = fills.get(status(r.answers[q], k))
-            if fill:
-                answers.cell(answers.max_row, col).fill = fill
+            state = status(r.answers[q], k)
+            if state not in fills:
+                continue
+            cell = answers.cell(row, col)
+            if state in styles:
+                cell._style = copy(styles[state])
+            else:
+                cell.fill = fills[state]
+                styles[state] = cell._style
     items = wb.create_sheet("Item analysis")
     items.append(["Question", "Key", "% right", "% wrong", "% blank", "Most chosen wrong answer", "Discrimination"])
     for row in item_analysis(t, graded):
