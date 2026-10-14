@@ -437,6 +437,7 @@ class ExamSettings(QWidget):
     changed = Signal()  # renamed, or a new sheet
     deleted = Signal()
     archived = Signal()
+    duplicated = Signal(int)  # the new exam's id
 
     def __init__(self, check):
         super().__init__()
@@ -448,6 +449,10 @@ class ExamSettings(QWidget):
         row.addWidget(QLabel("Exam name"))
         row.addWidget(self.name, 1)
         row.addWidget(rename)
+        duplicate = QPushButton("Duplicate…", toolTip="A new exam with this sheet, sections, marks and program, "
+                                "and no answer key, sheets or students yet")
+        duplicate.clicked.connect(self.duplicate)
+        row.addWidget(duplicate)
         self.series = QComboBox(editable=True)
         self.series.setToolTip("Exams in one test series share the student list and get a combined rank (Exams, "
                                "Test series…)")
@@ -531,6 +536,19 @@ class ExamSettings(QWidget):
             QMessageBox.warning(self, "Can't rename", str(e))
             return
         self.changed.emit()
+
+    def duplicate(self):
+        exam = self.check.exam
+        name, ok = QInputDialog.getText(self, "Duplicate exam", "Name of the copy (it starts with no answer key, "
+                                        "sheets or students)", text=f"{exam.name} (copy)")
+        if not ok:
+            return
+        try:
+            new = self.check.store.duplicate_exam(exam.id, name)
+        except ValueError as e:
+            QMessageBox.warning(self, "Can't duplicate", str(e))
+            return
+        self.duplicated.emit(new)
 
     def set_institute(self):
         self.check.store.set_exam_institute(self.check.exam.id, self.institute.currentData())

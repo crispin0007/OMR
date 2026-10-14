@@ -99,7 +99,9 @@ The exam opens on its own page, with the sheet ready to print.
 
 - **Marks and sections** changes the marks at any time; see
   [Marks, sections, topics and written marks](marks-and-sections.md).
-- **Exam settings** renames the exam, changes its test series, or deletes it.
+- **Exam settings** renames the exam, changes its test series, or deletes it. **Duplicate…** makes a
+  new exam under a name you type, with the same sheet, sections, marks, test series and program. The
+  copy starts with no answer key, no sheets read and no students, and its date is left for you to set.
   **Change sheet…** is for when students filled a different sheet; every page is read again.
 
 ![The Exam settings tab](images/exam-settings.png)

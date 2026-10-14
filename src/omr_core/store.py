@@ -454,6 +454,25 @@ class Store:
         with self.db:
             self.db.execute("UPDATE exam SET name = ? WHERE id = ?", (name, exam_id))
 
+    def duplicate_exam(self, exam_id: int, name: str) -> int:
+        """A copy of an exam under a new name, with its sheet, sections, marks, written part, program and settings,
+        but no answer key, sheets read or students. Its date, time and question topics belong to the paper that
+        was set, so they are left for the new one to fill in."""
+        name = name.strip()
+        if not name:
+            raise ValueError("the exam needs a name")
+        row = self.db.execute("SELECT template, correct, wrong, blank, sections, details, written_out_of, folder_id "
+                              "FROM exam WHERE id = ?", (exam_id,)).fetchone()
+        if row is None:
+            raise KeyError(exam_id)
+        details = {k: v for k, v in json.loads(row[5]).items() if k not in ("date", "time", "topics")}
+        with self.db:
+            cur = self.db.execute("INSERT INTO exam (name, template, correct, wrong, blank, created, sections, "
+                                  "details, written_out_of, folder_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                  (name, row[0], *row[1:4], datetime.now().isoformat(timespec="seconds"), row[4],
+                                   json.dumps(details), *row[6:]))
+        return cur.lastrowid
+
     def backup(self, path: str | Path):
         """Copy every exam, with its pages, corrections and students, into one file, safely while in use."""
         part = Path(f"{path}.part")

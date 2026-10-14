@@ -464,3 +464,19 @@ def test_programs_and_categories_hold_exams_and_give_them_an_institute(tmp_path)
     s.delete_folder(ioe)
     assert s.exam_folders()[one] is None and s.exam_folders()[two] is None
     assert [f.name for f in s.folders()] == ["Full mocks", "Medical"] and len(s.exams()) == 3
+
+
+def test_a_duplicated_exam_keeps_its_sheet_and_marks_but_nothing_read(tmp_path):
+    s = Store(tmp_path / "omr.db")
+    exam = s.create_exam("Mock 1", TEMPLATE, {"class": "12", "date": "2026-10-01", "series": "Weekly"})
+    s.save_scheme(exam, "A: ABCD", 4, -1, 0)
+    s.set_written_out_of(exam, 20)
+    s.set_students(exam, [Student("1", "Asha Rai")])
+    s.add_page(exam, "b", "scan.pdf", 1, PageResult("1", "A", {1: "B"}, []))
+    with pytest.raises(ValueError):
+        s.duplicate_exam(exam, " ")
+    copy = s.exam(s.duplicate_exam(exam, " Mock 2 "))
+    assert copy.name == "Mock 2" and copy.answer_key == "" and (copy.correct, copy.wrong) == (4, -1)
+    assert copy.written_out_of == 20 and copy.details == {"class": "12", "series": "Weekly"}
+    assert s.pages(copy.id) == [] and s.students(copy.id) == {}
+    assert s.exam(exam).answer_key == "A: ABCD" and len(s.pages(exam)) == 1

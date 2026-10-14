@@ -629,7 +629,7 @@ def test_sections_and_a_short_key(app, tmp_path, monkeypatch):
 
 
 def test_clicking_an_exam_opens_its_page(app, tmp_path, monkeypatch):
-    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
     from omr_core.sheet import SheetSpec, layout
     import json
     w = MainWindow(tmp_path / "omr.db")
@@ -648,6 +648,12 @@ def test_clicking_an_exam_opens_its_page(app, tmp_path, monkeypatch):
     w.exam_settings.name.setText("Weekly 1")
     w.exam_settings.rename()
     assert w.store.exam(made).name == "Weekly 1" and w.exam_page.title.text() == "Weekly 1"
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("Weekly 2", True))
+    w.exam_settings.duplicate()
+    copy = w.check.exam.id
+    assert copy != made and w.exam_page.title.text() == "Weekly 2" and w.store.exam(copy).template.name == "Weekly"
+    w.store.delete_exam(copy)
+    w.open_exam(made)
     w.exam_page.back.emit()
     assert w.showing() is w.exams
 

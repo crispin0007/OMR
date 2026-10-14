@@ -781,6 +781,7 @@ class MainWindow(QMainWindow):
         self.exam_settings = ExamSettings(self.check)
         self.exam_settings.changed.connect(lambda: self.open_exam(self.check.exam.id))
         self.exam_settings.deleted.connect(lambda: self.open_exam(None))
+        self.exam_settings.duplicated.connect(self.open_exam)
         self.exam_settings.archived.connect(lambda: self.exams.refresh())
         self.exam_page = ExamPage(self.check, [
             ("Scan", self.scan), ("Scanned sheets", self.check), ("Review", self.review),
