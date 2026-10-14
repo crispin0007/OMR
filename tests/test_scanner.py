@@ -207,3 +207,27 @@ def test_scans_at_a_resolution_the_scanner_takes(takes, kw, used):
 def test_a_scanner_that_takes_no_usable_resolution_says_to_use_a_folder():
     with pytest.raises(scanner.ScanStopped, match="into a folder"):
         list(wia(driver({75, 100})).pages(200, False))
+
+
+def test_the_scanner_is_found_again_on_the_scan_thread(monkeypatch):
+    page = np.full((50, 40, 3), 200, np.uint8)
+    d = Device([page, scanner.PAPER_EMPTY])
+
+    def refuse():
+        raise ComError(0x80004005)  # the scanner found on another thread
+    monkeypatch.setattr(scanner, "_fresh_infos", lambda: [types.SimpleNamespace(DeviceID="other", Connect=refuse),
+                                                          types.SimpleNamespace(DeviceID="pantum", Connect=lambda: d)])
+    s = scanner.WiaScanner("Test", types.SimpleNamespace(Connect=refuse), "pantum")
+    assert len(list(s.pages(200, False))) == 1
+
+
+def test_a_scanner_that_wont_connect_says_what_to_close(monkeypatch):
+    monkeypatch.setattr(scanner.time, "sleep", lambda s: None)
+    tries = []
+
+    def refuse():
+        tries.append(1)
+        raise ComError(0x80210006)
+    with pytest.raises(scanner.ScanStopped, match="busy with another program. Close the scanner's own program"):
+        list(scanner.WiaScanner("Test", types.SimpleNamespace(Connect=refuse)).pages(200, False))
+    assert len(tries) == scanner.CONNECT_TRIES

@@ -7,6 +7,7 @@ with the scanner's own software saving into that folder.
 """
 
 import sys
+import time
 from collections.abc import Iterator
 
 import cv2
@@ -42,12 +43,31 @@ class ScanStopped(Exception):
 
 
 class WiaScanner:
-    def __init__(self, name: str, info):
+    def __init__(self, name: str, info, device_id: str = ""):
         self.name = name
         self._info = info
+        self.device_id = device_id
         self.dpi = 0  # what the last run scanned at, which may not be what was asked for
         self.one_side = False  # the last run asked for both sides and the driver wouldn't
         self.sure = True  # the driver took the feeder as the source
+
+    def _connect(self, com_error):
+        """The device, connected from this thread. The scanner found on the UI thread can't be used from the
+        scan thread (Windows refuses with a plain "failed", 0x80004005), so it is looked up again here by its ID;
+        a scanner busy for a moment is tried again."""
+        fresh = [i for i in _fresh_infos() if _id(i) == self.device_id] if self.device_id else []
+        problem = None
+        for attempt in range(CONNECT_TRIES):
+            for info in fresh + [self._info]:
+                try:
+                    return info.Connect()
+                except com_error as e:
+                    problem = e
+            if attempt + 1 < CONNECT_TRIES:
+                time.sleep(1)
+        raise ScanStopped(f"Couldn't connect to {self.name}: {_problem(problem)}. Close the scanner's own program "
+                          "and anything else using it, then press Start scanning again; or scan with its own program "
+                          "into a folder and read that folder") from problem
 
     def pages(self, dpi: int, duplex: bool) -> Iterator[np.ndarray]:
         """Each page from the feeder as a BGR image, until the feeder is empty.
@@ -61,10 +81,7 @@ class WiaScanner:
         pythoncom.CoInitialize()  # this runs on the scan thread
         try:
             com_error = pywintypes.com_error
-            try:
-                device = self._info.Connect()
-            except com_error as e:
-                raise ScanStopped(f"Couldn't connect to {self.name}: {_problem(e)}") from e
+            device = self._connect(com_error)
             item, self.sure, self.one_side = _feeder(device, duplex, com_error)
             if item is None:
                 raise ScanStopped(f"Couldn't set {self.name} to feed from the feeder. Scan with the scanner's own "
@@ -109,6 +126,18 @@ class WiaScanner:
                     return  # the driver says the feeder is empty
         finally:
             pythoncom.CoUninitialize()
+
+
+CONNECT_TRIES = 3
+
+
+def _fresh_infos():
+    """The scanners Windows knows about, looked up again on the calling thread; [] when that can't be done."""
+    try:
+        import win32com.client
+        return list(win32com.client.Dispatch("WIA.DeviceManager").DeviceInfos)
+    except Exception:  # noqa: BLE001 - not on Windows, or WIA unavailable: the caller has its own
+        return []
 
 
 def _feeder(device, duplex: bool, com_error):
@@ -264,9 +293,16 @@ def scanners() -> list[WiaScanner]:
         return []
     try:
         infos = win32com.client.Dispatch("WIA.DeviceManager").DeviceInfos
-        return [WiaScanner(i.Properties("Name").Value, i) for i in infos if i.Type == SCANNER]
+        return [WiaScanner(i.Properties("Name").Value, i, _id(i)) for i in infos if i.Type == SCANNER]
     except pywintypes.com_error:
         return []
+
+
+def _id(info) -> str:
+    try:
+        return str(info.DeviceID)
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _code(e) -> int:
