@@ -392,6 +392,7 @@ class ScanPage(QWidget):
     def scan_stopped(self, problem: str):
         self.thread.wait()
         used, asked = getattr(self.thread.device, "dpi", 0), self.thread.dpi
+        one_side = self.thread.duplex and getattr(self.thread.device, "one_side", False)
         self.thread = None
         self.paused = False
         self.check.show_sheets(None)  # also the count above the table
@@ -405,7 +406,9 @@ class ScanPage(QWidget):
         else:
             self.status.setText(f"Feeder empty. {self._summary()}" + (
                 f" The scanner doesn't take {asked} DPI, so it scanned at {used} DPI, which reads just as well."
-                if used and used != asked else ""))
+                if used and used != asked else "") + (
+                " The scanner wouldn't take both sides through Windows, so only the fronts were scanned; scan "
+                "the backs with its own program into a folder if they have marks." if one_side else ""))
             self.status.setObjectName("")
         self.status.setStyleSheet("")
         self._enable()

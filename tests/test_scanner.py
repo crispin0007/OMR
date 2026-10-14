@@ -32,16 +32,29 @@ class Props(dict):
         return self[key]
 
 
-class Device:
-    def __init__(self, transfers, props=(scanner.HANDLING_SELECT, scanner.PAGES)):
-        self.Properties = Props({k: types.SimpleNamespace(Value=0) for k in props})
-        self.item = types.SimpleNamespace(
-            Properties=Props({k: types.SimpleNamespace(Value=0) for k in (scanner.X_RES, scanner.Y_RES)}),
-            Transfer=lambda fmt: self.next(fmt))
-        self.transfers = list(transfers)
+class Refuses(types.SimpleNamespace):
+    """A setting the driver fails on with a plain "failed" (0x80004005), as some WIA 2 drivers do."""
 
-    def Items(self, n):
-        return self.item
+    @property
+    def Value(self):  # noqa: N802 - COM's name
+        return 0
+
+    @Value.setter
+    def Value(self, v):  # noqa: N802
+        raise ComError(0x80004005)
+
+
+class Device:
+    def __init__(self, transfers, props=(scanner.HANDLING_SELECT, scanner.PAGES), items=None):
+        self.Properties = Props({k: types.SimpleNamespace(Value=0) for k in props})
+        self.items = items or [{}]
+        for i in self.items:  # each item: its own properties, and pages from this device
+            i.setdefault(scanner.X_RES, types.SimpleNamespace(Value=0))
+            i.setdefault(scanner.Y_RES, types.SimpleNamespace(Value=0))
+        self.items = [types.SimpleNamespace(Properties=Props(i), Transfer=self.next) for i in self.items]
+        self.item = self.items[0]
+        self.Items = Items(self.items)
+        self.transfers = list(transfers)
 
     def next(self, fmt):
         assert fmt == scanner.BMP
@@ -50,6 +63,14 @@ class Device:
             raise ComError(t)
         data = cv2.imencode(".bmp", t)[1].tobytes()
         return types.SimpleNamespace(FileData=types.SimpleNamespace(BinaryData=data))
+
+
+class Items:
+    def __init__(self, items):
+        self.items, self.Count = items, len(items)
+
+    def __call__(self, n):
+        return self.items[n - 1]
 
 
 def wia(device):
@@ -78,9 +99,72 @@ def test_problems_stop_the_run(transfers, message):
     assert len(got) == sum(isinstance(t, np.ndarray) for t in transfers)
 
 
-def test_a_scanner_without_a_feeder_says_so():
-    with pytest.raises(scanner.ScanStopped, match="Couldn.t set Test to feed from the feeder"):
-        list(wia(Device([], props=())).pages(200, False))
+def test_a_scanner_without_items_says_to_use_a_folder(monkeypatch, tmp_path):
+    monkeypatch.setattr("omr_app.paths.data_dir", lambda: tmp_path)
+    d = Device([])
+    d.Items = Items([])
+    with pytest.raises(scanner.ScanStopped, match="Couldn.t set Test to feed from the feeder.*into a folder"):
+        list(wia(d).pages(200, False))
+    assert (tmp_path / "scanner-details.txt").read_text(encoding="utf-8").startswith("Test")
+
+
+def test_a_driver_with_a_feeder_item_scans_from_it():
+    page = np.full((50, 40, 3), 200, np.uint8)
+    flatbed = {scanner.ITEM_NAME: types.SimpleNamespace(Value="Flatbed")}
+    feeder = {scanner.ITEM_CATEGORY: types.SimpleNamespace(Value=scanner.FEEDER_CATEGORY.lower()),
+              scanner.HANDLING_SELECT: types.SimpleNamespace(Value=scanner.FRONT_ONLY)}
+    d = Device([page, page * 0, scanner.PAPER_EMPTY], props=(), items=[flatbed, feeder])
+    d.Properties[scanner.HANDLING_SELECT] = Refuses()  # the device-wide setting fails, as on the reported driver
+    d.items[0].Transfer = lambda fmt: pytest.fail("scanned the glass")
+    s = wia(d)
+    assert len(list(s.pages(200, True))) == 2 and not s.one_side
+    assert d.items[1].Properties(scanner.HANDLING_SELECT).Value == scanner.DUPLEX
+
+
+def test_a_feeder_only_on_one_side_still_scans():
+    page = np.full((50, 40, 3), 200, np.uint8)
+    d = Device([page, scanner.PAPER_EMPTY], props=())
+    d.Properties[scanner.HANDLING_SELECT] = Select({scanner.FEEDER})
+    s = wia(d)
+    assert len(list(s.pages(200, True))) == 1 and s.one_side
+    assert d.Properties(scanner.HANDLING_SELECT).Value == scanner.FEEDER
+
+
+def test_a_driver_that_takes_no_source_scans_until_it_says_empty_or_repeats():
+    a, b = np.full((50, 40, 3), 200, np.uint8), np.full((50, 40, 3), 90, np.uint8)
+    d = Device([a, b, a], props=(scanner.HANDLING_STATUS,))
+    d.Properties[scanner.HANDLING_SELECT] = Refuses()
+    d.Properties[scanner.HANDLING_STATUS].Value = scanner.FEED_READY
+    got = []
+    for p in wia(d).pages(200, False):
+        got.append(p)
+        if len(got) == 2:
+            d.Properties[scanner.HANDLING_STATUS].Value = 0  # the last sheet went through
+    assert len(got) == 2
+    glass = Device([a, a + 1, b], props=())  # says nothing about the feeder, and gives the glass again and again
+    glass.Properties[scanner.HANDLING_SELECT] = Refuses()
+    got = []
+    with pytest.raises(scanner.ScanStopped, match="glass"):
+        for p in wia(glass).pages(200, False):
+            got.append(p)
+    assert len(got) == 1
+
+
+class Select(types.SimpleNamespace):
+    def __init__(self, takes):
+        super().__init__()
+        object.__setattr__(self, "takes", takes)
+        object.__setattr__(self, "_value", 0)
+
+    @property
+    def Value(self):  # noqa: N802
+        return self._value
+
+    @Value.setter
+    def Value(self, v):  # noqa: N802
+        if v not in self.takes:
+            raise ComError(0x80004005)
+        object.__setattr__(self, "_value", v)
 
 
 class Resolution(types.SimpleNamespace):

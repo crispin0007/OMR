@@ -17,8 +17,11 @@ SCANNER = 1  # WiaDeviceType
 # Item and device property ids, from Microsoft's WIA documentation.
 CURRENT_INTENT, X_RES, Y_RES = "6146", "6147", "6148"
 GRAYSCALE = 2
-HANDLING_SELECT, PAGES = "3088", "3096"
-FEEDER, DUPLEX = 1, 4
+HANDLING_STATUS, HANDLING_SELECT, PAGES = "3087", "3088", "3096"
+FEEDER, DUPLEX, FRONT_ONLY = 1, 4, 0x20
+FEED_READY = 1
+ITEM_NAME, ITEM_CATEGORY = "4098", "4125"
+FEEDER_CATEGORY = "{FE131934-F84C-42AD-8DA4-6129CDDD7288}"  # a WIA 2.0 driver's feeder item
 RANGE, LIST = 1, 2  # WiaSubType of a property's allowed values
 MIN_DPI = 150  # below this, bubbles are too few pixels to read
 PAPER_EMPTY = 0x80210003
@@ -43,6 +46,8 @@ class WiaScanner:
         self.name = name
         self._info = info
         self.dpi = 0  # what the last run scanned at, which may not be what was asked for
+        self.one_side = False  # the last run asked for both sides and the driver wouldn't
+        self.sure = True  # the driver took the feeder as the source
 
     def pages(self, dpi: int, duplex: bool) -> Iterator[np.ndarray]:
         """Each page from the feeder as a BGR image, until the feeder is empty.
@@ -55,27 +60,29 @@ class WiaScanner:
 
         pythoncom.CoInitialize()  # this runs on the scan thread
         try:
+            com_error = pywintypes.com_error
             try:
                 device = self._info.Connect()
-                device.Properties(HANDLING_SELECT).Value = FEEDER | (DUPLEX if duplex else 0)
+            except com_error as e:
+                raise ScanStopped(f"Couldn't connect to {self.name}: {_problem(e)}") from e
+            item, self.sure, self.one_side = _feeder(device, duplex, com_error)
+            if item is None:
+                raise ScanStopped(f"Couldn't set {self.name} to feed from the feeder. Scan with the scanner's own "
+                                  f"program into a folder and read that folder instead{_reported(device, self.name)}")
+            for target in (device, item):
                 try:
-                    device.Properties(PAGES).Value = 1
-                except pywintypes.com_error:
+                    target.Properties(PAGES).Value = 1
+                except com_error:
                     pass  # drivers without it give one page per transfer anyway
-                item = device.Items(1)
-                try:
-                    item.Properties(CURRENT_INTENT).Value = GRAYSCALE
-                except pywintypes.com_error:
-                    pass  # colour pages are converted for reading
-            except pywintypes.com_error as e:
-                raise ScanStopped(f"Couldn't set {self.name} to feed {'both sides ' if duplex else ''}from the "
-                                  f"feeder: {_problem(e)}. Scan with the scanner's own program into a folder and "
-                                  "read that folder instead") from e
-            self.dpi = _resolution(item, dpi, pywintypes.com_error)
+            try:
+                item.Properties(CURRENT_INTENT).Value = GRAYSCALE
+            except com_error:
+                pass  # colour pages are converted for reading
+            self.dpi = _resolution(item, dpi, com_error)
             if not self.dpi:
                 raise ScanStopped(f"{self.name} won't scan at {MIN_DPI} DPI or more through Windows. Scan with the "
                                   "scanner's own program into a folder and read that folder instead")
-            first = True
+            first, last = True, None
             while True:
                 try:
                     image = item.Transfer(BMP)
@@ -90,9 +97,125 @@ class WiaScanner:
                 page = cv2.imdecode(data, cv2.IMREAD_COLOR)
                 if page is None:
                     raise ScanStopped("The scanner sent a page that isn't an image")
+                if not self.sure and last is not None and _same(page, last):
+                    # The driver didn't say the feeder was picked and the same page came twice: it is scanning
+                    # the glass, which never runs out.
+                    raise ScanStopped(f"{self.name} scanned the same page twice, so it seems to be scanning the "
+                                      "glass, not the feeder. Scan with the scanner's own program into a folder and "
+                                      "read that folder instead")
+                last = page
                 yield page
+                if not self.sure and _status(device, com_error) == 0:
+                    return  # the driver says the feeder is empty
         finally:
             pythoncom.CoUninitialize()
+
+
+def _feeder(device, duplex: bool, com_error):
+    """(the item to scan from, whether the feeder is surely the source, whether only one side will come) set up
+    for the feeder, or (None, ...) when nothing would take.
+
+    Drivers differ: older (WIA 1) ones pick the feeder with a property on the device; newer (WIA 2) ones have a
+    separate item for the feeder, and some refuse the device property with a plain "failed" (0x80004005). Each
+    way is tried in turn."""
+    items = []
+    try:
+        items = [device.Items(i) for i in range(1, device.Items.Count + 1)]
+    except (com_error, AttributeError, TypeError):
+        try:
+            items = [device.Items(1)]
+        except com_error:
+            return None, False, False
+    feeder = next((i for i in items if _is_feeder(i)), None)
+    if feeder is not None:
+        # The feeder item is the feeder; on it the setting only says which sides.
+        if not duplex:
+            return feeder, True, False
+        for target, value in ((feeder, DUPLEX), (device, FEEDER | DUPLEX)):
+            try:
+                target.Properties(HANDLING_SELECT).Value = value
+                return feeder, True, False
+            except com_error:
+                continue
+        return feeder, True, True
+    item = items[0] if items else None
+    if item is None:
+        return None, False, False
+    for value, one_side in (((FEEDER | DUPLEX, False), (FEEDER, True)) if duplex else ((FEEDER, False),)):
+        for target in (device, item):
+            try:
+                target.Properties(HANDLING_SELECT).Value = value
+                return item, True, one_side
+            except com_error:
+                continue
+    # Nothing took: scan from the source the driver is set to, and watch for it being the glass.
+    return item, False, duplex
+
+
+def _is_feeder(item) -> bool:
+    for key, test in ((ITEM_CATEGORY, lambda v: str(v).upper() == FEEDER_CATEGORY),
+                      (ITEM_NAME, lambda v: any(w in str(v).lower() for w in ("feeder", "adf")))):
+        try:
+            if test(item.Properties(key).Value):
+                return True
+        except Exception:  # noqa: BLE001 - a driver without the property
+            continue
+    return False
+
+
+def _status(device, com_error) -> int | None:
+    """FEED_READY when the driver says the feeder has paper, 0 when it says it's empty, None when it doesn't say."""
+    try:
+        return int(device.Properties(HANDLING_STATUS).Value) & FEED_READY
+    except (com_error, TypeError, ValueError):
+        return None
+
+
+def _same(a: np.ndarray, b: np.ndarray) -> bool:
+    return a.shape == b.shape and float(cv2.absdiff(a, b).mean()) < 2
+
+
+def report(device) -> str:
+    """What a driver offers, item by item, as text a person can send when a scanner won't feed."""
+    lines = []
+    for label, target in [("Device", device)] + [(f"Item {i}", device.Items(i))
+                                                  for i in range(1, _count(device) + 1)]:
+        lines.append(label)
+        try:
+            props = list(target.Properties)
+        except Exception:  # noqa: BLE001
+            lines.append("  (can't list its settings)")
+            continue
+        for p in props:
+            try:
+                allowed = ""
+                if p.SubType == LIST:
+                    allowed = f" one of {[p.SubTypeValues.Item(i) for i in range(1, p.SubTypeValues.Count + 1)]}"
+                elif p.SubType == RANGE:
+                    allowed = f" from {p.SubTypeMin} to {p.SubTypeMax}"
+                lines.append(f"  {p.PropertyID} {p.Name} = {p.Value}{allowed}{' (read only)' if p.IsReadOnly else ''}")
+            except Exception:  # noqa: BLE001
+                continue
+    return "\n".join(lines)
+
+
+def _count(device) -> int:
+    try:
+        return int(device.Items.Count)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _reported(device, name: str) -> str:
+    """Save what the driver offers to a file, and say where; "" when it can't be saved."""
+    from .paths import data_dir
+
+    try:
+        path = data_dir() / "scanner-details.txt"
+        path.write_text(f"{name}\n\n{report(device)}\n", encoding="utf-8")
+    except Exception:  # noqa: BLE001 - the report is a help, never a reason to fail differently
+        return ""
+    return f". What the scanner offers is saved in {path}"
 
 
 def _allowed(prop) -> list[int]:

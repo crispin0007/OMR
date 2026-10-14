@@ -81,6 +81,16 @@ The files are read one page at a time in the same live view.
 If you press **Start scanning** and no scanner can be used, the app explains why and offers three
 ways on: **Import scans…**, **Choose folder…** or **Find scanners**.
 
+## The scanner is found but won't feed
+
+Scanner drivers pick the feeder in different ways, and the app tries each in turn. If none works,
+it says so, and saves what the driver offers in `scanner-details.txt` in the app's data folder
+(the message shows where). Scan with the scanner's own program into a folder in the meantime, and
+send that file with your report so support for your scanner can be added.
+
+If the driver takes the feeder but not both sides, the fronts are scanned and the app says so when
+the feeder is empty.
+
 ## After scanning: Scanned sheets
 
 The **Scanned sheets** tab has a row for every page: file, page, roll number, name, set, questions
