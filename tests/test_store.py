@@ -353,3 +353,35 @@ def test_pages_are_saved_as_jpeg_and_an_old_database_is_made_smaller(tmp_path):
     assert s.image(old[0]).shape == aligned.shape
     assert np.array_equal(s.image(unread.id, as_saved=True), scan)  # kept as it was, colour and all
     assert [p.result.roll_number for p in s.pages(exam) if p.result] == ["1", "0", "1", "2", "3", "4", "5"]
+
+
+def test_institutes_have_a_default_and_each_exam_can_pick_one_and_they_travel_in_a_backup(tmp_path):
+    import cv2
+
+    from omr_core.branding import Institute, prepare_logo
+    s = Store(tmp_path / "omr.db")
+    exam = s.create_exam("Mock 1", TEMPLATE)
+    assert s.institute_for(exam) is None
+    logo = np.full((300, 500, 3), 255, np.uint8)
+    cv2.circle(logo, (250, 150), 100, (40, 90, 200), -1)
+    png = prepare_logo(cv2.imencode(".png", logo)[1].tobytes())
+    first = s.save_institute(Institute(" Sunrise Academy ", address="Lalitpur", email="office@sunrise.example",
+                                       logo=png))
+    second = s.save_institute(Institute("Evening Campus"))
+    assert [(i.name, d) for _, i, d in s.institutes()] == [("Evening Campus", False), ("Sunrise Academy", True)]
+    assert s.institute_for(exam).name == "Sunrise Academy" and s.institute_for(exam).logo == png
+    s.set_exam_institute(exam, second)
+    assert s.institute_for(exam).name == "Evening Campus"
+    with pytest.raises(ValueError, match="email"):
+        s.save_institute(Institute("X", email="not an address"))
+    s.save_institute(Institute("Sunrise Academy", motto="Learn and grow", logo=png), first)
+    s.backup(tmp_path / "b.db")
+
+    other = Store(tmp_path / "other.db")
+    other.save_institute(Institute("Evening Campus"))  # already there: not added twice
+    other.restore(tmp_path / "b.db")
+    moved = other.exams()[0][0]
+    assert other.institute_for(moved).name == "Evening Campus"
+    assert sorted(i.name for _, i, _ in other.institutes()) == ["Evening Campus", "Sunrise Academy"]
+    s.delete_institute(first)  # the default goes: the other one takes its place
+    assert [(i.name, d) for _, i, d in s.institutes()] == [("Evening Campus", True)]

@@ -174,3 +174,27 @@ def test_key_changes_are_noted_on_scorecards_and_in_excel(tmp_path):
     write_scorecards(tmp_path / "s.pdf", "Mock 1", t, graded)
     text = pypdfium2.PdfDocument(tmp_path / "s.pdf")[0].get_textpage().get_text_range()
     assert "Answer key changed: Q1 A or C accepted" in text and "bonus" in text
+
+
+def test_scorecards_and_excel_carry_the_institute(tmp_path):
+    import cv2
+    import numpy as np
+
+    from omr_core.branding import Institute, prepare_logo
+    t, pages, key = exam_with_pages(tmp_path)
+    graded = grade(t, pages, key, 4, -1, 0)
+    logo = np.full((200, 200, 3), 255, np.uint8)
+    cv2.circle(logo, (100, 100), 80, (200, 90, 40), -1)
+    inst = Institute("Sunrise Academy", address="Ring Road, Lalitpur", phone="01-5550000", motto="Learn and grow",
+                     signer_name="R. Sharma", signer_title="Principal", footer="Results are provisional.",
+                     colour="#aa3300", logo=prepare_logo(cv2.imencode(".png", logo)[1].tobytes()))
+    write_scorecards(tmp_path / "s.pdf", "Mock 1", t, graded[:1], inst, out_of=4)
+    page = pypdfium2.PdfDocument(tmp_path / "s.pdf")[0]
+    text = page.get_textpage().get_text_range()
+    for want in ("Sunrise Academy", "Ring Road, Lalitpur", "01-5550000", "Learn and grow", "R. Sharma", "Principal",
+                 "Results are provisional.", "Rank 1 of 4", "Q100"):
+        assert want in text
+    assert any(o.type == pypdfium2.raw.FPDF_PAGEOBJ_IMAGE for o in page.get_objects())  # the logo
+    write_excel(tmp_path / "r.xlsx", "Mock 1", t, graded, inst)
+    wb = load_workbook(tmp_path / "r.xlsx")
+    assert wb["Merit list"]["A1"].value == "Sunrise Academy: Mock 1" and wb.properties.creator == "Sunrise Academy"

@@ -5,6 +5,7 @@ topics, each student's share right per topic goes on their scorecard and on a To
 """
 
 import csv
+import io
 from collections import Counter
 from copy import copy
 from dataclasses import dataclass, field
@@ -15,9 +16,10 @@ from openpyxl.styles import Font, PatternFill
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
-from reportlab.lib.utils import simpleSplit
+from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfgen import canvas
 
+from .branding import Institute
 from .grading import BONUS, DROPPED, Section, changed_questions, marks_for, parse_key, rank, score, status
 from .store import StoredPage, to_review
 from .students import Student
@@ -176,14 +178,17 @@ def write_csv(path: str | Path, t: Template, pages: list[StoredPage], graded: li
             w.writerow(row)
 
 
-def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Graded]):
+def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Graded],
+                institute: Institute | None = None):
     """Merit list on the first sheet, every answer (green right, red wrong) on the second, item analysis on the third."""
     qs = questions(t)
     wb = Workbook()
     ws = wb.active
     ws.title = "Merit list"
-    ws.append([exam_name])
-    ws["A1"].font = Font(bold=True, size=14)
+    ws.append([f"{institute.name}: {exam_name}" if institute else exam_name])
+    ws["A1"].font = Font(bold=True, size=14, color=institute.colour[1:] if institute else None)
+    if institute:
+        wb.properties.creator = wb.properties.lastModifiedBy = institute.name
     section_names = list(graded[0].sections) if graded else []
     split = ["Sheet", "Written"] if has_written(graded) else []
     numbered = ["Sheet no."] if t.serial else []
@@ -255,47 +260,53 @@ def _share(right_counted: tuple[int, int] | None) -> float | None:
     return round(100 * right_counted[0] / right_counted[1], 1) if right_counted and right_counted[1] else None
 
 
-def write_scorecards(path: str | Path, exam_name: str, t: Template, graded: list[Graded]):
-    """One A4 page per student: score, rank, and every answer next to the key."""
+def write_scorecards(path: str | Path, exam_name: str, t: Template, graded: list[Graded],
+                     institute: Institute | None = None, out_of: int | None = None):
+    """One A4 page per student: score, rank, and every answer next to the key, under the institute's letterhead
+    when there is one. `out_of` is the class size for "Rank 3 of 120" when `graded` is only some students."""
     qs = questions(t)
+    out_of = out_of or len(graded)
     c = canvas.Canvas(str(path), pagesize=A4)
     c.setTitle(f"{exam_name} scorecards")
+    c.setAuthor(institute.name if institute else "")
     w, h = A4
     per_column = 50
     marks = {"right": ("right", colors.HexColor("#1f9d55")), "wrong": ("wrong", colors.HexColor("#d64545")),
              "blank": ("blank", colors.grey), "dropped": ("dropped", colors.grey)}
     for g in sorted(graded, key=lambda g: g.page.result.roll_number):
         r = g.page.result
+        d = _letterhead(c, institute, w, h) if institute else 0.0  # mm the letterhead pushes the rest down
         c.setFont("Helvetica-Bold", 16)
-        c.drawString(18 * mm, h - 20 * mm, exam_name)
+        c.drawString(18 * mm, h - (20 + d) * mm, exam_name)
         c.setFont("Helvetica", 11)
         s = g.student
         who = f"{s.name}    " + (f"Class {s.class_name}    " if s.class_name else "") if s else ""
-        c.drawString(18 * mm, h - 28 * mm, f"{who}Roll number {r.roll_number}    Set {r.set_code}")
+        c.drawString(18 * mm, h - (28 + d) * mm, f"{who}Roll number {r.roll_number}    Set {r.set_code}")
         c.setFont("Helvetica-Bold", 13)
-        c.drawString(18 * mm, h - 38 * mm, f"Score {g.score:g}    Rank {g.rank} of {len(graded)}    "
-                                           f"Percentile {g.percentile:.1f}")
+        c.drawString(18 * mm, h - (38 + d) * mm, f"Score {g.score:g}    Rank {g.rank} of {out_of}    "
+                                                 f"Percentile {g.percentile:.1f}")
         c.setFont("Helvetica", 10)
         parts = (f"Sheet {g.omr:g}    Written {g.written:g}    " if g.written is not None
                  else "Sheet {:g}    Written not given    ".format(g.omr) if has_written(graded) else "")
-        c.drawString(18 * mm, h - 45 * mm, f"{parts}Right {g.right}    Wrong {g.wrong}    Blank {g.blank}    "
+        c.drawString(18 * mm, h - (45 + d) * mm, f"{parts}Right {g.right}    Wrong {g.wrong}    Blank {g.blank}    "
                      + "    ".join(f"{name} {v:g}" for name, v in g.sections.items()))
-        top, row_h = h - 60 * mm, 4.4 * mm
+        top, row_h = h - (60 + d) * mm, 4.4 * mm
         if g.to_check:
             c.setFillColor(colors.HexColor("#c27c00"))
-            c.drawString(18 * mm, h - 51 * mm, "Some marks on this sheet were still being checked.")
+            c.drawString(18 * mm, h - (51 + d) * mm, "Some marks on this sheet were still being checked.")
             c.setFillColor(colors.black)
         if g.topics:
             text = "By topic:  " + "  ·  ".join(f"{t} {r}/{n} ({_share((r, n)):g}%)" for t, (r, n) in g.topics.items())
             lines = simpleSplit(text, "Helvetica", 9, w - 36 * mm)
             c.setFont("Helvetica", 9)
             for k, line in enumerate(lines):
-                c.drawString(18 * mm, h - (57 + 4.2 * k) * mm, line)
+                c.drawString(18 * mm, h - (57 + d + 4.2 * k) * mm, line)
             top -= 4.2 * len(lines) * mm
         changes = changed_questions(g.key, qs)
         notes = simpleSplit("Answer key changed: " + "  ·  ".join(f"Q{q} {c}" for q, c in changes), "Helvetica", 8,
                             w - 36 * mm) if changes else []
-        bottom = (21 + 3.6 * len(notes)) * mm
+        signs = bool(institute and institute.signer_name)
+        bottom = (21 + 3.6 * len(notes) + (14 if signs else 0)) * mm
         rows = min(per_column, int((top - bottom) // row_h) + 1)  # topics and notes take room from the answers
         col_w = (w - 36 * mm) / max(1, -(-len(qs) // rows))
         c.setFont("Helvetica", 8)
@@ -313,8 +324,52 @@ def write_scorecards(path: str | Path, exam_name: str, t: Template, graded: list
         c.setFillColor(colors.HexColor("#c27c00"))
         for k, line in enumerate(notes):
             c.drawString(18 * mm, (16.5 + 3.6 * (len(notes) - 1 - k)) * mm, line)
+        if signs:
+            base = (16.5 + 3.6 * len(notes)) * mm
+            c.setStrokeColor(colors.black)
+            c.line(w - 78 * mm, base + 9 * mm, w - 18 * mm, base + 9 * mm)
+            c.setFillColor(colors.black)
+            c.setFont("Helvetica", 9)
+            c.drawCentredString(w - 48 * mm, base + 5 * mm, institute.signer_name)
+            c.setFont("Helvetica", 8)
+            c.drawCentredString(w - 48 * mm, base + 1.5 * mm, institute.signer_title)
+        c.setFont("Helvetica", 8)
         c.setFillColor(colors.grey)
         c.drawString(18 * mm, 12 * mm, "Columns: question, answer given, correct answer, result.")
+        if institute and institute.footer:
+            c.drawCentredString(w / 2, 7 * mm, institute.footer)
         c.setFillColor(colors.black)
         c.showPage()
     c.save()
+
+
+def _letterhead(c: canvas.Canvas, inst: Institute, w: float, h: float) -> float:
+    """The institute's logo, name, address, contact and motto across the top. Returns how many mm it pushes
+    the rest of the page down."""
+    x = 18 * mm
+    if inst.logo:
+        logo = ImageReader(io.BytesIO(inst.logo))
+        lw, lh = logo.getSize()
+        scale = min(22 * mm / lw, 22 * mm / lh)
+        c.drawImage(logo, x, h - 8 * mm - lh * scale, lw * scale, lh * scale, mask="auto")
+        x += lw * scale + 5 * mm
+    y = 14.0
+    c.setFillColor(colors.HexColor(inst.colour))
+    c.setFont("Helvetica-Bold", 15)
+    c.drawString(x, h - y * mm, inst.name)
+    c.setFillColor(colors.HexColor("#333333"))
+    lines = [("Helvetica", line) for line in simpleSplit(inst.address.replace("\n", ", "), "Helvetica", 9,
+                                                          w - 18 * mm - x)[:2]]
+    lines += [("Helvetica", inst.contact())] if inst.contact() else []
+    lines += [("Helvetica-Oblique", inst.motto)] if inst.motto else []
+    for font, line in lines:
+        y += 4.6
+        c.setFont(font, 9)
+        c.drawString(x, h - y * mm, line)
+    rule = max(30.0 if inst.logo else 0.0, y + 3)
+    c.setStrokeColor(colors.HexColor(inst.colour))
+    c.setLineWidth(1.2)
+    c.line(18 * mm, h - rule * mm, w - 18 * mm, h - rule * mm)
+    c.setLineWidth(1)
+    c.setFillColor(colors.black)
+    return rule + 8 - 20  # the exam's name, at 20 mm on a page without one, goes 8 mm under the rule

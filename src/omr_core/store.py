@@ -17,6 +17,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from .branding import Institute, check, from_json, to_json
 from .grading import Section, check_sections, sections_from_json, sections_to_json
 from .reader import PageResult
 from .students import Student
@@ -36,7 +37,8 @@ CREATE TABLE IF NOT EXISTS exam (
     blank REAL NOT NULL DEFAULT 0,
     created TEXT NOT NULL,
     sections TEXT NOT NULL DEFAULT '[]',  -- JSON [Section, ...]
-    details TEXT NOT NULL DEFAULT '{}',   -- JSON {"class", "date", "time", "minutes", "series"} from New exam, "topics"
+    details TEXT NOT NULL DEFAULT '{}',   -- JSON {"class", "date", "time", "minutes", "series"} from New exam,
+                                          -- "topics", "institute" (an institute id)
     written_out_of REAL NOT NULL DEFAULT 0  -- marks of the written part, typed in; 0 for none
 );
 CREATE TABLE IF NOT EXISTS page (
@@ -86,6 +88,12 @@ CREATE TABLE IF NOT EXISTS student (
     name TEXT NOT NULL,
     class_name TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (exam_id, roll_number)
+);
+CREATE TABLE IF NOT EXISTS institute (
+    id INTEGER PRIMARY KEY,
+    body TEXT NOT NULL,              -- JSON of an Institute but its logo
+    logo BLOB NOT NULL DEFAULT x'',  -- PNG
+    is_default INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS exam_template (
     name TEXT PRIMARY KEY,
@@ -226,6 +234,52 @@ class Store:
     def topics(self, exam_id: int) -> dict[int, str]:
         return {int(q): t for q, t in self.exam(exam_id).details.get("topics", {}).items()}
 
+    # -- institutes ----------------------------------------------------------------------------------------
+
+    def institutes(self) -> list[tuple[int, Institute, bool]]:
+        """(id, institute, is the default) for every institute, by name."""
+        out = [(i, from_json(json.loads(body), logo), bool(d))
+               for i, body, logo, d in self.db.execute("SELECT id, body, logo, is_default FROM institute")]
+        return sorted(out, key=lambda r: r[1].name.lower())
+
+    def save_institute(self, inst: Institute, institute_id: int | None = None) -> int:
+        """Add an institute, or change the one with this id. The first one is the default.
+        Raises ValueError for what `branding.check` refuses."""
+        inst = check(inst)
+        with self.db:
+            if institute_id is None:
+                first = not self.db.execute("SELECT 1 FROM institute").fetchone()
+                return self.db.execute("INSERT INTO institute (body, logo, is_default) VALUES (?, ?, ?)",
+                                       (json.dumps(to_json(inst)), inst.logo, first)).lastrowid
+            self.db.execute("UPDATE institute SET body = ?, logo = ? WHERE id = ?",
+                            (json.dumps(to_json(inst)), inst.logo, institute_id))
+            return institute_id
+
+    def delete_institute(self, institute_id: int):
+        """Remove an institute; its exams use the default from then on. Another becomes the default if needed."""
+        with self.db:
+            self.db.execute("DELETE FROM institute WHERE id = ?", (institute_id,))
+            if not self.db.execute("SELECT 1 FROM institute WHERE is_default").fetchone():
+                self.db.execute("UPDATE institute SET is_default = 1 WHERE id = (SELECT MIN(id) FROM institute)")
+
+    def set_default_institute(self, institute_id: int):
+        with self.db:
+            self.db.execute("UPDATE institute SET is_default = (id = ?)", (institute_id,))
+
+    def set_exam_institute(self, exam_id: int, institute_id: int | None):
+        """The institute an exam prints; None for the default one."""
+        with self.db:
+            self.db.execute("UPDATE exam SET details = json_set(details, '$.institute', ?) WHERE id = ?",
+                            (institute_id, exam_id))
+
+    def institute_for(self, exam_id: int) -> Institute | None:
+        """The exam's own institute, else the default, else None when there are none."""
+        chosen = self.exam(exam_id).details.get("institute")
+        rows = {i: (inst, d) for i, inst, d in self.institutes()}
+        if chosen in rows:
+            return rows[chosen][0]
+        return next((inst for inst, d in rows.values() if d), None)
+
     def rename_exam(self, exam_id: int, name: str):
         name = name.strip()
         if not name:
@@ -257,6 +311,13 @@ class Store:
             try:
                 here = set(self.db.execute("SELECT name, created FROM exam"))
                 with self.db:
+                    known = {(body, logo): i
+                             for i, body, logo in self.db.execute("SELECT id, body, logo FROM institute")}
+                    institutes = {}  # backup's id to the id here; an institute already here is not added twice
+                    for old, body, logo in self.db.execute("SELECT id, body, logo FROM b.institute").fetchall():
+                        institutes[old] = known.get((body, logo)) or self.db.execute(
+                            "INSERT INTO institute (body, logo, is_default) VALUES (?, ?, NOT EXISTS "
+                            "(SELECT 1 FROM institute))", (body, logo)).lastrowid
                     for old, name, created in self.db.execute("SELECT id, name, created FROM b.exam ORDER BY id"
                                                               ).fetchall():
                         if (name, created) in here:
@@ -266,6 +327,11 @@ class Store:
                             "INSERT INTO exam (name, template, answer_key, correct, wrong, blank, created, sections, "
                             "details, written_out_of) SELECT name, template, answer_key, correct, wrong, blank, "
                             "created, sections, details, written_out_of FROM b.exam WHERE id = ?", (old,)).lastrowid
+                        chosen = self.db.execute("SELECT json_extract(details, '$.institute') FROM exam WHERE id = ?",
+                                                 (exam,)).fetchone()[0]
+                        if chosen is not None:
+                            self.db.execute("UPDATE exam SET details = json_set(details, '$.institute', ?) "
+                                            "WHERE id = ?", (institutes.get(chosen), exam))
                         for (old_page,) in self.db.execute("SELECT id FROM b.page WHERE exam_id = ? ORDER BY id",
                                                            (old,)).fetchall():
                             page = self.db.execute(
