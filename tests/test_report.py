@@ -1,3 +1,4 @@
+import csv
 import re
 import zipfile
 from html.parser import HTMLParser
@@ -8,7 +9,7 @@ import numpy as np
 from omr_core.branding import Institute, prepare_logo
 from omr_core.export import grade
 from omr_core.grading import Section, marks_for
-from omr_core.report import file_stem, scorecard_html, write_reports
+from omr_core.report import CODE_LETTERS, file_stem, results_code, scorecard_html, write_reports, write_site
 from omr_core.students import Student
 from test_export import exam_with_pages
 
@@ -66,3 +67,24 @@ def test_reports_for_a_whole_exam_go_to_a_folder_or_a_zip_named_by_roll_number(t
         assert sorted(z.namelist()) == ["111.html", "111.pdf"]
     assert not (tmp_path / "r.zip.part").exists()
     assert file_stem("12?4", set()) == "12_4" and file_stem("", set()) == "no-roll-number"
+
+
+def test_a_results_website_opens_each_page_only_with_its_code(tmp_path):
+    t, pages, key = exam_with_pages(tmp_path)
+    graded = grade(t, pages, key, 1, 0, 0, {"222": Student("222", "Asha Rai", "12")})
+    marks = marks_for(t.questions(), 1, 0, 0)
+    codes = [results_code("secret", g.page.result.roll_number) for g in graded]
+    listed = write_site(tmp_path / "site", "Mock 1", t, graded, marks, codes)
+    assert listed == tmp_path / "site codes.csv"  # beside the folder, so uploading it never publishes the codes
+    code = results_code("secret", "222")
+    assert len(code) == 6 and set(code) <= set(CODE_LETTERS) and code != results_code("other", "222")
+    assert results_code("secret", "222") == code  # the same in every exam
+    names = sorted(p.name for p in (tmp_path / "site").iterdir())
+    assert names == sorted(["index.html"] + [f"{g.page.result.roll_number}-{c}.html" for g, c in zip(graded, codes)])
+    page = (tmp_path / "site" / f"222-{code}.html").read_text(encoding="utf-8")
+    assert "Asha Rai" in page and 'name="robots" content="noindex"' in page
+    index = (tmp_path / "site" / "index.html").read_text(encoding="utf-8")
+    assert "Mock 1" in index and code not in index and "Asha" not in index  # the lookup page gives nothing away
+    with open(listed, encoding="utf-8-sig") as f:
+        rows = list(csv.reader(f))
+    assert rows[0] == ["Roll number", "Name", "Code", "Page"] and ["222", "Asha Rai", code, f"222-{code}.html"] in rows

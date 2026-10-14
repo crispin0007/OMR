@@ -215,6 +215,16 @@ def test_results_export_asks_while_marks_wait_for_review(app, tmp_path, monkeypa
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path / "folder"))
     w.results.reports.click()
     assert len(list((tmp_path / "folder").iterdir())) == 4
+    pick("A results website…")
+    told = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: told.append(a[2]))
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "site"), ""))
+    w.results.reports.click()
+    from omr_core.report import results_code
+    code = results_code(w.check.store.results_secret, sorted(f[2] for f in files)[0].lstrip("0"))
+    pages = sorted(p.name for p in (tmp_path / "site").iterdir())
+    assert len(pages) == 3 and "index.html" in pages and any(code in p for p in pages)
+    assert (tmp_path / "site codes.csv").exists() and "don't upload it" in told[0]
 
 
 def test_imported_students_show_by_name(app, tmp_path, monkeypatch):

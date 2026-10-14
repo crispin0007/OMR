@@ -125,6 +125,8 @@ on the **Templates** screen.
 - **Marked sheets (PDF)**: each student's own sheet, coloured right, wrong and missed, one page each.
 - **Student reports**: a page per student that opens offline in any phone browser (score, rank,
   section and topic bars, every question), plus a PDF, in a folder or one zip named by roll number.
+- **Results website**: a folder to upload where each student opens their own report with their roll
+  number and a private code that stays the same in every exam.
 - **Institute branding**: name, logo, address, colour, motto and signature, kept once and used on
   sheets, scorecards, reports and Excel; several institutes, one default, a choice per exam.
 - **Test series**: combined leaderboard over several tests, with each test's rank, places gained or

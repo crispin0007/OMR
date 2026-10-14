@@ -228,6 +228,7 @@ def test_backup_restores_on_another_pc_without_replacing_anything(tmp_path):
     s.set_students(exam, [Student("12", "Asha", "10A")])
     s.add_page(exam, "b", "a.pdf", 2, PageResult("13", "A", {1: "A"}, [], serial="0007"))
     s.save_template("Weekly NEET", "{}")
+    secret = s.results_secret
     s.backup(tmp_path / "backup.db")
     s.backup(tmp_path / "backup.db")  # again, over the last one
 
@@ -245,6 +246,7 @@ def test_backup_restores_on_another_pc_without_replacing_anything(tmp_path):
     assert [a[4:] for a in other.audit(new_id)] == [("Q1", "A", "B")]
     assert other.students(new_id)["12"].name == "Asha"
     assert other.templates() == {"Weekly NEET": '{"kept": 1}'}  # a template here is never replaced
+    assert other.results_secret == secret  # students keep their results codes on the new PC
 
     (tmp_path / "notes.txt").write_text("not a backup")
     with pytest.raises(sqlite3.DatabaseError):
@@ -507,6 +509,8 @@ def test_exam_lists_link_to_directory_students(tmp_path):
     assert person(exam, "101") == "ASHA-1" and person(exam, "0015") == "15"  # off the list: the roll as an ID
     s.rolls_change = True
     assert s.person()(exam, "0015") == f"{exam}:15" and Store(db).rolls_change
+    secret = s.results_secret
+    assert len(secret) == 32 and Store(db).results_secret == secret  # made once, then kept
 
 
 def test_lists_from_before_links_are_linked_by_roll_number(tmp_path):

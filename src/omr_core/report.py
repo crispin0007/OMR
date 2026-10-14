@@ -2,6 +2,9 @@
 whole exam, HTML and PDF, into a folder or a zip named by roll number. Nothing is fetched from anywhere."""
 
 import base64
+import csv
+import hashlib
+import hmac
 import re
 import tempfile
 import zipfile
@@ -13,6 +16,7 @@ from pathlib import Path
 from .branding import Institute
 from .export import Graded, write_scorecards
 from .grading import BONUS, DROPPED, Section, changed_questions, describe, score, status
+from .students import same_roll
 from .template import Template
 
 STATES = {"right": "Right", "wrong": "Wrong", "blank": "Blank", "dropped": "Not counted"}
@@ -217,3 +221,93 @@ def write_reports(dest: str | Path, exam_name: str, t: Template, graded: list[Gr
     if zipped:
         part.replace(dest)  # a half-written zip never takes the name
     return done
+
+
+CODE_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O or 1/I to misread
+
+
+def results_code(secret: str, person: str) -> str:
+    """A student's code for the results website: the same in every exam, and not guessable without `secret`."""
+    digest = hmac.new(secret.encode(), person.encode(), hashlib.sha256).digest()
+    return "".join(CODE_LETTERS[b % 32] for b in digest[:6])
+
+
+def write_site(dest: str | Path, exam_name: str, t: Template, graded: list[Graded], marks: list[tuple],
+               codes: list[str], sections: list[Section] = (), institute: Institute | None = None,
+               written_out_of: float = 0) -> Path:
+    """A results website in the folder `dest`: `index.html` asks for a roll number and code and opens that
+    student's scorecard, saved as `<roll number>-<code>.html`, so a page can only be found with its code.
+    `codes` is each graded student's code, in order. The list of codes to hand out goes next to the folder,
+    not in it, so uploading the folder never publishes them; its path is returned."""
+    dest = Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    taken: set[str] = set()
+    rows = []
+    for g, code in sorted(zip(graded, codes), key=lambda x: x[0].page.result.roll_number):
+        roll = g.page.result.roll_number
+        stem = file_stem(f"{file_stem(same_roll(roll), set())}-{code}", taken)
+        html = scorecard_html(exam_name, t, g, graded, marks, sections, institute, written_out_of)
+        html = html.replace('<meta charset="utf-8">', '<meta charset="utf-8">\n<meta name="robots" content="noindex">', 1)
+        (dest / f"{stem}.html").write_text(html, encoding="utf-8")
+        rows.append([roll, g.student.name if g.student else "", code, f"{stem}.html"])
+    (dest / "index.html").write_text(_lookup_html(exam_name, institute), encoding="utf-8")
+    listed = dest.with_name(f"{dest.name} codes.csv")
+    with open(listed, "w", newline="", encoding="utf-8-sig") as f:  # utf-8-sig: Excel reads the names right
+        csv.writer(f).writerows([["Roll number", "Name", "Code", "Page"]] + rows)
+    return listed
+
+
+def _lookup_html(exam_name: str, institute: Institute | None) -> str:
+    colour = institute.colour if institute else "#1565c0"
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'">
+<title>{escape(exam_name)}: results</title>
+<style>
+* {{ box-sizing: border-box; }}
+body {{ margin: 0; background: #f4f5f7; color: #1d2330; font: 15px/1.45 -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif; }}
+main {{ max-width: 460px; margin: 0 auto; padding: 16px; }}
+.card {{ background: #fff; border: 1px solid #e3e6ea; border-radius: 12px; padding: 18px; margin-bottom: 14px; }}
+.letterhead {{ display: flex; gap: 16px; align-items: center; border-bottom: 3px solid {colour}; }}
+.letterhead img {{ height: 56px; width: auto; max-width: 120px; object-fit: contain; }}
+.letterhead h1 {{ margin: 0; color: {colour}; font-size: 20px; }}
+.letterhead p {{ margin: 2px 0; color: #4a5160; font-size: 13px; }}
+h2 {{ margin: 0 0 12px; font-size: 20px; }}
+label {{ display: block; margin: 12px 0 4px; font-weight: 600; }}
+input {{ width: 100%; padding: 10px; font: inherit; border: 1px solid #c9ced6; border-radius: 8px; }}
+button {{ margin-top: 16px; width: 100%; padding: 11px; font: inherit; font-weight: 600; color: #fff; background: {colour}; border: 0; border-radius: 8px; cursor: pointer; }}
+#wrong {{ color: #d64545; min-height: 1.4em; margin: 10px 0 0; }}
+.muted {{ color: #5f6673; font-size: 13px; }}
+</style></head>
+<body><main>
+{_letterhead(institute)}
+<form class="card" id="find">
+  <h2>{escape(exam_name)}</h2>
+  <label for="roll">Roll number</label>
+  <input id="roll" autocomplete="off" inputmode="numeric" required>
+  <label for="code">Your code</label>
+  <input id="code" autocomplete="off" autocapitalize="characters" spellcheck="false" required>
+  <button type="submit">See my result</button>
+  <p id="wrong" role="alert"></p>
+  <p class="muted">Your code is on the slip or message from your institute.</p>
+</form>
+</main>
+<script>
+document.getElementById("find").addEventListener("submit", function (e) {{
+  e.preventDefault();
+  var roll = document.getElementById("roll").value.trim();
+  if (/^[0-9]+$/.test(roll)) roll = roll.replace(/^0+/, "") || "0";  // 0016 and 16 are one roll number
+  roll = roll.replace(/[^0-9A-Za-z_-]/g, "_");
+  var code = document.getElementById("code").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  var page = encodeURIComponent(roll + "-" + code) + ".html";
+  if (location.protocol === "file:") {{ location.href = page; return; }}
+  fetch(page, {{ method: "HEAD" }}).then(function (r) {{
+    if (r.ok) location.href = page;
+    else document.getElementById("wrong").textContent = "That roll number and code don't match. Check them and try again.";
+  }}, function () {{ location.href = page; }});
+}});
+</script>
+</body></html>
+"""

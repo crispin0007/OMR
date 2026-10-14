@@ -7,6 +7,7 @@ editing the template file later doesn't change an exam's results.
 
 import json
 import os
+import secrets
 import shutil
 import sqlite3
 import tempfile
@@ -571,6 +572,8 @@ class Store:
                         restored.append(name)
                     self.db.execute("INSERT OR IGNORE INTO exam_template SELECT name, body FROM b.exam_template")
                     self.db.execute("INSERT OR IGNORE INTO series SELECT name, best_of FROM b.series")
+                    # a new PC takes the backup's settings, so students' results codes stay the same
+                    self.db.execute("INSERT OR IGNORE INTO setting SELECT name, value FROM b.setting")
                     # a student already in the directory here keeps their details
                     self.db.execute(f"INSERT OR IGNORE INTO directory ({STUDENT}) SELECT {STUDENT} FROM b.directory")
             finally:
@@ -872,6 +875,16 @@ class Store:
     def rolls_change(self, on: bool):
         with self.db:
             self.db.execute("INSERT OR REPLACE INTO setting (name, value) VALUES ('rolls_change', ?)", (str(int(on)),))
+
+    @property
+    def results_secret(self) -> str:
+        """The institute's own secret behind each student's code for the results website, made once and kept."""
+        row = self.db.execute("SELECT value FROM setting WHERE name = 'results_secret'").fetchone()
+        if row:
+            return row[0]
+        with self.db:
+            self.db.execute("INSERT INTO setting (name, value) VALUES ('results_secret', ?)", (secrets.token_hex(16),))
+        return self.results_secret
 
     def person(self) -> Callable[[int, str], str]:
         """Who sat under a roll number in an exam, as a key that is the same in every exam: the student linked on

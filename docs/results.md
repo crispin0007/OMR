@@ -66,6 +66,23 @@ loaded from the internet, so it is safe to send by WhatsApp or email, or copy to
 
 Like the other exports, it asks first if some sheets are still waiting for Review.
 
+### A results website students look up themselves
+
+Choose **A results website…** and give the folder a name. You get a folder to upload to your
+institute's website as it is. Its `index.html` page asks for a roll number and a code, then opens that
+student's report:
+
+![The results website asking for a roll number and code](images/results-website.png)
+
+- Each report's file name ends in the student's code (`1001-84QQAZ.html`), so nobody can open another
+  student's report without that student's code. The pages also ask search engines not to list them.
+- The codes are saved **next to** the folder, in `<folder name> codes.csv` (roll number, name, code),
+  so uploading the folder never publishes them. Give each student their code, printed or in a message.
+- A student keeps **the same code in every exam**, so you hand codes out once. They are made from a
+  secret kept in this PC's data (and in backups); someone with only the website can't work them out.
+- Upload the whole folder again after a correction; the codes stay the same.
+- Your website must not list a folder's files. Most don't, and the folder's own `index.html` stops it.
+
 ## CSV with the columns you choose
 
 A **CSV** file opens in Excel or Google Sheets. Press **Results (CSV)…** on Results (or **Save CSV…**

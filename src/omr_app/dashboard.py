@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QGridLayout, QHBoxLayo
 from omr_core.export import Graded, write_excel, write_scorecards
 from omr_core.marking import write_marked_sheets
 from omr_core import sending
-from omr_core.report import write_reports
+from omr_core.report import results_code, write_reports, write_site
 
 from .sending import SendDialog
 from .theme import tokens
@@ -310,7 +310,8 @@ class ResultsPage(ShownPage):
                 path, name, t, graded, self.check.store.image, institute), "marked sheets"))
         self.csv = QPushButton("Results (CSV)…", toolTip="Pick the columns and their order, then save a CSV for Excel")
         self.reports = QPushButton("Student reports…", toolTip="Each student's scorecard as a page that opens in any "
-                                   "browser or phone, and as a PDF, named by roll number, in a folder or a zip")
+                                   "browser or phone, and as a PDF, named by roll number, in a folder or a zip, "
+                                   "or a results website where students look up their own")
         self.reports.clicked.connect(self.save_reports)
         self.send = QPushButton("Send to students…", toolTip="Each student's result by WhatsApp, or by email or SMS "
                                 "once set up under Settings, Send results")
@@ -396,6 +397,9 @@ class ResultsPage(ShownPage):
                           "named by roll number. They are made on this PC; nothing is sent anywhere.", parent=self)
         zipped = box.addButton("One zip file…", QMessageBox.AcceptRole)
         folder = box.addButton("A folder…", QMessageBox.AcceptRole)
+        site = box.addButton("A results website…", QMessageBox.AcceptRole)
+        site.setToolTip("A folder to put on your website: each student opens their own scorecard with their roll "
+                        "number and a code, and the codes to hand out are saved next to the folder")
         box.addButton(QMessageBox.Cancel)
         box.exec()
         name = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in c.exam.name).strip() or "results"
@@ -405,6 +409,9 @@ class ResultsPage(ShownPage):
                 path += ".zip"
         elif box.clickedButton() is folder:
             path = QFileDialog.getExistingDirectory(self, "Folder for the student reports")
+        elif box.clickedButton() is site:
+            self.save_site(name)
+            return
         else:
             return
         if not path:
@@ -426,6 +433,25 @@ class ResultsPage(ShownPage):
             return
         progress.close()
         self.window().statusBar().showMessage(f"Saved {done} student reports in {path}", 8000)
+
+    def save_site(self, name: str):
+        c = self.check
+        path, _ = QFileDialog.getSaveFileName(self, "Save the results website", f"{name} results",
+                                              "Folder (*)", options=QFileDialog.DontConfirmOverwrite)
+        if not path:
+            return
+        person, secret = c.store.person(), c.store.results_secret
+        codes = [results_code(secret, person(c.exam.id, g.page.result.roll_number)) for g in self.graded]
+        try:
+            listed = write_site(path, c.exam.name, c.exam.template, self.graded, c.marks, codes, c.sections,
+                                c.store.institute_for(c.exam.id), c.exam.written_out_of)
+        except OSError as e:
+            QMessageBox.warning(self, "Couldn't save", f"{path}\n\n{e}")
+            return
+        QMessageBox.information(
+            self, "Results website saved",
+            f"Upload the folder {path} to your website, and give each student their code from\n{listed}\n\n"
+            "A student keeps the same code in every exam. Keep the codes file to yourself: don't upload it.")
 
     def export(self, kind: str, ext: str, write, what: str = ""):
         c = self.check
