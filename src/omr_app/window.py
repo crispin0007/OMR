@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QDoubleSpinBox, QFile
 from omr_core.export import Graded, csv_columns, grade, single_questions, write_csv
 from omr_core.grading import (BONUS, DROPPED, EITHER, Section, format_topics, full_marks, key_changes, marks_for,
                               parse_key, parse_topics, score)
+from omr_core.parallel import PageReader
 from omr_core.reader import read_or_reason
 from omr_core.sources import read_pages
 from omr_core.store import Exam, Store, StoredPage, sheet_number_problems, to_review
@@ -67,6 +68,9 @@ class CheckPage(QWidget):
         self.store = store
         self.exam: Exam | None = None
         self.logged_keys: dict[str, list[str]] | None = None  # the key as last logged, see _to_log
+        self._marks_cache: tuple = (None, [])  # (what they were worked out from, marks), see `marks`
+        self._scores: dict[int, tuple[StoredPage, float | None]] = {}  # see `score_of`
+        self._scoring: tuple | None = None  # what the scores were worked out from
         self.questions: list[int] = []
         self.sheets: list[StoredPage] = []
         self.students: dict[str, Student] = {}
@@ -259,8 +263,13 @@ class CheckPage(QWidget):
 
     @property
     def marks(self) -> list[tuple]:
-        return marks_for(self.questions, self.correct.value(), self.wrong.value(), self.blank.value(), self.sections,
-                         single_questions(self.exam.template) if self.exam else None)
+        """Each question's marks, worked out again only when the exam, marks or sections change."""
+        state = (self.exam and self.exam.id, len(self.questions), self.correct.value(), self.wrong.value(),
+                 self.blank.value(), tuple(self.sections))
+        if self._marks_cache[0] != state:
+            self._marks_cache = (state, marks_for(self.questions, *state[2:5], self.sections,
+                                            single_questions(self.exam.template) if self.exam else None))
+        return self._marks_cache[1]
 
     def full_marks(self) -> float:
         key = next(iter(self.keys.values()), ["A"] * len(self.questions))  # sets differ only in order
@@ -318,20 +327,25 @@ class CheckPage(QWidget):
         progress = QProgressDialog("Reading sheets…", "Stop", 0, len(paths), self)
         progress.setWindowModality(Qt.WindowModal)
         progress.setMinimumDuration(300)
-        for i, path in enumerate(paths):
-            progress.setValue(i)
-            name = Path(path).name
-            try:
-                for n, page in enumerate(read_pages(path), 1):
-                    progress.setLabelText(f"Reading {name}, page {n}")
-                    QApplication.processEvents()
-                    if progress.wasCanceled():
-                        break
-                    self.read_image(page, batch, path, n)
-            except (OSError, ValueError) as e:
-                failed.append(f"{name}: {e}")
-            if progress.wasCanceled():
-                break
+        reader = PageReader(self.exam.template, skip_blank=False)
+        for path in paths:
+            reader.add(path)
+        done: set[str] = set()
+        while reader.busy and not progress.wasCanceled():
+            QApplication.processEvents()
+            got = reader.next(timeout=0.02)
+            if got is None:
+                continue
+            path, pages = got
+            if isinstance(pages, str):
+                failed.append(pages if Path(path).name in pages else f"{Path(path).name}: {pages}")
+            else:
+                for n, page, _, read in pages:
+                    progress.setLabelText(f"Reading {Path(path).name}, page {n}")
+                    self.read_image(page, batch, path, n, read)
+            done.add(path)
+            progress.setValue(len(done))
+        reader.stop()
         progress.close()
         self.show_sheets(None)
         self._enable()
@@ -422,6 +436,15 @@ class CheckPage(QWidget):
                 if not (a == DROPPED and b != BONUS and EITHER not in b and (c, q) not in logged)]
 
     def score_of(self, sheet: StoredPage) -> float | None:
+        """The sheet's score, kept until the key, marks or written marks change, so the table, dashboard and
+        live view work it out once."""
+        known = self._scores.get(id(sheet))
+        if known and known[0] is sheet:
+            return known[1]
+        self._scores[id(sheet)] = (sheet, value := self._score(sheet))
+        return value
+
+    def _score(self, sheet: StoredPage) -> float | None:
         r = sheet.result
         key = r and self.keys.get(r.set_code, self.keys.get(""))
         if not key:
@@ -442,6 +465,11 @@ class CheckPage(QWidget):
 
     def fill_table(self):
         self.refresh_timer.stop()
+        _ = self.marks  # brings the marks up to date, and with them what they were worked out from
+        scoring = (self.key_edit.toPlainText(), self._marks_cache[0], sorted(self.written.items()))
+        if scoring != self._scoring:  # a corrected sheet is a new object, so only it is scored again
+            self._scores.clear()
+            self._scoring = scoring
         self.table.clearSpans()
         self.table.setRowCount(len(self.sheets))
         review_bg = QBrush(QColor(theme.tokens()["warn_bg"]))
@@ -734,6 +762,8 @@ class MainWindow(QMainWindow):
             self.exams_area.setCurrentWidget(self.exams)
         self.nav_buttons[name].setChecked(True)
         self.stack.setCurrentWidget(self.pages[name])
+        if getattr(self.showing(), "stale", False):  # no show event while the window itself isn't shown yet
+            self.showing().refresh()
 
     def showing(self) -> QWidget:
         """The page or exam tab on screen."""
@@ -783,5 +813,7 @@ class MainWindow(QMainWindow):
             thread.wait()  # the page being fed finishes
             QApplication.processEvents()  # read and save the pages it already sent before the database closes
         self.scan.timer.stop()
+        if self.scan.reader is not None:  # pages already read and saved stay; the rest are read next time
+            self.scan.stop()
         self.store.close()
         super().closeEvent(e)

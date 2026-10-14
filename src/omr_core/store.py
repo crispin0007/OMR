@@ -517,7 +517,7 @@ class Store:
                 for page_id in ids[start:start + 50]:
                     (png,) = self.db.execute("SELECT image FROM page WHERE id = ?", (page_id,)).fetchone()
                     image = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_GRAYSCALE)
-                    jpg = _jpeg(image) if image is not None else None
+                    jpg = encode_page(image) if image is not None else None
                     if jpg:  # a PNG that doesn't decode is left as it is
                         self.db.execute("UPDATE page SET image = ? WHERE id = ?", (jpg, page_id))
             if progress and progress(min(start + 50, len(ids)), len(ids)) is False:
@@ -539,7 +539,7 @@ def _png(image: np.ndarray) -> bytes | None:
     return png.tobytes() if ok else None
 
 
-def _jpeg(image: np.ndarray) -> bytes | None:
+def encode_page(image: np.ndarray) -> bytes | None:
     """The aligned page as grey JPEG, about 6x smaller than PNG.
     Benchmark: 300 generated and 1 real page read again from it gave the same answers and flags as the original."""
     if image.ndim == 3:
@@ -553,7 +553,7 @@ def _row(result: PageResult | None) -> tuple[tuple, bytes | None]:
     if result is None:
         return (None,) * 4 + ("",), None
     return ((result.roll_number, result.set_code, json.dumps(result.answers), json.dumps(result.flags), result.serial),
-            None if result.aligned is None else _jpeg(result.aligned))
+            result.aligned if not isinstance(result.aligned, np.ndarray) else encode_page(result.aligned))
 
 
 def to_review(pages: list[StoredPage], students: dict[str, Student] | None = None) -> list[tuple[int, str, str]]:

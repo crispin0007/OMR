@@ -13,11 +13,12 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel, Q
 
 from omr_core.store import Store
 
+from .dashboard import ShownPage
 from .help import steps_html
 from .new_exam import TEMPLATES, USER_TEMPLATES, NewExamWizard  # noqa: F401  (TEMPLATES is used by window.py)
 from .series import SeriesDialog
 
-class ExamsPage(QWidget):
+class ExamsPage(ShownPage):
     """Every exam; click one to open its page."""
 
     opened = Signal(object)  # exam id
@@ -71,6 +72,9 @@ class ExamsPage(QWidget):
     def refresh(self, open_id: int | None = ...):
         if open_id is not ...:
             self.open_id = open_id
+        super().refresh()
+
+    def redraw(self):
         exams = self.store.exams()
         self.note.setText("Click an exam to open it: scan, check, set the key and marks, see results and print its "
                           "sheet. Everything is saved as you work."

@@ -1,3 +1,4 @@
+import multiprocessing
 import sys
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from omr_app.window import MainWindow
 
 
 def main() -> int:
+    multiprocessing.freeze_support()  # the packaged app starts its page readers by running itself again
     app = QApplication(sys.argv)
     app.setApplicationName("OMR")  # names the data folders; keep it so existing exams are found
     app.setWindowIcon(QIcon(str(Path(__file__).with_name("icon.png"))))

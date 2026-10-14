@@ -19,6 +19,7 @@ the reader flags them for review.
 import csv
 import io
 import re
+from bisect import bisect_right
 from dataclasses import asdict, dataclass
 
 from .template import DIGITS
@@ -136,9 +137,9 @@ def rank(scores: list[float]) -> list[tuple[int, float]]:
     Ties share a rank (1, 2, 2, 4). Percentile is the share of candidates who
     scored the same or lower, so the top score is 100.
     """
-    ordered = sorted(scores, reverse=True)
+    ordered = sorted(scores)
     n = len(scores)
-    return [(ordered.index(s) + 1, 100 * sum(t <= s for t in scores) / n) for s in scores]
+    return [(n - bisect_right(ordered, s) + 1, 100 * bisect_right(ordered, s) / n) for s in scores]
 
 
 def parse_key(text: str, count: int, options: str | list[str]) -> dict[str, list[str]]:

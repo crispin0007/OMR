@@ -14,6 +14,29 @@ from omr_core.export import Graded, write_excel, write_scorecards
 from .theme import tokens
 
 
+class ShownPage(QWidget):
+    """A page that redraws only while it can be seen: changes made while another page is open (a key edit with
+    1,000 sheets) wait until this one is shown. Subclasses draw in `redraw`."""
+
+    stale = False
+    lazy = True  # tests that look at hidden pages turn this off
+
+    def refresh(self):
+        if self.lazy and not self.isVisibleTo(self.window()):
+            self.stale = True
+            return
+        self.stale = False
+        self.redraw()
+
+    def redraw(self):
+        raise NotImplementedError
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.stale:
+            self.refresh()
+
+
 def card(title: str, body: QWidget | None = None) -> tuple[QWidget, QVBoxLayout]:
     w = QWidget(objectName="card")
     layout = QVBoxLayout(w)
@@ -183,7 +206,7 @@ class Histogram(QWidget):
             self.on_click(self.bins[i])
 
 
-class DashboardPage(QWidget):
+class DashboardPage(ShownPage):
     scan_wanted = Signal()
 
     def __init__(self, check):
@@ -219,7 +242,7 @@ class DashboardPage(QWidget):
         check.changed.connect(self.refresh)
         self.refresh()
 
-    def refresh(self):
+    def redraw(self):
         c = self.check
         scores = {i: s for i, s in enumerate(c.score_of(sh) for sh in c.sheets) if s is not None}
         flagged = c.to_check()
@@ -256,7 +279,7 @@ class DashboardPage(QWidget):
             self.check.show_sheets(rows, f"from {item.text().split('    ')[0]}")
 
 
-class ResultsPage(QWidget):
+class ResultsPage(ShownPage):
     COLUMNS = ["Rank", "Roll number", "Name", "Set", "Score", "Right", "Wrong", "Blank", "Percentile", "To check", "File",
                "Page"]
 
@@ -290,7 +313,7 @@ class ResultsPage(QWidget):
         check.changed.connect(self.refresh)
         self.refresh()
 
-    def refresh(self):
+    def redraw(self):
         c = self.check
         self.graded = c.graded()
         self.note.setText("Ranked by score; equal scores share a rank. Double-click a row to open the sheet."

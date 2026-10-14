@@ -26,6 +26,20 @@ def app(tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def eager_pages(monkeypatch):
+    """Redraw every page on each change, so a test can look at one without opening it first."""
+    from omr_app.dashboard import ShownPage
+    monkeypatch.setattr(ShownPage, "lazy", False)
+
+
+@pytest.fixture(autouse=True)
+def one_reader(monkeypatch):
+    """Read on the test's own process, so each step reads the next page there and then."""
+    from omr_core import parallel
+    monkeypatch.setattr(parallel, "WORKERS", 1)
+
+
+@pytest.fixture(autouse=True)
 def close_windows():
     """Close what a test opened while the app still exists: a window left open until Python exits is torn
     down after Qt, its scanner thread or database half gone, and the test run crashed on closing."""
@@ -712,6 +726,30 @@ def test_an_older_database_is_backed_up_then_made_smaller(app, tmp_path, monkeyp
     assert w.store.png_pages() == 0 and w.exams.shrink.isHidden() and "before.db" in shown[-1]
     from omr_core.store import Store
     assert Store(tmp_path / "before.db").png_pages() == 3  # the backup has the pages as they were
+
+
+
+def test_a_key_edit_redraws_only_the_page_on_screen(app, tmp_path, monkeypatch):
+    from omr_app.dashboard import ShownPage
+    monkeypatch.setattr(ShownPage, "lazy", True)
+    (path, answers, roll, set_code), = sheet_files(tmp_path, [3])
+    w = window(tmp_path)
+    c = w.check
+    c.read_files([path])
+    w.go("Scanned sheets")
+    drawn = []
+    for page in (w.dashboard, w.results):
+        monkeypatch.setattr(page, "redraw", lambda page=page, f=page.redraw: (drawn.append(page), f()))
+    c.key_edit.setPlainText(f"{set_code}: " + "".join(answers[q] or "A" for q in c.questions))
+    assert drawn == [] and w.results.stale and w.dashboard.stale
+    w.go("Results")
+    assert drawn == [w.results] and w.results.table.rowCount() == 1 and not w.results.stale
+    w.go("Dashboard")
+    assert drawn == [w.results, w.dashboard] and w.dashboard.read.value.text() == "1"
+    right = sum(1 for q in c.questions if answers[q])
+    assert c.table.item(0, 6).text() == str(right)
+    c.correct.setValue(2)  # scores kept from before are worked out again
+    assert c.table.item(0, 6).text() == str(2 * right) and w.dashboard.average.value.text() == f"{2 * right:.1f}"
 
 
 def test_a_printed_copy_is_checked_before_printing_the_rest(app, tmp_path, monkeypatch):

@@ -20,7 +20,8 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QGridLayout, Q
 
 from omr_core.grading import status
 from omr_core.reader import SCALE, PageResult, read_or_reason
-from omr_core.sources import is_blank, read_pages, ready_files
+from omr_core.parallel import PageReader
+from omr_core.sources import is_blank, ready_files
 from omr_core.template import Template
 
 from . import scanner, theme
@@ -106,8 +107,7 @@ class ScanPage(QWidget):
         self.feeder = QTimer(self, interval=0)  # reads waiting files a page at a time, between window events
         self.feeder.timeout.connect(self.step)
         self.files: deque[str] = deque()  # folder files or imported files waiting to be read
-        self.file_pages = None  # the pages of the file being read
-        self.file_path = ""
+        self.reader: PageReader | None = None  # reads the files on the other cores while there are any
         self.failed: list[str] = []
         self.paused = False
         self.sizes: dict[str, int] = {}
@@ -280,7 +280,7 @@ class ScanPage(QWidget):
 
     @property
     def reading_files(self) -> bool:
-        return bool(self.files) or self.file_pages is not None
+        return bool(self.files) or self.reader is not None
 
     def _reset_counts(self):
         self.first = len(self.check.sheets)
@@ -355,34 +355,30 @@ class ScanPage(QWidget):
         self._enable()
 
     def step(self):
-        """Read the next page of the files waiting: one page per call, so the window stays usable in between."""
-        # shortcut: files are read on the window's thread, about 0.2 s a page; a thread like the scanner's would
-        # keep a slow PC smoother. Upgrade if people see the window stutter while importing.
+        """Hand the waiting files to the readers, and save and show the next page read, in order. Called on a
+        timer, waiting at most 20 ms, so the window stays usable while the other cores read."""
         if self.paused:
             self.feeder.stop()
             return
-        if self.file_pages is None:
-            if not self.files:
-                self.feeder.stop()
-                return
-            self.file_path = self.files.popleft()
-            self.file_pages = enumerate(read_pages(self.file_path), 1)
-        try:
-            n, page = next(self.file_pages)
-        except StopIteration:
-            n = page = None
-        except (OSError, ValueError) as e:
-            n = page = None
-            name = Path(self.file_path).name
-            self.failed.append(str(e) if name in str(e) else f"{name}: {e}")
-            self.status.setText(f"Couldn't read {self.failed[-1]}. The other files carry on.")
-        if page is None:
-            self.file_pages = None
-            if not self.files:
-                self.feeder.stop()
-                self._files_done()
-            return
-        self.add_page(page, self.file_path, n)
+        if self.reader is None:
+            self.reader = PageReader(self.check.exam.template, self.duplex.isChecked())
+        while self.files:
+            self.reader.add(self.files.popleft())
+        got = self.reader.next(timeout=0.02)
+        if got is not None:
+            path, pages = got
+            if isinstance(pages, str):
+                name = Path(path).name
+                self.failed.append(pages if name in pages else f"{name}: {pages}")
+                self.status.setText(f"Couldn't read {self.failed[-1]}. The other files carry on.")
+            else:
+                for n, page, blank, read in pages:
+                    self.add_page(page, path, n, read=read, blank=blank)
+        if not self.reader.busy:
+            self.reader.close()
+            self.reader = None
+            self.feeder.stop()
+            self._files_done()
 
     def _files_done(self):
         self.check.show_sheets(None)  # also the count above the table
@@ -411,11 +407,12 @@ class ScanPage(QWidget):
             self.thread.stop = True  # stops after the page being fed
             self.status.setText("Stopping after this page…")
         if self.timer.isActive() or self.reading_files:
-            left = len(self.files)  # the file being read keeps the pages read so far
+            # files not read, or not to the end; the pages read so far are kept
+            left = len(self.files) + (len(self.reader.stop()) if self.reader else 0)
+            self.reader = None
             self.timer.stop()
             self.feeder.stop()
             self.files.clear()
-            self.file_pages = None
             self.check.show_sheets(None)
             self.status.setText(f"Stopped. {self._summary()}"
                                 + (f" {left} file{'s' if left > 1 else ''} not read." if left else ""))

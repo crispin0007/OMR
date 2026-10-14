@@ -35,7 +35,7 @@ class PageResult:
     set_code: str = ""
     answers: dict[int, str] = field(default_factory=dict)
     flags: list[tuple[str, str]] = field(default_factory=list)  # (where, why)
-    aligned: np.ndarray | None = None  # page in template coordinates, for the review screen
+    aligned: np.ndarray | bytes | None = None  # page in template coordinates, for review; bytes once encoded to save
     serial: str = ""  # the sheet number printed on the sheet, "?" when it can't be read; "" for sheets without one
 
 

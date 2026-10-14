@@ -11,8 +11,8 @@ PDF_DPI = 200
 IMAGE_TYPES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 
 
-def read_pages(path: str | Path) -> Iterator[np.ndarray]:
-    """Yield each page of a PDF or image file as a BGR image.
+def read_pages(path: str | Path, only: int | None = None) -> Iterator[np.ndarray]:
+    """Yield each page of a PDF or image file as a BGR image; `only` yields just that page (from 0) of a PDF.
 
     Raises ValueError for a file that can't be opened (corrupt, password
     protected, unsupported) so the caller can report it and carry on with the
@@ -26,7 +26,7 @@ def read_pages(path: str | Path) -> Iterator[np.ndarray]:
         except pdfium.PdfiumError as e:
             raise ValueError(f"{path.name}: can't open PDF ({e})") from e
         try:
-            for page in pdf:
+            for page in pdf if only is None else [pdf[only]]:
                 rgb = page.render(scale=PDF_DPI / 72, rev_byteorder=True).to_numpy()
                 yield cv2.cvtColor(rgb, cv2.COLOR_RGBA2BGR if rgb.shape[2] == 4 else cv2.COLOR_RGB2BGR)
         finally:
@@ -39,6 +39,20 @@ def read_pages(path: str | Path) -> Iterator[np.ndarray]:
         yield from pages
     else:
         raise ValueError(f"{path.name}: unsupported file type {ext or '(none)'}")
+
+
+def page_count(path: str | Path) -> int | None:
+    """Pages in a PDF, or None for an image file or a PDF that won't open (reading it says why)."""
+    if Path(path).suffix.lower() != ".pdf":
+        return None
+    try:
+        pdf = pdfium.PdfDocument(path)
+    except pdfium.PdfiumError:
+        return None
+    try:
+        return len(pdf)
+    finally:
+        pdf.close()
 
 
 def is_blank(page: np.ndarray, ink_share: float = 0.003) -> bool:
