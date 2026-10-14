@@ -67,6 +67,7 @@ class Template:
     barcode: tuple[float, float, float, float] | None = None
     serial: tuple[float, float, float, float] | None = None
     names: tuple[tuple[tuple[float, float, float, float], ...], ...] = ()  # letter boxes, word by word
+    bubble_shape: str = "oval"  # as printed: oval, circle, pill, rounded or rectangle
 
     def questions(self) -> list[int]:
         """Every question number on the sheet, in order."""
@@ -110,6 +111,8 @@ def parse(d: dict) -> Template:
         barcode=_area(d["barcode_mm"], "barcode_mm", (w, h)) if "barcode_mm" in d else None,
         serial=_area(d["serial_mm"], "serial_mm", (w, h)) if "serial_mm" in d else None,
         names=tuple(tuple(_area(b, "name_boxes_mm", (w, h)) for b in word) for word in _name_boxes(d)),
+        # A sheet made here says how it printed its bubbles; one mapped from paper is drawn as an oval its size.
+        bubble_shape=str((d.get("print") or {}).get("bubble_shape", "pill" if "print" in d else "oval")),
     )
     kinds = [g.kind for g in t.grids]
     if "questions" not in kinds and "numeric" not in kinds:

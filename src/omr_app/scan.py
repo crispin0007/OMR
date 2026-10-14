@@ -391,6 +391,7 @@ class ScanPage(QWidget):
 
     def scan_stopped(self, problem: str):
         self.thread.wait()
+        used, asked = getattr(self.thread.device, "dpi", 0), self.thread.dpi
         self.thread = None
         self.paused = False
         self.check.show_sheets(None)  # also the count above the table
@@ -402,7 +403,9 @@ class ScanPage(QWidget):
                                 + ". Put the sheets that weren't scanned back on the feeder and press Start scanning.")
             self.status.setObjectName("error")
         else:
-            self.status.setText(f"Feeder empty. {self._summary()}")
+            self.status.setText(f"Feeder empty. {self._summary()}" + (
+                f" The scanner doesn't take {asked} DPI, so it scanned at {used} DPI, which reads just as well."
+                if used and used != asked else ""))
             self.status.setObjectName("")
         self.status.setStyleSheet("")
         self._enable()

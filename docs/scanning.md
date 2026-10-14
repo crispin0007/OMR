@@ -21,7 +21,10 @@ You can scan before or after typing the answer key. Scores fill in as soon as th
    If it isn't, switch the scanner on and press **Find scanners**.
 3. Check the settings (you only do this once):
    - **Scanner**: pick yours.
-   - **Resolution (DPI)**: 200 is right for most sheets.
+   - **Resolution (DPI)**: 200 is right for most sheets. If your scanner doesn't take the number you
+     pick, it scans at the nearest one it does (150 DPI or more reads just as well) and says so when it
+     finishes. If it won't scan at 150 DPI or more through Windows, scan with the scanner's own program
+     into a folder and read that folder instead (see below).
    - **Both sides (skip blank backs)**: tick this if the scanner scans both sides at once.
      Blank backs are skipped.
 4. Put the sheets in the feeder, all the same way up, as your scanner's manual shows.

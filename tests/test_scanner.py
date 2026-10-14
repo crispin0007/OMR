@@ -79,5 +79,47 @@ def test_problems_stop_the_run(transfers, message):
 
 
 def test_a_scanner_without_a_feeder_says_so():
-    with pytest.raises(scanner.ScanStopped, match="Couldn't set Test to feed at 200 DPI"):
+    with pytest.raises(scanner.ScanStopped, match="Couldn.t set Test to feed from the feeder"):
         list(wia(Device([], props=())).pages(200, False))
+
+
+class Resolution(types.SimpleNamespace):
+    """A resolution property that takes only some values, as many drivers do."""
+
+    def __init__(self, takes, **kw):
+        super().__init__(**kw)
+        object.__setattr__(self, "takes", takes)
+        object.__setattr__(self, "_value", 100)
+
+    @property
+    def Value(self):  # noqa: N802 - COM's name
+        return self._value
+
+    @Value.setter
+    def Value(self, v):  # noqa: N802
+        if v not in self.takes:
+            raise ComError(0x80070057)  # E_INVALIDARG
+        object.__setattr__(self, "_value", v)
+
+
+def driver(takes, **kw):
+    d = Device([np.full((50, 40, 3), 200, np.uint8), scanner.PAPER_EMPTY])
+    d.item.Properties[scanner.X_RES] = Resolution(takes, **kw)
+    d.item.Properties[scanner.Y_RES] = Resolution(takes)
+    return d
+
+
+@pytest.mark.parametrize("takes, kw, used", [
+    ({150, 300, 600}, {}, 150),  # says nothing: the nearest of the usual ones it takes
+    ({300, 600}, dict(SubType=scanner.LIST, SubTypeValues=types.SimpleNamespace(
+        Count=2, Item=lambda i: (300, 600)[i - 1])), 300),  # lists what it takes
+    ({100, 200, 300}, dict(SubType=scanner.RANGE, SubTypeMin=100, SubTypeMax=300, SubTypeStep=100), 200),
+])
+def test_scans_at_a_resolution_the_scanner_takes(takes, kw, used):
+    s = wia(driver(takes, **kw))
+    assert len(list(s.pages(200, False))) == 1 and s.dpi == used
+
+
+def test_a_scanner_that_takes_no_usable_resolution_says_to_use_a_folder():
+    with pytest.raises(scanner.ScanStopped, match="into a folder"):
+        list(wia(driver({75, 100})).pages(200, False))

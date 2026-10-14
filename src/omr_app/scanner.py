@@ -19,6 +19,8 @@ CURRENT_INTENT, X_RES, Y_RES = "6146", "6147", "6148"
 GRAYSCALE = 2
 HANDLING_SELECT, PAGES = "3088", "3096"
 FEEDER, DUPLEX = 1, 4
+RANGE, LIST = 1, 2  # WiaSubType of a property's allowed values
+MIN_DPI = 150  # below this, bubbles are too few pixels to read
 PAPER_EMPTY = 0x80210003
 # What the operator should do for each WIA error that stops a run.
 PROBLEMS = {
@@ -40,6 +42,7 @@ class WiaScanner:
     def __init__(self, name: str, info):
         self.name = name
         self._info = info
+        self.dpi = 0  # what the last run scanned at, which may not be what was asked for
 
     def pages(self, dpi: int, duplex: bool) -> Iterator[np.ndarray]:
         """Each page from the feeder as a BGR image, until the feeder is empty.
@@ -64,11 +67,14 @@ class WiaScanner:
                     item.Properties(CURRENT_INTENT).Value = GRAYSCALE
                 except pywintypes.com_error:
                     pass  # colour pages are converted for reading
-                item.Properties(X_RES).Value = dpi
-                item.Properties(Y_RES).Value = dpi
             except pywintypes.com_error as e:
-                raise ScanStopped(f"Couldn't set {self.name} to feed {'both sides ' if duplex else ''}at {dpi} DPI: "
-                                  f"{_problem(e)}. Try another resolution, or scan to a folder.") from e
+                raise ScanStopped(f"Couldn't set {self.name} to feed {'both sides ' if duplex else ''}from the "
+                                  f"feeder: {_problem(e)}. Scan with the scanner's own program into a folder and "
+                                  "read that folder instead") from e
+            self.dpi = _resolution(item, dpi, pywintypes.com_error)
+            if not self.dpi:
+                raise ScanStopped(f"{self.name} won't scan at {MIN_DPI} DPI or more through Windows. Scan with the "
+                                  "scanner's own program into a folder and read that folder instead")
             first = True
             while True:
                 try:
@@ -87,6 +93,41 @@ class WiaScanner:
                 yield page
         finally:
             pythoncom.CoUninitialize()
+
+
+def _allowed(prop) -> list[int]:
+    """The resolutions a driver says it takes, nearest first to 200; [] when it doesn't say."""
+    try:
+        if prop.SubType == LIST:
+            values = [int(prop.SubTypeValues.Item(i)) for i in range(1, prop.SubTypeValues.Count + 1)]
+        elif prop.SubType == RANGE:
+            lo, hi, step = int(prop.SubTypeMin), int(prop.SubTypeMax), max(1, int(prop.SubTypeStep))
+            values = [v for v in (150, 200, 240, 300, 400, 600) if lo <= v <= hi and (v - lo) % step == 0]
+        else:
+            return []
+    except Exception:  # noqa: BLE001 - a driver that can't say is asked for the usual ones instead
+        return []
+    return [v for v in values if v >= MIN_DPI]
+
+
+def _resolution(item, dpi: int, com_error) -> int:
+    """Set the scan resolution: `dpi` if the driver takes it, else the nearest it does (any from 150 DPI reads
+    the same), else whatever it is set to already if that's enough. 0 when nothing will do."""
+    x, y = item.Properties(X_RES), item.Properties(Y_RES)
+    allowed = _allowed(x)
+    tries = sorted(set(allowed) or {dpi, 200, 300, 150, 240, 400}, key=lambda v: (v != dpi, abs(v - dpi), -v))
+    for v in tries:
+        try:
+            x.Value = v
+            y.Value = v
+            return v
+        except com_error:
+            continue
+    try:
+        current = int(x.Value)
+    except (com_error, TypeError, ValueError):
+        return 0
+    return current if current >= MIN_DPI else 0
 
 
 def scanners() -> list[WiaScanner]:

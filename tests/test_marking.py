@@ -70,3 +70,14 @@ def test_marked_sheets_pdf_has_a_page_per_student(tmp_path):
     assert write_marked_sheets(tmp_path / "marked.pdf", "Mock", t, graded, images.get) == 1
     pdf = pypdfium2.PdfDocument(tmp_path / "marked.pdf")
     assert len(pdf) == 1 and "Roll number 001" in pdf[0].get_textpage().get_text_range()
+
+
+def test_the_marks_take_the_shape_of_the_printed_bubbles():
+    def corner(shape):  # just outside the bubble's corner, where a rectangle's mark is and an oval's isn't
+        t = parse(layout(SheetSpec("Shape", 4, roll_digits=0, sets=0, bubble_shape=shape)))
+        page = np.full((round(t.page[1] * SCALE), round(t.page[0] * SCALE)), 255, np.uint8)
+        out = mark_sheet(page, t, PageResult("", "", {1: "A", 2: "", 3: "", 4: ""}, []), {1: "A"})
+        x, y = t.grid_for(1).centre(0, 0)
+        return tuple(out[round(y * SCALE) + round(t.bubble[1] / 2 * SCALE) + 3,
+                         round(x * SCALE) + round(t.bubble[0] / 2 * SCALE) + 3])
+    assert corner("rectangle") == RIGHT and corner("oval") == (255, 255, 255)

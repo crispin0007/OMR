@@ -44,14 +44,14 @@ def mark_sheet(aligned: np.ndarray, t: Template, r: PageResult, key: dict[int, s
         dx, dy = shifts[g][row]
         return round(x * SCALE) + dx, round(y * SCALE) + dy
 
-    def ring(g, row: int, col: int, colour, width: int = 3):
-        cv2.circle(out, at(g, row, col), radius, colour, width, cv2.LINE_AA)
+    def ring(g, row: int, col: int, colour, width: int = 3, grow: int = 3):
+        outline(out, at(g, row, col), t, colour, width, grow)
 
     if every_bubble:  # where each bubble was read: it should sit on the printed one
         for g in t.grids:
             for row in range(g.rows):
                 for col in range(g.cols):
-                    cv2.circle(out, at(g, row, col), round(max(t.bubble) / 2 * SCALE), GUIDE, 1, cv2.LINE_AA)
+                    outline(out, at(g, row, col), t, GUIDE, 1, 0)
     for g in t.grids:
         if g.kind == "questions":
             for row in range(g.rows):
@@ -86,6 +86,23 @@ def mark_sheet(aligned: np.ndarray, t: Template, r: PageResult, key: dict[int, s
     for x0, y0, x1, y1 in boxes:
         cv2.rectangle(out, (round(x0 * SCALE), round(y0 * SCALE)), (round(x1 * SCALE), round(y1 * SCALE)), CHECK, 4)
     return out
+
+
+def outline(out: np.ndarray, centre: tuple[int, int], t: Template, colour, width: int, grow: int):
+    """A bubble's outline in the shape the sheet printed it, `grow` pixels outside it."""
+    cx, cy = centre
+    a, b = round(t.bubble[0] / 2 * SCALE) + grow, round(t.bubble[1] / 2 * SCALE) + grow
+    if t.bubble_shape in ("oval", "circle") or t.bubble_shape not in ("pill", "rounded", "rectangle"):
+        cv2.ellipse(out, (cx, cy), (a, b), 0, 0, 360, colour, width, cv2.LINE_AA)
+        return
+    r = min(a, b) if t.bubble_shape == "pill" else min(a, b) // 2 if t.bubble_shape == "rounded" else 0
+    for (x0, y0), (x1, y1) in (((cx - a + r, cy - b), (cx + a - r, cy - b)), ((cx - a + r, cy + b), (cx + a - r, cy + b)),
+                               ((cx - a, cy - b + r), (cx - a, cy + b - r)), ((cx + a, cy - b + r), (cx + a, cy + b - r))):
+        cv2.line(out, (x0, y0), (x1, y1), colour, width, cv2.LINE_AA)
+    if r:
+        for (x, y), start in (((cx - a + r, cy - b + r), 180), ((cx + a - r, cy - b + r), 270),
+                              ((cx + a - r, cy + b - r), 0), ((cx - a + r, cy + b - r), 90)):
+            cv2.ellipse(out, (x, y), (r, r), 0, start, start + 90, colour, width, cv2.LINE_AA)
 
 
 def with_legend(marked: np.ndarray, every_bubble: bool = False) -> np.ndarray:
