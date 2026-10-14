@@ -480,3 +480,46 @@ def test_a_duplicated_exam_keeps_its_sheet_and_marks_but_nothing_read(tmp_path):
     assert copy.written_out_of == 20 and copy.details == {"class": "12", "series": "Weekly"}
     assert s.pages(copy.id) == [] and s.students(copy.id) == {}
     assert s.exam(exam).answer_key == "A: ABCD" and len(s.pages(exam)) == 1
+
+
+def test_exam_lists_link_to_directory_students(tmp_path):
+    db = tmp_path / "omr.db"
+    s = Store(db)
+    s.save_student(Student("12", "Asha Rai"))
+    s.save_student(Student("13", "Bina KC", phone="9800000001"))
+    s.save_student(Student("14", "Bina KC", phone="9800000002"))
+    s.save_student(Student("15", "Chet Lama"))
+    exam = s.create_exam("Mock", TEMPLATE)
+    students, added, unclear = s.link_students([
+        Student("101", " asha  rai "), Student("102", "Bina KC", phone="9800000002"), Student("103", "Bina KC"),
+        Student("104", "Dev Shah"), Student("105", "Eva", student_id="REG-9"), Student("106", "Chet", student_id="15")])
+    assert [x.student_id for x in students] == ["12", "14", "", "S0001", "REG-9", "15"]
+    assert added == 2 and [x.roll_number for x in unclear] == ["103"]
+    assert {d.roll_number: d.name for d in s.directory()}["S0001"] == "Dev Shah" and s.new_id() == "S0002"
+    s.set_students(exam, students)
+    s.link_student(exam, "103", "13")
+    with pytest.raises(ValueError, match="no student in the directory"):
+        s.link_student(exam, "103", "99")
+    s.save_student(Student("ASHA-1", "Asha Rai"), "12")  # a new ID carries her links
+    assert s.students(exam)["101"].student_id == "ASHA-1" and s.students(exam)["103"].student_id == "13"
+    assert s.exams_listed("ASHA-1") == {exam}
+    person = s.person()
+    assert person(exam, "101") == "ASHA-1" and person(exam, "0015") == "15"  # off the list: the roll as an ID
+    s.rolls_change = True
+    assert s.person()(exam, "0015") == f"{exam}:15" and Store(db).rolls_change
+
+
+def test_lists_from_before_links_are_linked_by_roll_number(tmp_path):
+    db = tmp_path / "omr.db"
+    s = Store(db)
+    exam = s.create_exam("Mock", TEMPLATE)
+    s.save_student(Student("12", "Asha Rai"))
+    s.close()
+    old = sqlite3.connect(db)
+    old.execute("ALTER TABLE student DROP COLUMN student_id")
+    old.executemany("INSERT INTO student (exam_id, roll_number, name) VALUES (?, ?, ?)",
+                    [(exam, "0012", "Asha Rai"), (exam, "77", "Someone")])
+    old.commit()
+    old.close()
+    students = Store(db).students(exam)
+    assert students["0012"].student_id == "12" and students["77"].student_id == ""

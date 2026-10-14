@@ -1,10 +1,14 @@
 """The student directory: the institute's students with their batch and contacts, kept once for every exam.
 
-An exam takes its list from here by batch (Students tab, Use a batch…), or from Excel as before.
+Each student keeps one Student ID for good; their roll number can change from exam to exam, and an exam's list
+links each roll number to a student here (Students tab). An exam takes its list from here by batch (Use a batch…),
+or from Excel.
 """
 
+from dataclasses import replace
+
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
                                QLineEdit, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout)
 
 from omr_core.store import Store
@@ -14,7 +18,7 @@ from .dashboard import ShownPage
 from .progress import AttendanceDialog, ProfileDialog
 
 ALL = "All batches"
-COLUMNS = ["Roll number", "Name", "Class", "Batch", "Email", "Phone", "Exams taken"]
+COLUMNS = ["Student ID", "Name", "Class", "Batch", "Email", "Phone", "Exams taken"]
 
 
 class StudentDialog(QDialog):
@@ -31,8 +35,9 @@ class StudentDialog(QDialog):
         self.edits = {key: batch.lineEdit() if key == "batch" else QLineEdit(getattr(s, key))
                       for key in ("roll_number", "name", "class_name", "batch", "email", "phone")}
         self.edits["phone"].setPlaceholderText("with the country code, e.g. +977 98…")
+        self.edits["roll_number"].setPlaceholderText(f"registration number, or empty for {store.new_id()}")
         form = QFormLayout(self)
-        for key, label in (("roll_number", "Roll number"), ("name", "Name"), ("class_name", "Class"),
+        for key, label in (("roll_number", "Student ID"), ("name", "Name"), ("class_name", "Class"),
                            ("batch", "Batch"), ("email", "Email"), ("phone", "Phone")):
             form.addRow(label, batch if key == "batch" else self.edits[key])
         self.problem = QLabel(objectName="error", wordWrap=True)
@@ -44,6 +49,8 @@ class StudentDialog(QDialog):
 
     def save(self):
         student = Student(**{key: edit.text() for key, edit in self.edits.items()})
+        if not student.roll_number.strip():
+            student = replace(student, roll_number=self.store.new_id())
         try:
             self.store.save_student(student, self.old.roll_number if self.old else "")
         except ValueError as e:
@@ -58,7 +65,7 @@ class DirectoryPage(ShownPage):
     def __init__(self, store: Store):
         super().__init__()
         self.store = store
-        self.search = QLineEdit(placeholderText="Search by name, roll number, email or phone", clearButtonEnabled=True)
+        self.search = QLineEdit(placeholderText="Search by name, Student ID, email or phone", clearButtonEnabled=True)
         self.search.textChanged.connect(lambda _: self.redraw())
         self.batch = QComboBox()
         self.batch.activated.connect(lambda _: self.redraw())
@@ -74,16 +81,22 @@ class DirectoryPage(ShownPage):
         attendance = QPushButton("Attendance…", toolTip="Who sat which exam, by batch and program")
         attendance.clicked.connect(lambda: AttendanceDialog(self, self.store).exec())
         load = QPushButton("Import from Excel…", objectName="primary",
-                           toolTip="Roll number and name columns, and optionally class, batch, email and phone")
+                           toolTip="Student ID (or roll number) and name columns, and optionally class, batch, email and "
+                           "phone")
         load.clicked.connect(self.import_students)
         top = QHBoxLayout()
         top.addWidget(QLabel("Student directory", objectName="title"))
         top.addStretch()
         for b in (self.profile_button, attendance, add, self.edit_button, self.remove_button, load):
             top.addWidget(b)
+        self.rolls_change = QCheckBox("Roll numbers change from exam to exam", checked=store.rolls_change, toolTip=(
+            "On: a roll number is only who an exam's list (or a name confirmed on Scanned sheets) says it is. "
+            "Off: a roll number not on an exam's list is the student with that Student ID."))
+        self.rolls_change.toggled.connect(self.set_rolls_change)
         filters = QHBoxLayout()
         filters.addWidget(self.search, 2)
         filters.addWidget(self.batch, 1)
+        filters.addWidget(self.rolls_change)
         self.note = QLabel(objectName="muted", wordWrap=True)
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
@@ -117,8 +130,8 @@ class DirectoryPage(ShownPage):
         self.students = [s for s in everyone if (batch == ALL or s.batch == batch)
                          and all(any(w in v.lower() for v in (s.roll_number, s.name, s.email, s.phone)) for w in words)]
         taken = self.store.exams_taken()
-        self.note.setText(f"{len(everyone)} students. Exams take their list from here by batch (the exam's Students "
-                          "tab, Use a batch…), and reports go to these emails and phones."
+        self.note.setText(f"{len(everyone)} students. Each keeps their Student ID in every exam, whatever roll number "
+                          "they sit under; reports go to these emails and phones."
                           if everyone else "No students yet. Import an Excel list, or add them one by one. Each "
                           "exam can then take its list from here by batch.")
         self.table.setSortingEnabled(False)
@@ -172,6 +185,7 @@ class DirectoryPage(ShownPage):
             return
         try:
             students, problems = read_students(path, None)
+            students = [replace(s, roll_number=s.student_id or s.roll_number) for s in students]
         except (OSError, ValueError) as e:
             QMessageBox.warning(self, "Can't import students", str(e))
             return
@@ -185,6 +199,10 @@ class DirectoryPage(ShownPage):
             more = f"\n…and {len(problems) - 30} more" if len(problems) > 30 else ""
             text += f"\n\n{len(problems)} problems:\n" + "\n".join(problems[:30]) + more
         QMessageBox.information(self, "Students imported", text)
+
+    def set_rolls_change(self, on: bool):
+        self.store.rolls_change = on
+        self.done()  # exams taken are counted again
 
     def done(self):
         self.redraw()

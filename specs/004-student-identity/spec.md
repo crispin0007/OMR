@@ -21,9 +21,12 @@ person.
 - **Roll number per exam.** An exam's student list says which roll number
   each student sits under in that exam, and links each row to a directory
   student. The sheet's roll number finds the row; the row gives the person.
-- **Without a list row.** A roll number read that isn't on the exam's list
-  is matched to the directory student with that ID, as today. App-given IDs
-  start with a letter, so they never collide with a sheet's roll number.
+- **Without a list row.** An institute says once, in the directory, whether
+  roll numbers change from exam to exam. When they don't (the default), a
+  roll number read that isn't on the exam's list is the directory student
+  with that ID, as before. When they do, it is nobody until the list, a
+  confirmed name reading or a typed name says who it is. App-given IDs start
+  with a letter, so they never collide with a sheet's roll number.
 
 ## User Scenarios
 

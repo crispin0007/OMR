@@ -231,8 +231,9 @@ def test_imported_students_show_by_name(app, tmp_path, monkeypatch):
     shown = []
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: shown.append(a[2]))
     w.students.import_button.click()
-    assert shown and shown[0].startswith("Imported 1 student into")
-    assert w.check.table.item(0, 3).text() == "Asha Rai" and w.students.table.item(0, 1).text() == "Asha Rai"
+    assert shown and shown[0].startswith("Imported 1 student into") and "added to it with a Student ID" in shown[0]
+    assert w.check.table.item(0, 3).text() == "Asha Rai" and w.students.table.item(0, 2).text() == "Asha Rai"
+    assert w.students.table.item(0, 1).text() == "S0001" == w.store.directory()[0].roll_number
     w.check.key_edit.setPlainText("A" * 100)
     assert w.results.table.item(0, 2).text() == "Asha Rai"
 
@@ -969,7 +970,7 @@ def test_absent_students_are_listed_and_saved(app, tmp_path, monkeypatch):
     s = w.students
     assert "2 students, 1 absent" in s.note.text() and s.save_absent.isEnabled()
     s.absent_only.setChecked(True)
-    assert s.table.rowCount() == 1 and s.table.item(0, 1).text() == "Bikash Shah" and s.table.item(0, 6).text() == "Absent"
+    assert s.table.rowCount() == 1 and s.table.item(0, 2).text() == "Bikash Shah" and s.table.item(0, 7).text() == "Absent"
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "absent.csv"), ""))
     s.save_absent_list()
     assert (tmp_path / "absent.csv").read_text(encoding="utf-8-sig") == f"Roll number,Name,Class\n{other},Bikash Shah,10 A\n"
@@ -1148,7 +1149,9 @@ def test_a_test_series_shares_students_and_ranks_them_together(app, tmp_path, mo
     monkeypatch.setattr(QInputDialog, "getItem", lambda _p, _t, _l, items, *a: (items[0], True))
     monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.Yes)
     w.students.copy_students()
-    assert store.students(other) == store.students(first) and w.students.table.rowCount() == 1
+    copied = store.students(other)  # the same students, now linked to the directory
+    assert {r: x.name for r, x in copied.items()} == {r: x.name for r, x in store.students(first).items()}
+    assert all(x.student_id for x in copied.values()) and w.students.table.rowCount() == 1
 
 
 def test_topics_are_typed_once_and_reach_the_results(app, tmp_path, monkeypatch):
@@ -1496,7 +1499,7 @@ def test_the_student_directory_is_kept_once_and_an_exam_takes_a_batch(app, tmp_p
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
     w.students.use_batch()
     assert sorted(w.check.students) == ["00034", "00056"] and w.check.students["00034"].batch == "IOE"
-    assert w.students.table.item(0, 3).text() == "IOE"
+    assert w.students.table.item(0, 4).text() == "IOE" and w.students.table.item(0, 1).text() == "34"
 
 
 def test_exams_are_organised_by_program_and_category(app, tmp_path, monkeypatch):
@@ -1714,3 +1717,46 @@ def test_the_name_written_shows_as_a_suggestion_and_can_be_kept(app, tmp_path):
     c.use_names_read()
     assert any(s.roll_number == "107" and s.name == read.removesuffix(" ?") for s in w.store.directory())
     assert c.table.item(0, 3).text() == read.removesuffix(" ?") and not c.table.item(0, 3).font().italic()
+
+
+def test_when_roll_numbers_change_a_name_read_puts_the_student_on_the_list(app, tmp_path):
+    import json
+
+    from PySide6.QtWidgets import QApplication
+
+    from omr_core.sheet import SheetSpec, layout, render
+    from omr_core.students import Student
+    from sheets import fill
+    from test_names import write_name
+    d = layout(SheetSpec("Names", 20, roll_digits=3, sets=0))
+    t = parse(d)
+    roll = next(i for i, g in enumerate(t.grids) if g.kind == "roll_number")
+    path = tmp_path / "named.png"
+    cv2.imwrite(str(path), write_name(fill(render(d), t, {(roll, 1, 0): "pen", (roll, 0, 1): "pen",
+                                                          (roll, 7, 2): "pen"}), t, ["ASHA", "", "RAI"]))
+    w = MainWindow(tmp_path / "omr.db")
+    w.store.rolls_change = True
+    exam = w.store.create_exam("Names", json.dumps(d))
+    w.open_exam(exam)
+    c = w.check
+    w.store.save_student(Student("200", "Asha Rai"))
+    w.store.save_student(Student("107", "Someone Else"))  # a Student ID that is this sheet's roll number: not her
+    c.read_files([str(path)])
+    cell = c.table.item(0, 3)
+    assert cell.text() == "Asha Rai ?" and "Student ID 200" in cell.toolTip()
+    c.select(0)
+    c.use_names_read()
+    assert w.store.students(exam)["107"].student_id == "200" and c.table.item(0, 3).text() == "Asha Rai"
+
+    c.table.item(0, 3).setText("Asha K Rai")  # a spelling corrected: she is on no other exam's list
+    QApplication.processEvents()
+    assert {s.roll_number: s.name for s in w.store.directory()}["200"] == "Asha K Rai"
+    c.table.item(0, 3).setText("someone  else")  # a directory name: that student, linked
+    QApplication.processEvents()
+    assert w.store.students(exam)["107"].student_id == "107"
+    other = w.store.create_exam("Earlier", json.dumps(d))
+    w.store.set_students(other, [Student("055", "Someone Else", student_id="107")])
+    c.table.item(0, 3).setText("New Person")  # they sat another exam, so this is someone new, not a new spelling
+    QApplication.processEvents()
+    assert w.store.students(exam)["107"].student_id == "S0001"
+    assert {s.roll_number: s.name for s in w.store.directory()}["107"] == "Someone Else"

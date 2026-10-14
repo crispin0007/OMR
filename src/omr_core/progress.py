@@ -1,7 +1,8 @@
 """One student over every exam: score, rank and sections in each, how they are moving, and who sat which test.
 
-Sheets are matched to a student by roll number, ignoring the leading zeros a sheet's roll number grid keeps and
-Excel drops, so "00123" read from a sheet is the directory's "123".
+Sheets are matched to a student by their Student ID: an exam's list says which student sat under each roll number,
+and a roll number not on it is the directory student with that ID. Leading zeros a sheet's roll number grid keeps
+and Excel drops don't count, so "00123" read from a sheet is the directory's "123".
 """
 
 from dataclasses import dataclass, field
@@ -26,11 +27,11 @@ class Entry:
     sections: dict[str, float] = field(default_factory=dict)  # percentage per section
 
 
-def history(store: Store, roll: str, exam_ids: list[int] | None = None) -> list[Entry]:
-    """The student's result in each exam (not in the Trash) with a graded sheet for their roll number, oldest
-    first; their best sheet when one was read twice. `exam_ids` limits it to those exams."""
-    want = same_roll(roll)
-    sat = {e for e, r in store.rolls_read() if same_roll(r) == want}
+def history(store: Store, student_id: str, exam_ids: list[int] | None = None) -> list[Entry]:
+    """The student's result in each exam (not in the Trash) with a graded sheet for them, under whatever roll
+    number, oldest first; their best sheet when one was read twice. `exam_ids` limits it to those exams."""
+    want, person = same_roll(student_id), store.person()
+    sat = {e for e, r in store.rolls_read() if person(e, r) == want}
     kept = [i for i, *_ in reversed(store.exams("kept")) if i in sat and (exam_ids is None or i in exam_ids)]
     out = []
     for i in kept:
@@ -40,7 +41,7 @@ def history(store: Store, roll: str, exam_ids: list[int] | None = None) -> list[
                            e.sections)
         except ValueError:
             continue  # no usable key yet: the exam's own Answer key tab says why
-        g = next((g for g in graded if same_roll(g.page.result.roll_number) == want), None)
+        g = next((g for g in graded if person(i, g.page.result.roll_number) == want), None)
         if g is None:
             continue
         qs = questions(e.template)
@@ -66,10 +67,11 @@ def section_averages(entries: list[Entry]) -> list[tuple[str, float, int]]:
     return sorted(((name, round(sum(p) / len(p), 1), len(p)) for name, p in seen.items()), key=lambda s: s[1])
 
 
-def attendance(store: Store, rolls: list[str], exam_ids: list[int]) -> dict[str, list[bool]]:
-    """Whether a sheet was read for each roll number in each exam, in the order given."""
+def attendance(store: Store, students: list[str], exam_ids: list[int]) -> dict[str, list[bool]]:
+    """Whether a sheet was read for each student (by Student ID) in each exam, in the order given."""
     read: dict[int, set[str]] = {i: set() for i in exam_ids}
+    person = store.person()
     for e, r in store.rolls_read():
         if e in read:
-            read[e].add(same_roll(r))
-    return {roll: [same_roll(roll) in read[i] for i in exam_ids] for roll in rolls}
+            read[e].add(person(e, r))
+    return {sid: [same_roll(sid) in read[i] for i in exam_ids] for sid in students}

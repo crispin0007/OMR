@@ -22,8 +22,10 @@ class Student:
     batch: str = ""
     email: str = ""
     phone: str = ""
+    student_id: str = ""  # the directory student this is, on an exam's list; "" when not linked
 
 
+ID_HEADERS = ("student id", "reg", "admission", "enrol")  # a column of the institute's own student numbers
 EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 
@@ -66,12 +68,15 @@ def read_students(path: str | Path, digits: int | None) -> tuple[list[Student], 
     wb.close()
     for h, header in enumerate(rows[:20]):
         names = [str(c or "").strip().lower() for c in header]
-        roll = next((i for i, n in enumerate(names) if "roll" in n or "symbol" in n), None)
+        roll = next((i for i, n in enumerate(names) if ("roll" in n or "symbol" in n)
+                     and not any(w in n for w in ID_HEADERS)), None)  # "enrollment" isn't a roll number
         name = next((i for i, n in enumerate(names) if "name" in n), None)
         cls = next((i for i, n in enumerate(names) if "class" in n or "section" in n), None)
         batch = next((i for i, n in enumerate(names) if "batch" in n or "group" in n), None)
         mail = next((i for i, n in enumerate(names) if "mail" in n), None)
         phone = next((i for i, n in enumerate(names) if any(w in n for w in ("phone", "mobile", "contact"))), None)
+        sid = next((i for i, n in enumerate(names) if n == "id" or any(w in n for w in ID_HEADERS)), None)
+        roll = sid if roll is None else roll  # a directory list may have only the students' IDs
         if roll is not None and name is not None:
             break
     else:
@@ -107,8 +112,13 @@ def read_students(path: str | Path, digits: int | None) -> tuple[list[Student], 
                 except ValueError as e:
                     contact[key] = ""
                     problems.append(f"row {n}: {e}; {number} imported without it")
+            given = cell(sid)
+            given = str(int(given)) if isinstance(given, float) and given.is_integer() else str(given or "").strip()
+            if any(c.isspace() for c in given):
+                problems.append(f"row {n}: student ID {given!r} has spaces; {number} imported without it")
+                given = ""
             students.append(Student(number, who, str(cell(cls) or "").strip(), str(cell(batch) or "").strip(),
-                                    **contact))
+                                    **contact, student_id=given))
     return students, problems
 
 
@@ -134,6 +144,44 @@ def with_directory(listed: dict[str, Student], directory: list[Student], rolls: 
     return out
 
 
+def name_key(name: str) -> str:
+    """A name as compared between lists: case and spacing don't matter."""
+    return " ".join(name.split()).casefold()
+
+
+def link(students: list[Student], directory: list[Student]) -> tuple[list[Student], list[Student], list[Student]]:
+    """An exam's students linked to the directory: (every student with student_id set where it can be, students to
+    add to the directory, students left unlinked because several directory students have their name).
+
+    A student with an ID keeps it (a new ID is a new directory student); else exactly one directory student with
+    the same name links, the phone number choosing between namesakes; else they are new. New students get "" as
+    their ID here, for the store to number."""
+    ids = {same_roll(d.roll_number): d.roll_number for d in directory}
+    by_name: dict[str, list[Student]] = {}
+    for d in directory:
+        by_name.setdefault(name_key(d.name), []).append(d)
+    out, new, unclear = [], [], []
+    for s in students:
+        if s.student_id:
+            known = ids.get(same_roll(s.student_id))
+            s = replace(s, student_id=known or s.student_id)
+            if not known:
+                ids[same_roll(s.student_id)] = s.student_id
+                new.append(s)
+        else:
+            same = by_name.get(name_key(s.name), [])
+            if len(same) > 1 and s.phone:
+                same = [d for d in same if d.phone == s.phone] or same
+            if len(same) == 1:
+                s = replace(s, student_id=same[0].roll_number)
+            elif same:
+                unclear.append(s)
+            else:
+                new.append(s)
+        out.append(s)
+    return out, new, unclear
+
+
 def for_sheet(students: list[Student], digits: int | None) -> tuple[list[Student], list[str]]:
     """Directory students for an exam whose sheet has a `digits`-digit roll number (None for a barcode): numeric
     roll numbers padded with the zeros Excel drops, and the ones that can't be on the sheet, with why."""
@@ -145,5 +193,5 @@ def for_sheet(students: list[Student], digits: int | None) -> tuple[list[Student
                 problems.append(f"{roll} {s.name}: not a roll number of {digits} digits")
                 continue
             roll = roll.zfill(digits)[-digits:]
-        fit.append(replace(s, roll_number=roll))
+        fit.append(replace(s, roll_number=roll, student_id=s.student_id or s.roll_number))
     return fit, problems

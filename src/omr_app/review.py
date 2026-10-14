@@ -159,7 +159,8 @@ class ReviewPage(QWidget):
             current = r.roll_number[int(item.rsplit(" ", 1)[1]) - 1]
             looks = c.suggestion(sheet)
             self.read_as.setText(f"Read as: {current}" + (f"   ·   The name written looks like {looks.name}, roll "
-                                                          f"number {looks.roll_number}" if looks else ""))
+                                                          f"number {looks.roll_number}" if looks and c.misread(looks)
+                                                          else ""))
             self._choice_buttons(item, list("0123456789"), keep=None if current == "?" else current)
         elif item == "set code":
             self.read_as.setText(f"Read as: {r.set_code}")
@@ -167,11 +168,16 @@ class ReviewPage(QWidget):
             self._choice_buttons(item, list(options), keep=None if r.set_code == "?" else r.set_code)
         else:  # the whole roll number, e.g. a duplicate
             student, looks = c.named.get(r.roll_number), c.suggestion(sheet)
-            self.read_as.setText(f"Read as: {r.roll_number}" + (f"  ({student.name})" if student else "") +
-                                 (f"   ·   The name written looks like {looks.name}, roll number {looks.roll_number}"
-                                  if looks else ""))
+            new = looks and not c.misread(looks)  # a directory student sitting under a roll number new to them
+            self.read_as.setText(f"Read as: {r.roll_number}" + (f"  ({student.name})" if student else "") + (
+                f"   ·   The name written looks like {looks.name}, " + (
+                    f"Student ID {looks.roll_number}" if new else f"roll number {looks.roll_number}") if looks else ""))
+            if new and "?" not in r.roll_number:
+                put = QPushButton(f"{looks.name} is roll number {r.roll_number} in this exam", objectName="primary")
+                put.clicked.connect(lambda: self.put_on_list(r.roll_number, looks))
+                self.buttons.addWidget(put)
             digits = next((g.cols for g in t.grids if g.kind == "roll_number"), None)
-            typed = looks.roll_number.zfill(digits or 0) if looks and "?" in r.roll_number else r.roll_number
+            typed = looks.roll_number.zfill(digits or 0) if looks and not new and "?" in r.roll_number else r.roll_number
             edit = QLineEdit(typed.replace("?", ""), maxLength=digits or 40)
             save = QPushButton("Save roll number", objectName="primary")
             save.clicked.connect(lambda: self.fix(item, edit.text()))
@@ -235,6 +241,10 @@ class ReviewPage(QWidget):
         pix = QPixmap.fromImage(q)
         self.picture.setPixmap(pix.scaled(min(pix.width() * 2, 720), min(pix.height() * 2, 360),
                                           Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+    def put_on_list(self, roll: str, student):
+        self.check.put_on_list(roll, student)
+        self.check.fill_table()  # the sheet now has its student, so it leaves the queue
 
     def fix(self, item: str, value: str | None):
         if value is None:

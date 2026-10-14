@@ -149,3 +149,16 @@ def test_names_come_from_the_directory_when_the_exam_has_no_list_for_them():
     directory = [Student("12", "Bikash Lama"), Student("7", "Someone Else")]
     named = with_directory(listed, directory, {"00007", "00012", "00099", "0001?"})
     assert named == {"00007": Student("00007", "Asha Rai"), "00012": Student("12", "Bikash Lama")}
+
+
+def test_an_exam_list_with_student_ids(tmp_path):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    wb.active.append(["Roll no", "Enrollment no", "Name"])
+    wb.active.append([105, 2026001, "Asha Rai"])
+    wb.active.append([106, "A 1", "Bina"])
+    wb.save(tmp_path / "list.xlsx")
+    students, problems = read_students(tmp_path / "list.xlsx", 3)
+    assert [(x.roll_number, x.student_id) for x in students] == [("105", "2026001"), ("106", "")]
+    assert problems == ["row 3: student ID 'A 1' has spaces; 106 imported without it"]

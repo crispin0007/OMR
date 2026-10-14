@@ -436,7 +436,8 @@ class SendDialog(QDialog):
                        "taken back.")
         try:
             self.messages = sending.messages(self.exam, kind or "email", self.subject.text(),
-                                             self.body.toPlainText(), self.directory)
+                                             self.body.toPlainText(), self.directory,
+                                             not self.store.rolls_change)
         except ValueError as e:
             problem = f"{e}."
         if kind == "sms":

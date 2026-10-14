@@ -309,13 +309,17 @@ def values(exam: Exam, g, student=None) -> dict[str, object]:
             "sections": ", ".join(parts), "date": exam.date}
 
 
-def messages(exam: Exam, channel: str, subject: str, body: str, directory: dict = None) -> list[Message]:
+def messages(exam: Exam, channel: str, subject: str, body: str, directory: dict = None,
+             by_roll: bool = True) -> list[Message]:
     """One message per graded student, best first, to the email or phone on the exam's student list, else in the
-    directory (by `same_roll`); "" when neither has one. Raises ValueError for a template with a wrong field."""
+    directory (by the student linked on the list, else, unless `by_roll` is off because roll numbers change from
+    exam to exam, the roll number as a Student ID); "" when neither has one. Raises ValueError for a template with a wrong field."""
     directory = directory or {}
     out = []
     for g in exam.graded:
-        found = [s for s in (g.student, directory.get(same_roll(g.page.result.roll_number))) if s]
+        sid = (g.student.student_id if g.student and g.student.student_id
+               else g.page.result.roll_number if by_roll else "")
+        found = [s for s in (g.student, directory.get(same_roll(sid))) if s]
         v = values(exam, g, found[-1] if found else None)
         to = next((a for s in found if (a := address(s, channel))), "")
         out.append(Message(v["roll"], v["name"], to, fill(subject, v) if channel == "email" else "", fill(body, v)))

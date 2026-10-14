@@ -22,7 +22,7 @@ from omr_core.parallel import PageReader
 from omr_core.reader import read_or_reason
 from omr_core.sources import read_pages
 from omr_core.store import Exam, Store, StoredPage, sheet_number_problems, to_review
-from omr_core.students import Student, same_roll, with_directory
+from omr_core.students import Student, name_key, same_roll, with_directory
 
 from . import theme
 from .answer_key import KeyTab
@@ -349,47 +349,71 @@ class CheckPage(QWidget):
         return sorted({i for i, _, _ in self.review_items()})
 
     def _name(self):
-        self.named = with_directory(self.students, self.store.directory(),
-                                    {s.result.roll_number for s in self.sheets if s.result})
+        # When roll numbers change from exam to exam, a roll number off the list says nothing about who it is.
+        self.named = dict(self.students) if self.store.rolls_change else with_directory(
+            self.students, self.store.directory(), {s.result.roll_number for s in self.sheets if s.result})
 
     def name_of(self, sheet: StoredPage) -> str:
         s = sheet.result and self.named.get(sheet.result.roll_number)
         return s.name if s else ""
 
     def suggestion(self, sheet: StoredPage) -> Student | None:
-        """The directory's student whose name the handwriting fits, for a sheet whose roll number has no student;
-        among those whose roll number fits when some digits couldn't be read."""
+        """The student whose name the handwriting fits, for a sheet whose roll number has no student: one on this
+        exam's list, or in the directory and not on the list yet. When some digits couldn't be read, only those
+        whose roll number fits (a directory student's is their Student ID, unless roll numbers change)."""
         r = sheet.result
         if not r or not r.name or self.name_of(sheet):
             return None
-        students = self.store.directory()
+        on_list = {s.student_id for s in self.students.values() if s.student_id}
+        directory = [s for s in self.store.directory() if s.roll_number not in on_list]
+        unread = "?" in r.roll_number
+        students = list(self.students.values()) + ([] if unread and self.store.rolls_change else directory)
         key = (r.roll_number, len(students), sum(len(s.name) for s in students))
         if self._suggested.get(sheet.id, (None,))[0] != key:
-            self._suggested[sheet.id] = key, suggest(r.name, students, r.roll_number if "?" in r.roll_number else "")
+            self._suggested[sheet.id] = key, suggest(r.name, students, r.roll_number if unread else "")
         return self._suggested[sheet.id][1]
+
+    def listed(self, s: Student) -> bool:
+        """Whether a suggested student is on this exam's list."""
+        return self.students.get(s.roll_number) is s
+
+    def misread(self, s: Student) -> bool:
+        """Whether a suggested student means the sheet's roll number was misread, rather than that they sit under
+        a new one: they are on the list, or roll numbers are Student IDs."""
+        return self.listed(s) or not self.store.rolls_change
 
     def name_read(self, sheet: StoredPage) -> tuple[str, str]:
         """For a sheet with no student for its roll number: what to show for the name written, and why."""
         if not sheet.result or self.name_of(sheet):
             return "", ""
         s = self.suggestion(sheet)
+        if s and self.misread(s):
+            where = "on this exam's list" if self.listed(s) else "in the student directory"
+            return f"{s.name} ?", (f"The name written looks like {s.name}, roll number {s.roll_number} {where}. "
+                                   "Check the roll number on Review.")
         if s:
-            return f"{s.name} ?", (f"The name written looks like {s.name}, roll number {s.roll_number} in the "
-                                   "student directory. Check the roll number on Review.")
+            return f"{s.name} ?", (f"The name written looks like {s.name}, Student ID {s.roll_number} in the "
+                                   "directory. Select the row and press Use names read to put them on this exam's "
+                                   f"list under roll number {sheet.result.roll_number}.")
         text = as_text(sheet.result.name)
         return (f"{text} ?", "Read from the handwriting and not checked. Double-click to correct it, or select "
                 "the rows and press Use names read.") if text else ("", "")
 
     def use_names_read(self):
-        """Save the handwriting read as the name, for selected sheets with a whole roll number and no student."""
+        """For selected sheets with a whole roll number and no student: put the directory student the handwriting
+        fits on the exam's list under it, else save the handwriting read as the name."""
         saved = skipped = 0
         for i in self.selected():
             sheet = self.sheets[i]
             text, _ = self.name_read(sheet)
-            if not text or self.suggestion(sheet) or "?" in sheet.result.roll_number:
+            looks = self.suggestion(sheet)
+            if not text or "?" in sheet.result.roll_number or looks and self.misread(looks):
                 skipped += bool(sheet.result and not self.name_of(sheet))
                 continue
-            self.save_name(sheet.result.roll_number, text.removesuffix(" ?"))
+            if looks:
+                self.put_on_list(sheet.result.roll_number, looks)
+            else:
+                self.save_name(sheet.result.roll_number, text.removesuffix(" ?"))
             saved += 1
         self.fill_table()
         self.window().statusBar().showMessage(
@@ -620,11 +644,27 @@ class CheckPage(QWidget):
         QTimer.singleShot(0, self.fill_table)  # after the editor closes; puts back what was there if not saved
 
     def save_name(self, roll: str, name: str):
-        """The student's name for this roll number, in the directory and, when the exam has a list, in it too."""
+        """The student's name for this roll number. When roll numbers change from exam to exam, it goes on the
+        exam's list, linked to the directory student with that name or a new one; else it is the name of the
+        directory student with this roll number as their ID, and on the exam's list too when it has one."""
         if "?" in roll:
             raise ValueError("correct the roll number first: it has digits that couldn't be read")
         if not name:
             raise ValueError("the student needs a name")
+        if self.store.rolls_change:
+            was = self.students.get(roll)
+            namesakes = [s for s in self.store.directory() if name_key(s.name) == name_key(name)]
+            if len(namesakes) == 1:
+                self.put_on_list(roll, namesakes[0])
+                return
+            if was and was.student_id and self.store.exams_listed(was.student_id) == {self.exam.id}:
+                # a spelling corrected: the student is only on this exam's list, so their own name changes
+                known = next((s for s in self.store.directory() if s.roll_number == was.student_id), None)
+                if known:
+                    self.put_on_list(roll, self.store.save_student(replace(known, name=name), known.roll_number))
+                    return
+            self.put_on_list(roll, self.store.save_student(Student(self.store.new_id(), name)))
+            return
         known = next((s for s in self.store.directory() if same_roll(s.roll_number) == same_roll(roll)), None)
         self.store.save_student(replace(known, name=name) if known else Student(roll, name),
                                 known.roll_number if known else "")
@@ -632,6 +672,14 @@ class CheckPage(QWidget):
             self.students[roll] = replace(self.students.get(roll) or Student(roll, name), name=name)
             self.store.set_students(self.exam.id, list(self.students.values()))
         self.window().statusBar().showMessage(f"Saved {name} as roll number {roll}", 5000)
+
+    def put_on_list(self, roll: str, student: Student):
+        """A directory student on this exam's list, under this roll number."""
+        self.students[roll] = replace(student, roll_number=roll, student_id=student.roll_number)
+        self.store.set_students(self.exam.id, list(self.students.values()))
+        self._name()
+        self.window().statusBar().showMessage(f"{student.name} (Student ID {student.roll_number}) is roll number "
+                                              f"{roll} in this exam", 5000)
 
     def show_sheets(self, rows: list[int] | None, label: str = ""):
         """Show only these sheets (None for all) and bring this page forward."""

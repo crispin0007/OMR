@@ -10,7 +10,8 @@ import os
 import shutil
 import sqlite3
 import tempfile
-from dataclasses import astuple, dataclass
+from collections.abc import Callable
+from dataclasses import astuple, dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -20,11 +21,12 @@ import numpy as np
 from .branding import Institute, check, from_json, to_json
 from .grading import Section, check_sections, sections_from_json, sections_to_json
 from .reader import PageResult
-from .students import Student, check_email, check_phone, same_roll
+from .students import Student, check_email, check_phone, link, same_roll
 from .template import Template, parse
 
 JPEG_QUALITY = 60
 STUDENT = "roll_number, name, class_name, batch, email, phone"  # a Student's columns, in its order
+LISTED = STUDENT + ", student_id"  # and on an exam's list, the directory student it is
 TRASH_DAYS = 30  # an exam in the Trash is deleted for good after this many days
 PNG_MAGIC = b"\x89PNG"
 
@@ -103,10 +105,11 @@ CREATE TABLE IF NOT EXISTS student (
     batch TEXT NOT NULL DEFAULT '',
     email TEXT NOT NULL DEFAULT '',
     phone TEXT NOT NULL DEFAULT '',
+    student_id TEXT NOT NULL DEFAULT '',   -- the directory student sitting under this roll number; '' for none
     PRIMARY KEY (exam_id, roll_number)
 );
 CREATE TABLE IF NOT EXISTS directory (   -- the institute's students, kept once for every exam
-    roll_number TEXT PRIMARY KEY,
+    roll_number TEXT PRIMARY KEY,            -- the Student ID, kept for good; roll numbers are per exam
     name TEXT NOT NULL,
     class_name TEXT NOT NULL DEFAULT '',
     batch TEXT NOT NULL DEFAULT '',
@@ -132,6 +135,10 @@ CREATE TABLE IF NOT EXISTS send_log (    -- each result emailed or texted to a s
 CREATE TABLE IF NOT EXISTS series (      -- how a test series adds up; its exams carry its name in details
     name TEXT PRIMARY KEY,
     best_of INTEGER NOT NULL DEFAULT 0      -- count only each student's best N tests; 0 counts them all
+);
+CREATE TABLE IF NOT EXISTS setting (     -- the institute's own choices that the reading and results depend on
+    name TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS exam_template (
     name TEXT PRIMARY KEY,
@@ -201,6 +208,15 @@ class Store:
             with self.db:
                 for column in ("batch", "email", "phone"):
                     self.db.execute(f"ALTER TABLE student ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+        if "student_id" not in [r[1] for r in self.db.execute("PRAGMA table_info(student)")]:
+            # Lists from before were matched to the directory by roll number: keep those students linked.
+            ids = {same_roll(r): r for (r,) in self.db.execute("SELECT roll_number FROM directory")}
+            with self.db:
+                self.db.execute("ALTER TABLE student ADD COLUMN student_id TEXT NOT NULL DEFAULT ''")
+                self.db.executemany("UPDATE student SET student_id = ? WHERE exam_id = ? AND roll_number = ?",
+                                    [(ids[same_roll(r)], e, r) for e, r in
+                                     self.db.execute("SELECT exam_id, roll_number FROM student").fetchall()
+                                     if same_roll(r) in ids])
 
     def close(self):
         self.db.close()
@@ -550,7 +566,7 @@ class Store:
                         self.db.execute("INSERT INTO key_log (exam_id, at, user, set_code, question, before, after) "
                                         "SELECT ?, at, user, set_code, question, before, after FROM b.key_log "
                                         "WHERE exam_id = ? ORDER BY id", (exam, old))
-                        self.db.execute(f"INSERT INTO student (exam_id, {STUDENT}) SELECT ?, {STUDENT} "
+                        self.db.execute(f"INSERT INTO student (exam_id, {LISTED}) SELECT ?, {LISTED} "
                                         "FROM b.student WHERE exam_id = ?", (exam, old))
                         restored.append(name)
                     self.db.execute("INSERT OR IGNORE INTO exam_template SELECT name, body FROM b.exam_template")
@@ -740,7 +756,7 @@ class Store:
         """Replace the exam's student list."""
         with self.db:
             self.db.execute("DELETE FROM student WHERE exam_id = ?", (exam_id,))
-            self.db.executemany(f"INSERT INTO student (exam_id, {STUDENT}) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            self.db.executemany(f"INSERT INTO student (exam_id, {LISTED}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                                 [(exam_id, *astuple(s)) for s in students])
 
     def set_written_out_of(self, exam_id: int, out_of: float):
@@ -768,12 +784,12 @@ class Store:
         return dict(self.db.execute("SELECT roll_number, marks FROM written WHERE exam_id = ?", (exam_id,)))
 
     def students(self, exam_id: int) -> dict[str, Student]:
-        rows = self.db.execute(f"SELECT {STUDENT} FROM student WHERE exam_id = ?", (exam_id,))
+        rows = self.db.execute(f"SELECT {LISTED} FROM student WHERE exam_id = ?", (exam_id,))
         return {r[0]: Student(*r) for r in rows}
 
 
     def directory(self) -> list[Student]:
-        """The institute's students, by roll number."""
+        """The institute's students, by Student ID (kept as their roll_number)."""
         return [Student(*r) for r in self.db.execute(f"SELECT {STUDENT} FROM directory ORDER BY "
                                                      "length(roll_number), roll_number")]
 
@@ -782,7 +798,7 @@ class Store:
         Raises ValueError for a missing roll number or name, a roll number already taken, or a bad contact."""
         roll, name = student.roll_number.strip(), " ".join(student.name.split())
         if not roll or any(c.isspace() for c in roll):
-            raise ValueError("the roll number can't be empty or have spaces")
+            raise ValueError("the Student ID can't be empty or have spaces")
         if not name:
             raise ValueError("the student needs a name")
         saved = Student(roll, name, student.class_name.strip(), student.batch.strip(), check_email(student.email),
@@ -790,10 +806,11 @@ class Store:
         with self.db:
             if roll != replacing and self.db.execute("SELECT 1 FROM directory WHERE roll_number = ?",
                                                      (roll,)).fetchone():
-                raise ValueError(f"roll number {roll} is already in the directory")
+                raise ValueError(f"Student ID {roll} is already in the directory")
             if replacing:
                 self.db.execute("DELETE FROM directory WHERE roll_number = ?", (replacing,))
-            self.db.execute(f"INSERT INTO directory ({STUDENT}) VALUES (?, ?, ?, ?, ?, ?)", astuple(saved))
+                self.db.execute("UPDATE student SET student_id = ? WHERE student_id = ?", (roll, replacing))
+            self.db.execute(f"INSERT INTO directory ({STUDENT}) VALUES (?, ?, ?, ?, ?, ?)", astuple(saved)[:6])
         return saved
 
     def add_to_directory(self, students: list[Student]) -> tuple[int, int]:
@@ -806,9 +823,66 @@ class Store:
                 if old:
                     s = Student(*(new or was for new, was in zip(astuple(s), astuple(old))))
                 self.db.execute(f"INSERT OR REPLACE INTO directory ({STUDENT}) VALUES (?, ?, ?, ?, ?, ?)",
-                                astuple(s))
+                                astuple(s)[:6])
         added = sum(s.roll_number not in known for s in students)
         return added, len(students) - added
+
+    def new_id(self) -> str:
+        """A Student ID not yet used: S0001, S0002, … A letter first, so it never matches a sheet's roll number."""
+        taken = [int(r[1:]) for (r,) in self.db.execute("SELECT roll_number FROM directory WHERE roll_number "
+                                                         "GLOB 'S[0-9]*'") if r[1:].isdigit()]
+        return f"S{max(taken, default=0) + 1:04d}"
+
+    def link_students(self, students: list[Student]) -> tuple[list[Student], int, list[Student]]:
+        """An exam's students linked to the directory (see `students.link`), adding the new ones to it with their
+        own ID or a new one: (the students, how many were added, those left unlinked between namesakes)."""
+        linked, new, unclear = link(students, self.directory())
+        numbered = {}
+        for s in new:
+            sid = s.student_id or self.new_id()
+            self.save_student(replace(s, roll_number=sid))
+            numbered[id(s)] = sid
+        return [replace(s, student_id=numbered[id(s)]) if id(s) in numbered else s for s in linked], len(new), unclear
+
+    def exams_listed(self, student_id: str) -> set[int]:
+        """The exams whose list has this directory student."""
+        return {e for (e,) in self.db.execute("SELECT exam_id FROM student WHERE student_id = ?", (student_id,))}
+
+    def link_student(self, exam_id: int, roll: str, student_id: str):
+        """Say which directory student sits under a roll number on the exam's list; "" unlinks. Raises ValueError
+        for an ID the directory doesn't have."""
+        if student_id:
+            found = [r for (r,) in self.db.execute("SELECT roll_number FROM directory")
+                     if same_roll(r) == same_roll(student_id)]
+            if not found:
+                raise ValueError(f"no student in the directory has Student ID {student_id}")
+            student_id = found[0]
+        with self.db:
+            self.db.execute("UPDATE student SET student_id = ? WHERE exam_id = ? AND roll_number = ?",
+                            (student_id, exam_id, roll))
+
+    @property
+    def rolls_change(self) -> bool:
+        """Whether students sit under a different roll number in each exam. When they don't (the default), a roll
+        number is the student's ID in the directory; when they do, only an exam's list says who a roll number is."""
+        row = self.db.execute("SELECT value FROM setting WHERE name = 'rolls_change'").fetchone()
+        return bool(row and row[0] == "1")
+
+    @rolls_change.setter
+    def rolls_change(self, on: bool):
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO setting (name, value) VALUES ('rolls_change', ?)", (str(int(on)),))
+
+    def person(self) -> Callable[[int, str], str]:
+        """Who sat under a roll number in an exam, as a key that is the same in every exam: the student linked on
+        the exam's list, by ID; else the roll number as a Student ID, or, when roll numbers change from exam to
+        exam, the roll number in that exam alone. Compared as `same_roll` gives them."""
+        links: dict[tuple[int, str], str] = {}
+        for e, r, sid in self.db.execute("SELECT exam_id, roll_number, student_id FROM student WHERE student_id != ''"):
+            links[e, same_roll(r)] = same_roll(sid)
+        if self.rolls_change:
+            return lambda exam_id, roll: links.get((exam_id, same_roll(roll))) or f"{exam_id}:{same_roll(roll)}"
+        return lambda exam_id, roll: links.get((exam_id, same_roll(roll))) or same_roll(roll)
 
     def remove_students(self, rolls: list[str]):
         """Take students out of the directory; exams keep their own lists and results."""
@@ -846,12 +920,13 @@ class Store:
                                "exam_id = ? ORDER BY id DESC", (exam_id,)).fetchall()
 
     def exams_taken(self) -> dict[str, int]:
-        """Roll number (as `same_roll` gives it) to the number of exams, not in the Trash, with a sheet read for it."""
+        """Student (as `person` gives them) to the number of exams, not in the Trash, with a sheet read for them."""
         kept = {i for i, *_ in self.exams("kept")}
+        person = self.person()
         rolls: dict[str, set[int]] = {}
         for e, r in self.rolls_read():
             if e in kept:
-                rolls.setdefault(same_roll(r), set()).add(e)
+                rolls.setdefault(person(e, r), set()).add(e)
         return {r: len(e) for r, e in rolls.items()}
 
     def batches(self) -> list[str]:

@@ -81,3 +81,30 @@ def test_weights_best_of_movement_and_strengths(tmp_path):
     assert asha.counted == [False, True, True] and asha.total == 60 + 2 * 90
     assert asha.average == round((60 + 2 * 90) / 3, 1)
     assert s.series_settings("CEE")["best_of"] == 2
+
+
+def test_a_student_under_a_new_roll_number_in_each_test_is_one_row(tmp_path):
+    from omr_core.progress import attendance, history
+
+    s = Store(tmp_path / "omr.db")
+    s.rolls_change = True
+    s.save_student(Student("S0001", "Asha Rai"))
+    one = s.create_exam("Mock 1", TEMPLATE, {"series": "JEE"})
+    two = s.create_exam("Mock 2", TEMPLATE, {"series": "JEE"})
+    s.set_students(one, [Student("105", "Asha Rai", student_id="S0001"), Student("106", "Bina")])
+    s.set_students(two, [Student("212", "Asha Rai", student_id="S0001"), Student("105", "Chet")])
+    for exam, results in ((one, [("105", 60), ("106", 70)]), (two, [("212", 90), ("105", 40)])):
+        s.save_scheme(exam, "A" * 100, 1, 0, 0)
+        for roll, right in results:
+            s.add_page(exam, "b", f"{roll}.png", 1, sheet(roll, right))
+    _, rows, _ = series_results(s, "JEE")
+    # Asha is one row under her latest roll number; Chet sat as 105 after Asha did, and is someone else
+    assert sorted((r.roll_number, r.name, r.scores) for r in rows) == [
+        ("105", "Chet", [None, 40]), ("106", "Bina", [70, None]), ("212", "Asha Rai", [60, 90])]
+    assert [e.score for e in history(s, "S0001")] == [60, 90]
+    assert attendance(s, ["S0001"], [one, two]) == {"S0001": [True, True]}
+    assert s.exams_taken()["S0001"] == 2
+
+    s.rolls_change = False  # roll numbers are Student IDs: an unlinked 105 is the same student in both
+    _, rows, _ = series_results(s, "JEE")
+    assert len(rows) == 3

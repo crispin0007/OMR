@@ -9,7 +9,7 @@ import io
 import json
 from pathlib import Path
 
-from PySide6.QtCore import QDate, QStandardPaths, Qt, Signal
+from PySide6.QtCore import QDate, QStandardPaths, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QInputDialog, QLabel,
                                QLineEdit, QMessageBox, QPushButton, QScrollArea, QTableWidget, QTableWidgetItem, QTabWidget,
@@ -97,7 +97,8 @@ class StudentsTab(QWidget):
         self.check = check
         self.note = QLabel(objectName="muted", wordWrap=True)
         self.import_button = QPushButton("Import students…", objectName="primary")
-        self.import_button.setToolTip("An Excel file with roll number, name and (optionally) class columns")
+        self.import_button.setToolTip("An Excel file with roll number and name columns, and optionally Student ID, "
+                                      "class, batch, email and phone")
         self.import_button.clicked.connect(self.import_students)
         self.absent_only = QCheckBox("Show only absent")
         self.absent_only.toggled.connect(lambda _: self.refresh())
@@ -115,9 +116,11 @@ class StudentsTab(QWidget):
         top.addWidget(self.copy_button)
         top.addWidget(self.batch_button)
         top.addWidget(self.import_button)
-        self.table = QTableWidget(0, 7)
-        self.table.setHorizontalHeaderLabels(["Roll number", "Name", "Class", "Batch", "Email", "Phone", "Sheet"])
-        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table = QTableWidget(0, 8)
+        self.table.setHorizontalHeaderLabels(["Roll number", "Student ID", "Name", "Class", "Batch", "Email", "Phone",
+                                              "Sheet"])
+        self.table.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.EditKeyPressed)
+        self.table.itemChanged.connect(self.linked)
         self.table.verticalHeader().hide()
         self.table.horizontalHeader().setStretchLastSection(True)
         layout = QVBoxLayout(self)
@@ -145,20 +148,40 @@ class StudentsTab(QWidget):
             note += f" {unreadable} pages couldn't be read; some of these students may be on them."
         self.note.setText(note)
         warn = QColor(tokens()["warn"])
+        self.table.blockSignals(True)
         self.table.setRowCount(len(students))
         for row, s in enumerate(students):
-            for col, text in enumerate((s.roll_number, s.name, s.class_name, s.batch, s.email, s.phone,
+            for col, text in enumerate((s.roll_number, s.student_id, s.name, s.class_name, s.batch, s.email, s.phone,
                                         "Absent" if s.roll_number in away else "Read")):
                 item = QTableWidgetItem(text)
-                if col == 6 and s.roll_number in away:
+                if col == 7 and s.roll_number in away:
                     item.setForeground(warn)
+                if col == 1:
+                    item.setData(Qt.UserRole, s.roll_number)
+                    item.setToolTip("The student in the directory sitting under this roll number in this exam; "
+                                    "double-click to type another Student ID" if text else
+                                    "Not linked to the directory. Double-click to type the student's Student ID")
+                else:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 self.table.setItem(row, col, item)
+        self.table.blockSignals(False)
         self.table.resizeColumnsToContents()
         self.import_button.setEnabled(c.exam is not None)
         self.save_absent.setEnabled(bool(away))
         self.absent_only.setEnabled(bool(c.students))
         self.copy_button.setEnabled(c.exam is not None)
         self.batch_button.setEnabled(c.exam is not None)
+
+    def linked(self, item: QTableWidgetItem):
+        """A Student ID typed for a roll number: links it to that directory student, or unlinks it when cleared."""
+        c = self.check
+        try:
+            c.store.link_student(c.exam.id, item.data(Qt.UserRole), item.text().strip())
+        except ValueError as e:
+            QMessageBox.warning(self, "Can't link", str(e))
+        c.students = c.store.students(c.exam.id)
+        QTimer.singleShot(0, self.refresh)  # after the editor closes
+        self.changed.emit()
 
     def save_absent_list(self):
         exam = self.check.exam
@@ -196,9 +219,10 @@ class StudentsTab(QWidget):
         if not students:
             QMessageBox.warning(self, "Can't import students", "No usable rows.\n\n" + "\n".join(problems[:30]))
             return
-        if not self._replace(students, "in this file"):
+        linked = self._replace(students, "in this file")
+        if linked is None:
             return
-        text = f"Imported {len(students)} student{'s' if len(students) != 1 else ''} into “{exam.name}”."
+        text = f"Imported {len(students)} student{'s' if len(students) != 1 else ''} into “{exam.name}”." + linked
         if problems:
             more = f"\n…and {len(problems) - 30} more" if len(problems) > 30 else ""
             text += f"\n\nSkipped {len(problems)} rows:\n" + "\n".join(problems[:30]) + more
@@ -214,7 +238,8 @@ class StudentsTab(QWidget):
         picked, ok = QInputDialog.getItem(self, "Use the list of another exam", "Exam", labels, 0, False)
         if ok:
             other = others[labels.index(picked)]
-            self._replace(list(store.students(other[0]).values()), f"of “{other[1]}”")
+            if linked := self._replace(list(store.students(other[0]).values()), f"of “{other[1]}”"):
+                QMessageBox.information(self, "Students linked to the directory", linked.strip())
 
     def use_batch(self):
         store, exam = self.check.store, self.check.exam
@@ -237,22 +262,31 @@ class StudentsTab(QWidget):
             QMessageBox.warning(self, "Can't use that batch", "None of its roll numbers fit this sheet.\n\n"
                                 + "\n".join(problems[:30]))
             return
-        if self._replace(students, "of the batch") and problems:
-            QMessageBox.information(self, "Some students left out", f"{len(problems)} students can't be on this "
-                                    "sheet:\n" + "\n".join(problems[:30]))
+        linked = self._replace(students, "of the batch")
+        if linked is not None and (problems or linked):
+            QMessageBox.information(self, "Some students left out", (f"{len(problems)} students can't be on this "
+                                    "sheet:\n" + "\n".join(problems[:30]) if problems else "") + linked)
 
-    def _replace(self, students: list, source: str) -> bool:
-        """Give the exam these students, asking first when it has some; False when the person says no."""
+    def _replace(self, students: list, source: str) -> str | None:
+        """Give the exam these students, linked to the directory, asking first when it has some: what linking them
+        did, to tell the person ("" for nothing to say), or None when the person says no."""
         exam = self.check.exam
         replacing = self.check.store.students(exam.id)
         if replacing and QMessageBox.question(
                 self, "Replace student list", f"“{exam.name}” already has {len(replacing)} students. Replace them "
                 f"with the {len(students)} {source}?", QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
-            return False
+            return None
+        students, added, unclear = self.check.store.link_students(students)
         self.check.store.set_students(exam.id, students)
         self.changed.emit()
         self.refresh()
-        return True
+        text = (f"\n\n{added} {'were' if added != 1 else 'was'} new to the Student directory and "
+                f"{'were' if added != 1 else 'was'} added to it with a Student ID." if added else "")
+        if unclear:
+            text += (f"\n\n{len(unclear)} share a name with more than one student in the directory, so they aren't "
+                     "linked yet; type their Student ID in the Student ID column:\n"
+                     + "\n".join(f"{s.roll_number} {s.name}" for s in unclear[:30]))
+        return text
 
 
 class WrittenTab(QWidget):

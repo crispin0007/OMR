@@ -42,7 +42,8 @@ def series_results(store: Store, series: str) -> tuple[list[str], list[SeriesRow
     exams = [store.exam(i) for i in store.series_exams(series)]
     settings = store.series_settings(series)
     weights = [settings["weights"].get(str(e.id), 1.0) for e in exams]
-    rows: dict[str, SeriesRow] = {}
+    rows: dict[str, SeriesRow] = {}  # by student (`Store.person`), so a new roll number in each test is one row
+    person = store.person()
     problems = []
     blank = lambda: SeriesRow("", "", "", [None] * len(exams), [None] * len(exams),  # noqa: E731
                               exam_ranks=[None] * len(exams))
@@ -63,8 +64,8 @@ def series_results(store: Store, series: str) -> tuple[list[str], list[SeriesRow
             roll = g.page.result.roll_number
             if "?" in roll:
                 continue  # an unread roll number belongs to nobody yet; Review fixes it
-            row = rows.setdefault(roll, blank())
-            row.roll_number = roll
+            row = rows.setdefault(person(e.id, roll), blank())
+            row.roll_number = roll  # the latest test's
             if row.scores[n] is not None:
                 continue
             out_of = full_marks(g.key, marks)
@@ -79,7 +80,7 @@ def series_results(store: Store, series: str) -> tuple[list[str], list[SeriesRow
         for row, (r, _) in zip(sat, rank([row.scores[n] for row in sat])):
             row.exam_ranks[n] = r
         for s in students.values():  # names come from the latest list; listed students without a sheet count too
-            row = rows.setdefault(s.roll_number, blank())
+            row = rows.setdefault(person(e.id, s.roll_number), blank())
             row.roll_number, row.name, row.class_name, row.batch = s.roll_number, s.name, s.class_name, s.batch
     out = list(rows.values())
     for row in out:
@@ -100,21 +101,21 @@ def series_results(store: Store, series: str) -> tuple[list[str], list[SeriesRow
         now = _ranks(out, weights, settings["best_of"])
         for row in out:
             if row.scores[-1] is not None or row.scores[-2] is not None:
-                row.movement = before[row.roll_number] - now[row.roll_number]
+                row.movement = before[id(row)] - now[id(row)]
     out.sort(key=lambda r: (-r.total, r.roll_number))
     for row, (r, _) in zip(out, rank([r.total for r in out])):
         row.rank = r
     return [e.name for e in exams], out, problems
 
 
-def _ranks(rows: list[SeriesRow], weights: list[float], best_of: int) -> dict[str, int]:
-    """Each student's series rank counting only the first len(weights) tests."""
+def _ranks(rows: list[SeriesRow], weights: list[float], best_of: int) -> dict[int, int]:
+    """Each student's series rank (by the row's id()) counting only the first len(weights) tests."""
     totals = []
     for row in rows:
         taken = [i for i in range(len(weights)) if row.scores[i] is not None]
         keep = sorted(taken, key=lambda i: -(row.percents[i] or 0))[:best_of] if best_of else taken
         totals.append(sum(weights[i] * row.scores[i] for i in keep))
-    return {row.roll_number: r for row, (r, _) in zip(rows, rank(totals))}
+    return {id(row): r for row, (r, _) in zip(rows, rank(totals))}
 
 
 def exam_summary(exams: list[str], rows: list[SeriesRow]) -> list[tuple[str, int, float, float]]:
