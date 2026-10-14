@@ -373,3 +373,20 @@ def _letterhead(c: canvas.Canvas, inst: Institute, w: float, h: float) -> float:
     c.setLineWidth(1)
     c.setFillColor(colors.black)
     return rule + 8 - 20  # the exam's name, at 20 mm on a page without one, goes 8 mm under the rule
+
+
+def sample_scorecard(path: str | Path, institute: Institute | None):
+    """A scorecard for a made-up student, to preview the institute's letterhead."""
+    from .reader import PageResult
+    from .sheet import SheetSection, SheetSpec, layout
+    from .template import parse
+    t = parse(layout(SheetSpec("Preview", 30, sections=[SheetSection("Physics", 15), SheetSection("Chemistry", 15)])))
+    qs = t.questions()
+    key = ["ABCD"[q % 4] for q in qs]
+    answers = {q: "" if q % 9 == 0 else key[n] if q % 5 else "ABCD"[(q + 1) % 4] for n, q in enumerate(qs)}
+    page = StoredPage(0, "", "sample.png", 1, "", PageResult("260101", "A", answers, []), "")
+    counts = [status(answers[q], k) for q, k in zip(qs, key)]
+    graded = Graded(page, key, counts.count("right"), counts.count("right"), counts.count("wrong"),
+                    counts.count("blank"), rank=3, percentile=91.7, student=Student("260101", "Sample Student", "12"),
+                    sections={"Physics": 12, "Chemistry": 11})
+    write_scorecards(path, "Weekly mock test 3", t, [graded], institute, out_of=36)

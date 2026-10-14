@@ -200,6 +200,22 @@ def test_results_export_asks_while_marks_wait_for_review(app, tmp_path, monkeypa
     w.results.excel.click()
     assert out.exists()
 
+    # Each student's report: zip or folder, picked on the question that comes up.
+    def pick(text):
+        monkeypatch.setattr(QMessageBox, "exec",
+                            lambda box: next(b for b in box.buttons() if b.text() == text).click())
+    pick("One zip file…")
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "reports"), ""))
+    w.results.reports.click()
+    import zipfile
+    with zipfile.ZipFile(tmp_path / "reports.zip") as z:
+        rolls = sorted(f[2] for f in files)
+        assert sorted(z.namelist()) == sorted(f"{r}.{e}" for r in rolls for e in ("html", "pdf"))
+    pick("A folder…")
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path / "folder"))
+    w.results.reports.click()
+    assert len(list((tmp_path / "folder").iterdir())) == 4
+
 
 def test_imported_students_show_by_name(app, tmp_path, monkeypatch):
     from openpyxl import Workbook
@@ -750,6 +766,63 @@ def test_a_key_edit_redraws_only_the_page_on_screen(app, tmp_path, monkeypatch):
     assert c.table.item(0, 6).text() == str(right)
     c.correct.setValue(2)  # scores kept from before are worked out again
     assert c.table.item(0, 6).text() == str(2 * right) and w.dashboard.average.value.text() == f"{2 * right:.1f}"
+
+
+
+def test_an_institute_is_set_up_once_and_shows_on_the_exam_its_sheet_and_scorecards(app, tmp_path, monkeypatch):
+    import pypdfium2
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from omr_app import institutes
+    from omr_app.new_exam import NewExamWizard
+    logo = np.full((300, 300, 3), 255, np.uint8)
+    cv2.circle(logo, (150, 150), 120, (180, 80, 20), -1)
+    cv2.imwrite(str(tmp_path / "logo.png"), logo)
+    (path, answers, roll, set_code), = sheet_files(tmp_path, [3])
+    w = window(tmp_path)
+    c = w.check
+    c.read_files([path])
+    c.key_edit.setPlainText(f"{set_code}: " + "".join(answers[q] or "A" for q in c.questions))
+
+    d = institutes.InstitutesDialog(w, w.store)
+    assert d.current is None and d.list.count() == 0
+    d.edits["name"].setText("Sunrise Academy")
+    d.edits["email"].setText("not an address")
+    d.save_button.click()
+    assert "email" in d.problem.text() and w.store.institutes() == []
+    d.edits["email"].setText("office@sunrise.example")
+    d.edits["address"].setPlainText("Ring Road, Lalitpur")
+    d.edits["signer_name"].setText("R. Sharma")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(tmp_path / "logo.png"), ""))
+    d.pick_logo()
+    assert d.logo and not d.logo_view.pixmap().isNull()
+    d.save_button.click()
+    assert d.list.count() == 1 and d.list.item(0).text() == "Sunrise Academy  (default)" and d.problem.text() == ""
+    d.draw_preview()
+    assert not d.preview.pixmap().isNull()
+    d.new()
+    d.edits["name"].setText("Evening Campus")
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.Save)
+    d.reject()  # closing asks to save the new one
+    assert [i.name for _, i, _ in w.store.institutes()] == ["Evening Campus", "Sunrise Academy"]
+    w.institute_changed()
+
+    assert "Sunrise Academy" in w.exam_page.about.text() and not w.exam_page.logo.isHidden()
+    s = w.exam_settings
+    assert s.institute.itemText(0) == "The default (Sunrise Academy)"
+    s.institute.setCurrentIndex(s.institute.findText("Evening Campus"))
+    s.set_institute()
+    assert "Evening Campus" in w.exam_page.about.text() and w.exam_page.logo.isHidden()
+
+    wizard = NewExamWizard(w, w.store)  # a new exam's sheet starts with the default institute
+    assert wizard.heading.text() == "Sunrise Academy" and wizard.logo
+    wizard.close()
+
+    out = tmp_path / "cards.pdf"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), ""))
+    w.results.redraw()
+    w.results.pdf.click()
+    assert "Evening Campus" in pypdfium2.PdfDocument(out)[0].get_textpage().get_text_range()
 
 
 def test_a_printed_copy_is_checked_before_printing_the_rest(app, tmp_path, monkeypatch):

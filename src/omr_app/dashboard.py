@@ -5,11 +5,12 @@ from math import atan2, degrees
 
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import (QFileDialog, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-                               QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QToolTip, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QApplication, QFileDialog, QGridLayout, QHBoxLayout, QLabel, QListWidget,
+                               QListWidgetItem, QMessageBox, QProgressDialog, QPushButton, QTableWidget,
+                               QTableWidgetItem, QToolTip, QVBoxLayout, QWidget)
 
 from omr_core.export import Graded, write_excel, write_scorecards
+from omr_core.report import write_reports
 
 from .theme import tokens
 
@@ -300,11 +301,15 @@ class ResultsPage(ShownPage):
         self.pdf = QPushButton("Scorecards (PDF)…")
         self.pdf.clicked.connect(lambda: self.export("PDF", "pdf", write_scorecards))
         self.csv = QPushButton("Results (CSV)…", toolTip="Pick the columns and their order, then save a CSV for Excel")
+        self.reports = QPushButton("Student reports…", toolTip="Each student's scorecard as a page that opens in any "
+                                   "browser or phone, and as a PDF, named by roll number, in a folder or a zip")
+        self.reports.clicked.connect(self.save_reports)
         self.csv.clicked.connect(check.save_csv)
         top = QHBoxLayout()
         top.addStretch()
         top.addWidget(self.excel)
         top.addWidget(self.pdf)
+        top.addWidget(self.reports)
         top.addWidget(self.csv)
         layout = QVBoxLayout(self)
         layout.addLayout(top)
@@ -324,6 +329,7 @@ class ResultsPage(ShownPage):
                               "Written marks tab.")
         self.excel.setEnabled(bool(self.graded))
         self.pdf.setEnabled(bool(self.graded))
+        self.reports.setEnabled(bool(self.graded))
         self.csv.setEnabled(bool(c.sheets))
         self.table.setSortingEnabled(False)
         names = [s.name for s in c.sections]
@@ -351,13 +357,57 @@ class ResultsPage(ShownPage):
         self.table.sortItems(0, Qt.AscendingOrder)
         self.table.resizeColumnsToContents()
 
+    def _checked_first(self) -> bool:
+        """False when marks still wait on Review and the person would rather check them first."""
+        waiting = len(self.check.review_items())
+        return not waiting or QMessageBox.question(
+            self, "Marks still to check",
+            f"{waiting} items still need checking on Review, so some scores may change. Export anyway?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes
+
+    def save_reports(self):
+        c = self.check
+        if not self._checked_first():
+            return
+        box = QMessageBox(QMessageBox.Question, "Student reports",
+                          f"Save {len(self.graded)} scorecards, each as a page for any browser or phone and as a PDF, "
+                          "named by roll number. They are made on this PC; nothing is sent anywhere.", parent=self)
+        zipped = box.addButton("One zip file…", QMessageBox.AcceptRole)
+        folder = box.addButton("A folder…", QMessageBox.AcceptRole)
+        box.addButton(QMessageBox.Cancel)
+        box.exec()
+        name = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in c.exam.name).strip() or "results"
+        if box.clickedButton() is zipped:
+            path, _ = QFileDialog.getSaveFileName(self, "Save student reports", f"{name} reports.zip", "Zip (*.zip)")
+            if path and not path.lower().endswith(".zip"):
+                path += ".zip"
+        elif box.clickedButton() is folder:
+            path = QFileDialog.getExistingDirectory(self, "Folder for the student reports")
+        else:
+            return
+        if not path:
+            return
+        progress = QProgressDialog("Making the reports…", "Stop", 0, len(self.graded), self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(300)
+
+        def step(done: int, total: int) -> bool:
+            progress.setValue(done)
+            QApplication.processEvents()
+            return not progress.wasCanceled()
+        try:
+            done = write_reports(path, c.exam.name, c.exam.template, self.graded, c.marks, c.sections,
+                                 c.store.institute_for(c.exam.id), c.exam.written_out_of, step)
+        except OSError as e:
+            progress.close()
+            QMessageBox.warning(self, "Couldn't save", f"{path}\n\n{e}")
+            return
+        progress.close()
+        self.window().statusBar().showMessage(f"Saved {done} student reports in {path}", 8000)
+
     def export(self, kind: str, ext: str, write):
         c = self.check
-        waiting = len(c.review_items())
-        if waiting and QMessageBox.question(
-                self, "Marks still to check",
-                f"{waiting} items still need checking on Review, so some scores may change. Export anyway?",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+        if not self._checked_first():
             return
         name = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in c.exam.name).strip() or "results"
         default = f"{name} {'merit list' if ext == 'xlsx' else 'scorecards'}.{ext}"
@@ -365,7 +415,7 @@ class ResultsPage(ShownPage):
         if not path:
             return
         try:
-            write(path, c.exam.name, c.exam.template, self.graded)
+            write(path, c.exam.name, c.exam.template, self.graded, c.store.institute_for(c.exam.id))
         except OSError as e:  # e.g. the file is open in Excel
             QMessageBox.warning(self, "Couldn't save", f"{path}\n\n{e}")
             return

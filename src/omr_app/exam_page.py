@@ -21,6 +21,7 @@ from omr_core.sources import read_pages
 from omr_core.students import absent, read_students
 from omr_core.template import parse
 
+from .institutes import logo_pixmap
 from .new_exam import TEMPLATES, USER_TEMPLATES
 from .printing import PrintBar
 from .theme import tokens
@@ -38,9 +39,11 @@ class ExamPage(QWidget):
         back.clicked.connect(self.back.emit)
         self.title = QLabel(objectName="title")
         self.about = QLabel(objectName="muted")
+        self.logo = QLabel()
         top = QHBoxLayout()
         top.addWidget(back)
         top.addSpacing(12)
+        top.addWidget(self.logo)
         top.addWidget(self.title)
         top.addSpacing(12)
         top.addWidget(self.about, 1)
@@ -62,9 +65,13 @@ class ExamPage(QWidget):
 
     def refresh(self):
         exam = self.check.exam
+        institute = self.check.store.institute_for(exam.id) if exam else None
         self.title.setText(exam.name if exam else "")
-        self.about.setText("  ·  ".join([*when(exam), f"{len(self.check.questions)} questions",
+        self.about.setText("  ·  ".join([*([institute.name] if institute else []), *when(exam),
+                                         f"{len(self.check.questions)} questions",
                                          f"{len(self.check.sheets)} sheets read"]) if exam else "")
+        self.logo.setPixmap(logo_pixmap(institute.logo, 32) if institute and institute.logo else QPixmap())
+        self.logo.setVisible(bool(institute and institute.logo))
 
 
 def when(exam) -> list[str]:
@@ -420,6 +427,13 @@ class ExamSettings(QWidget):
         series_row.addWidget(QLabel("Test series"))
         series_row.addWidget(self.series, 1)
         series_row.addWidget(put)
+        self.institute = QComboBox()
+        self.institute.setToolTip("The institute printed on this exam's scorecards and exports; add them in "
+                                  "Settings, Institutes")
+        self.institute.activated.connect(self.set_institute)
+        institute_row = QHBoxLayout()
+        institute_row.addWidget(QLabel("Institute"))
+        institute_row.addWidget(self.institute, 1)
         self.about = QLabel(objectName="muted", wordWrap=True)
         change = QPushButton("Change sheet…")
         change.clicked.connect(self.change_sheet)
@@ -428,6 +442,7 @@ class ExamSettings(QWidget):
         layout = QVBoxLayout(self)
         layout.addLayout(row)
         layout.addLayout(series_row)
+        layout.addLayout(institute_row)
         layout.addWidget(self.about)
         layout.addSpacing(24)
         layout.addWidget(QLabel("If students filled a different sheet from this exam's, pick that sheet's template; "
@@ -444,6 +459,15 @@ class ExamSettings(QWidget):
         self.series.clear()
         self.series.addItems(["", *self.check.store.series_names()])
         self.series.setCurrentText(exam.details.get("series", "") if exam else "")
+        rows = self.check.store.institutes()
+        default = next((inst.name for _, inst, d in rows if d), "")
+        self.institute.clear()
+        self.institute.addItem(f"The default ({default})" if default else "None (add one in Settings)", None)
+        for i, inst, _ in rows:
+            self.institute.addItem(inst.name, i)
+        chosen = exam.details.get("institute") if exam else None
+        self.institute.setCurrentIndex(max(0, self.institute.findData(chosen)) if chosen is not None else 0)
+        self.institute.setEnabled(bool(rows))
         self.about.setText("\n".join([*when(exam), f"Sheet: {exam.template.name}, {len(self.check.questions)} "
                                        f"questions.  Created {exam.created.replace('T', ' ')}."]) if exam else "")
 
@@ -453,6 +477,10 @@ class ExamSettings(QWidget):
         except ValueError as e:
             QMessageBox.warning(self, "Can't rename", str(e))
             return
+        self.changed.emit()
+
+    def set_institute(self):
+        self.check.store.set_exam_institute(self.check.exam.id, self.institute.currentData())
         self.changed.emit()
 
     def set_series(self):

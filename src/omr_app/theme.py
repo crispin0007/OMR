@@ -137,7 +137,7 @@ class SettingsPage(QWidget):
         swatches.addStretch()
 
         card = QWidget(objectName="card")
-        form = QFormLayout(card)
+        form = self.form = QFormLayout(card)
         form.setContentsMargins(20, 20, 20, 20)
         form.setVerticalSpacing(14)
         form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)

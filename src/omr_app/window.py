@@ -31,6 +31,7 @@ from .exam_page import ExamPage, ExamSettings, PrintSheet, StudentsTab, WrittenT
 from .exam_templates import TemplatesPage
 from .exams import TEMPLATES, ExamsPage  # noqa: F401  (tests find the templates here)
 from .help import HelpDialog
+from .institutes import InstituteSettings
 from .paths import data_dir
 from .new_exam import Deduction
 from .review import ReviewPage
@@ -659,6 +660,7 @@ class MainWindow(QMainWindow):
         self.templates = TemplatesPage(self.store)
         self.designer = DesignerPage()
         self.settings = theme.SettingsPage(self.prefs)
+        self.settings.form.addRow("Institute", InstituteSettings(self.store, self.institute_changed))
         self.settings.changed.connect(self.apply_prefs)
         self.pages = {"Dashboard": self.dashboard, "Exams": self.exams_area, "Templates": self.templates,
                       "Map printed sheet": self.designer, "Settings": self.settings}
@@ -748,6 +750,11 @@ class MainWindow(QMainWindow):
         self.check.students = self.store.students(self.check.exam.id)
         self.check.fill_table()
         self.exams.refresh()
+
+    def institute_changed(self):
+        """An institute was added, changed or deleted: redraw what shows it."""
+        self.exam_page.refresh()
+        self.exam_settings.refresh()
 
     def go(self, name: str):
         """Show a sidebar page, or a tab of the open exam's page."""

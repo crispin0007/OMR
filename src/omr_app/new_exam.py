@@ -198,6 +198,14 @@ class NewExamWizard(QDialog):
             layout.setContentsMargins(4, 0, 4, 0)
             build(layout)
             self.steps.addWidget(page)
+        institute = next((inst for _, inst, default in store.institutes() if default), None)
+        if institute:  # the sheet starts with the default institute's name, colour and logo
+            self.heading.setText(institute.name)
+            self._add_colour(f"{institute.name} colour", institute.colour)
+            self.colour.setCurrentIndex(self.colour.findData(institute.colour))
+            if institute.logo:
+                self.logo = logo_jpeg(institute.logo)
+                self.logo_label.setText(f"{institute.name} logo")
 
         self.rail = []
         rail = QVBoxLayout()
