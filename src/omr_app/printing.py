@@ -24,6 +24,8 @@ class PrintBar(QWidget):
         super().__init__()
         self.template: dict | None = None
         self.name = ""
+        self.people: list[tuple[str, str]] = []  # (roll number, name): one sheet each, printed for them
+        self.program = ""  # written on the Program line
         self.paper = QComboBox()
         self.paper.addItems(list(PAPERS))
         self.paper.setToolTip("The sheet is scaled to fit the paper; it reads the same on any of them")
@@ -66,7 +68,8 @@ class PrintBar(QWidget):
         """The sheet numbers to print, none for a sheet without them; ValueError says what to change."""
         if "serial_mm" not in self.template:
             return []
-        return sheet_numbers(self.prefix.text().strip(), self.first.value(), self.copies.value())
+        return sheet_numbers(self.prefix.text().strip(), self.first.value(),
+                             len(self.people) or self.copies.value())
 
     def first_number(self) -> str:
         """The first sheet's number, for the preview; "" when there is none or it can't be made."""
@@ -92,7 +95,10 @@ class PrintBar(QWidget):
         if not path:
             return
         try:
-            write_pdf(self.template, path, self.paper.currentText(), numbers)
+            write_pdf(self.template, path, self.paper.currentText(), numbers, self.people, self.program)
+        except ValueError as e:  # a roll number that doesn't fit the sheet
+            QMessageBox.warning(self, "Couldn't save", f"{e}.")
+            return
         except OSError as e:  # e.g. the PDF is open in a viewer
             QMessageBox.warning(self, "Couldn't save", f"{path}\n\n{e}")
             return
@@ -113,7 +119,11 @@ class PrintBar(QWidget):
     def paint(self, printer: QPrinter, numbers: list[str]):
         """Draw the sheets on the printer, one page each, from the same PDF Save as PDF writes."""
         buf = io.BytesIO()
-        write_pdf(self.template, buf, self.paper.currentText(), numbers)
+        try:
+            write_pdf(self.template, buf, self.paper.currentText(), numbers, self.people, self.program)
+        except ValueError as e:
+            QMessageBox.warning(self, "Couldn't print", f"{e}.")
+            return
         pdf = pdfium.PdfDocument(buf.getvalue())
         progress = QProgressDialog("Sending the sheets to the printer…", "Stop", 0, len(pdf), self)
         progress.setWindowModality(Qt.WindowModal)

@@ -1773,3 +1773,26 @@ def test_when_roll_numbers_change_a_name_read_puts_the_student_on_the_list(app, 
     QApplication.processEvents()
     assert w.store.students(exam)["107"].student_id == "S0001"
     assert {s.roll_number: s.name for s in w.store.directory()}["107"] == "Someone Else"
+
+
+def test_a_sheet_is_printed_for_each_student_on_the_list(app, tmp_path, monkeypatch):
+    import json
+
+    import pypdfium2
+    from PySide6.QtWidgets import QFileDialog
+
+    from omr_core.sheet import SheetSpec, layout
+    from omr_core.students import Student
+    w = MainWindow(tmp_path / "omr.db")
+    exam = w.store.create_exam("Mock 7", json.dumps(layout(SheetSpec("Weekly", 20, roll_digits=3, sets=0))))
+    w.open_exam(exam)
+    p = w.print_sheet
+    assert not p.personal.isEnabled()  # no list yet
+    w.store.set_students(exam, [Student("012", "Asha Rai"), Student("007", "Bikash Lama")])
+    w.reload_students()
+    p.personal.setChecked(True)
+    assert p.bar.people == [("007", "Bikash Lama"), ("012", "Asha Rai")] and "2 sheets" in p.note.text()
+    assert not p.bar.copies.isEnabled() and p.bar.program == "Mock 7"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "sheets.pdf"), ""))
+    p.save.click()
+    assert len(pypdfium2.PdfDocument(tmp_path / "sheets.pdf")) == 2

@@ -129,6 +129,8 @@ on the **Templates** screen.
   sheets, scorecards, reports and Excel; several institutes, one default, a choice per exam.
 - **Test series**: combined leaderboard over several tests, with each test's rank, places gained or
   lost, improvement, best-of-N and weights, and analysis by test and section.
+- **A sheet for each student**: print every student's own sheet with their name written and their
+  roll number bubbles already filled, so a roll number is never filled wrongly.
 - **Send results by WhatsApp, email or SMS**: each student's chat opens in WhatsApp with their
   result typed in, ready to send; email (any server) and SMS (Twilio or your own gateway) once set
   up, with a preview, a test to yourself, sending limits, a send log, never sent twice.

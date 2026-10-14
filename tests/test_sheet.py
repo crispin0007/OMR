@@ -305,3 +305,25 @@ def test_rows_still_line_up_when_every_bubble_has_a_bold_letter_in_it():
     page[top + shift:page.shape[0] * 9 // 10] = page[top:page.shape[0] * 9 // 10 - shift].copy()
     r = read_page(scan(page, angle=0.3, seed=11), t)
     assert (r.roll_number, r.answers, r.flags) == (roll, answers, [])
+
+
+def test_a_sheet_printed_for_a_student_reads_their_roll_number(tmp_path):
+    import io
+
+    import pypdfium2
+
+    d = layout(SheetSpec("Weekly", 20, roll_digits=4, sets=0, track=True))
+    t = parse(d)
+    page = render(d, number="A-0001", person=("105", "Asha Kumari Rai"), program="Mock 7")
+    r = read_page(page, t)
+    assert r.roll_number == "0105" and not any(where.startswith("roll") for where, _ in r.flags)
+    assert r.serial == "A-0001" and not any(r.answers.values())  # nothing else is filled for them
+    buf = io.BytesIO()
+    write_pdf(d, buf, numbers=["A-0001", "A-0002"], people=[("105", "Asha Rai"), ("7", "Bikash")])
+    pdf = pypdfium2.PdfDocument(buf.getvalue())
+    assert len(pdf) == 2
+    assert [read_page(pdf[k].render(scale=200 / 72).to_numpy(), t).roll_number for k in range(2)] == ["0105", "0007"]
+    with pytest.raises(ValueError, match="doesn't fit"):
+        write_pdf(d, io.BytesIO(), people=[("12345", "Too Long")])
+    with pytest.raises(ValueError, match="doesn't fit"):
+        write_pdf(d, io.BytesIO(), people=[("A12", "Not Digits")])

@@ -30,6 +30,23 @@ Before printing a whole class's sheets:
 The app tells you whether the sheet reads. If it doesn't, check your printer's scaling and margins
 before printing the rest.
 
+## A sheet for each student
+
+When the exam has a student list (the **Students** tab), tick **One sheet per student, their name
+and roll number printed** on the Print sheet tab. Print or **Save as PDF…** then makes one page per
+student, in roll number order:
+
+- their **roll number** is written in its boxes and **its bubbles are already filled**, so it is
+  read exactly and a student can't fill it wrongly;
+- their **name** is written in the name boxes, one letter a box (a long middle name runs together);
+- the exam's name is written on the **Program** line.
+
+![A sheet printed for one student, with the name and roll number filled in](images/personal-sheet.png)
+
+Hand each student their own sheet. With sheet numbers ticked, each student's page also gets the
+next sheet number. A roll number that doesn't fit the sheet's roll number digits stops the printing
+and says which one.
+
 ## Sheet numbers
 
 A **sheet number** is a number printed on every copy (A-0001, A-0002, …), as text and as a

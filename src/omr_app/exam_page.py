@@ -399,8 +399,13 @@ class PrintSheet(QWidget):
         self.try_print.setToolTip("Before printing them all: scan or photograph one printed sheet, blank or with a "
                                   "few bubbles filled, to see that it reads")
         self.try_print.clicked.connect(self.check_print)
+        self.personal = QCheckBox("One sheet per student, their name and roll number printed")
+        self.personal.setToolTip("A sheet for each student on the exam's list (Students tab), with their roll "
+                                 "number bubbles already filled, so a roll number can't be filled wrongly")
+        self.personal.toggled.connect(lambda _: self.refresh())
         top = QHBoxLayout()
         top.addWidget(self.note, 1)
+        top.addWidget(self.personal)
         top.addWidget(self.try_print)
         self.preview = QLabel(alignment=Qt.AlignCenter)
         scroll = QScrollArea(widgetResizable=True)
@@ -416,6 +421,12 @@ class PrintSheet(QWidget):
         self.template = d if "print" in d else None  # only sheets New exam made carry what to print
         self.bar.set_template(self.template, exam.name if exam else "")
         self.try_print.setEnabled(exam is not None)
+        listed = sorted(((s.roll_number, s.name) for s in self.check.students.values()), key=lambda p: p[0])
+        self.personal.setEnabled(bool(self.template and listed))
+        personal = self.personal.isChecked() and self.personal.isEnabled()
+        self.bar.people = listed if personal else []
+        self.bar.program = exam.name if exam and personal else ""
+        self.bar.copies.setEnabled(not personal)
         self.preview.clear()
         if exam is None:
             self.note.setText("")
@@ -426,9 +437,16 @@ class PrintSheet(QWidget):
             self.note.setText("This exam's sheet, ready for any paper size. Keep all four corner circles on the "
                               "paper; scaling or “fit to page” is fine."
                               + (" Each sheet gets its own number, read back when it is scanned."
-                                 if "serial_mm" in self.template else ""))
-            page = render(self.template, dpi=80, paper=self.bar.paper.currentText(),
-                          number=self.bar.first_number())
+                                 if "serial_mm" in self.template else "")
+                              + (f" {len(listed)} sheets, one for each student on the list; hand each student "
+                                 "their own." if personal else ""))
+            try:
+                page = render(self.template, dpi=80, paper=self.bar.paper.currentText(),
+                              number=self.bar.first_number(), person=listed[0] if personal else None,
+                              program=self.bar.program)
+            except ValueError as e:  # a listed roll number that doesn't fit this sheet
+                self.note.setText(f"Can't print the students' sheets: {e}.")
+                return
             image = QImage(page.data, page.shape[1], page.shape[0], page.strides[0], QImage.Format_BGR888).copy()
             self.preview.setPixmap(QPixmap.fromImage(image))
 

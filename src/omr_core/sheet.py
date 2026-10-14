@@ -451,15 +451,22 @@ def _fonts():
         pdfmetrics.registerFont(TTFont(BOLD, str(FONTS / "Poppins-SemiBold.ttf")))
 
 
-def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4", numbers: list[str] = ()):
+def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4", numbers: list[str] = (),
+              people: list[tuple[str, str]] = (), program: str = ""):
     """Print a template made by `layout` as an answer sheet on this paper, scaled to fit and centred: one page
     per sheet number when the sheet has one (`numbers`), or one page with the number left blank.
+
+    With `people` (roll number, name), one page per student instead, their sheet number the next of `numbers`:
+    their roll number written in its boxes with its bubbles filled, so it reads without the student filling it,
+    and their name in the name boxes. `program` is written on the Program line of every page.
 
     The reader finds the sheet by its corner marks, so the scale doesn't matter to it.
     """
     if paper not in PAPERS:
         raise ValueError(f"paper must be one of {', '.join(PAPERS)}")
     t = parse(template)
+    roll_grid = next((g for g in t.grids if g.kind == "roll_number"), None)
+    people = [(_printed_roll(roll, roll_grid), name) for roll, name in people]
     style = _style(template)
     _fonts()
     ink = colors.HexColor(style["colour"])
@@ -656,10 +663,26 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4", n
          colour=ink, align="centre")
     c.endForm()
 
-    for number in numbers if t.serial else [""]:
+    pages = [(numbers[i] if t.serial and i < len(numbers) else "", who) for i, who in enumerate(people)] if people \
+        else [(number, None) for number in (numbers if t.serial else [""])]
+    for number, who in pages:
         c.translate((pw - w * fit) / 2 * mm, (ph - h * fit) / 2 * mm)
         c.scale(fit, fit)
         c.doForm("sheet")
+        if program:
+            px0, py0 = hd["middle"][:2]
+            text(px0 + 18.5, py0 + 4.1, _fit(program, BOLD, 8.5, hd["middle"][2] - px0 - 20), 8.5, BOLD)
+        if who:
+            roll_number, name = who
+            if roll_grid and roll_number:
+                rx0, ry0 = hd["roll"][:2]
+                for col, digit in enumerate(roll_number):
+                    cx = roll_grid.centre(0, col)[0]
+                    text(cx, ry0 + BAND + 5.9, digit, 12, BOLD, align="centre")
+                    pill(cx, roll_grid.centre(int(digit), col)[1], "", colors.black)
+            for word, boxes in zip(_name_words(name), name_boxes()):
+                for letter, (bx, by, bw, bh) in zip(word, boxes):
+                    text(bx + bw / 2, by + bh - 1.4, letter, 10, BOLD, align="centre")
         if t.serial:
             x0, y0, x1, y1 = SERIAL_BOX
             box(x0, y0, x1, y1)
@@ -671,6 +694,37 @@ def write_pdf(template: dict, out: str | Path | io.BytesIO, paper: str = "A4", n
                  align="centre")
         c.showPage()
     c.save()
+
+
+def _printed_roll(roll: str, grid) -> str:
+    """A student's roll number as printed in the roll number grid: its digits, padded with the zeros Excel drops;
+    "" for a sheet without the grid. Raises ValueError for one that doesn't fit the grid."""
+    roll = roll.strip()
+    if grid is None:
+        return ""
+    if not roll.isdigit() or len(roll.lstrip("0")) > grid.cols:
+        raise ValueError(f"roll number {roll!r} doesn't fit the sheet's {grid.cols} roll number digits")
+    return roll.zfill(grid.cols)[-grid.cols:]
+
+
+def _name_words(name: str) -> list[str]:
+    """A name in the first, middle and last name boxes: two words go first and last, more fill the middle box
+    without spaces; each cut to the boxes there are."""
+    words = name.upper().split()
+    if len(words) <= 1:
+        out = words + ["", ""]
+    elif len(words) == 2:
+        out = [words[0], "", words[1]]
+    else:
+        out = [words[0], "".join(words[1:-1]), words[-1]]
+    return [w[:len(name_boxes()[0])] for w in out[:3]]
+
+
+def _fit(s: str, font: str, size: float, room_mm: float) -> str:
+    """The text cut with an ellipsis to fit the room."""
+    while s and pdfmetrics.stringWidth(s, font, size) > room_mm * mm:
+        s = s[:-2] + "…"
+    return s
 
 
 def _mix(colour: colors.Color, share: float) -> colors.Color:
@@ -687,10 +741,11 @@ def _readable(colour: colors.Color) -> colors.Color:
     return colour if grey >= LIGHTEST_LETTER else _mix(colour, (1 - LIGHTEST_LETTER) / (1 - grey))
 
 
-def render(template: dict, dpi: int = 200, paper: str = "A4", number: str = "") -> np.ndarray:
-    """The printed sheet as a BGR image, for the preview and for tests."""
+def render(template: dict, dpi: int = 200, paper: str = "A4", number: str = "",
+           person: tuple[str, str] | None = None, program: str = "") -> np.ndarray:
+    """The printed sheet as a BGR image, for the preview and for tests; `person` prints one student's."""
     buf = io.BytesIO()
-    write_pdf(template, buf, paper, [number])
+    write_pdf(template, buf, paper, [number], [person] if person else (), program)
     pdf = pdfium.PdfDocument(buf.getvalue())
     try:
         return pdf[0].render(scale=dpi / 72).to_numpy().copy()  # pdfium renders BGR

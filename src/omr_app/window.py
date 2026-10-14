@@ -940,6 +940,7 @@ class MainWindow(QMainWindow):
         self.check._name()
         self.check.fill_table()
         self.exams.refresh()
+        self.print_sheet.refresh()  # a sheet per student follows the list
 
     def institute_changed(self):
         """An institute was added, changed or deleted: redraw what shows it."""
