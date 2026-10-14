@@ -107,6 +107,13 @@ on the **Templates** screen.
   dropped questions, numeric answers.
 - **Student list from Excel**: names on every result, unknown roll numbers flagged, absent list.
 
+**Organise**
+- **Programs and categories**: IOE, Medical, CMAT… each with its own exams, test series, colour and
+  institute.
+- **Student directory** with batches, email and phone, kept once for every exam; each student's
+  **profile** with their trend and weakest sections, and **attendance** by batch.
+- **Archive** finished exams; deleted exams wait in the **Trash** for 30 days.
+
 **Results**
 - Ranks and percentiles, scores per section and per topic, written (subjective) marks added in.
 - **A mistake in the paper?** Accept either of two answers, give everyone the marks (bonus) or drop
@@ -118,7 +125,10 @@ on the **Templates** screen.
   section and topic bars, every question), plus a PDF, in a folder or one zip named by roll number.
 - **Institute branding**: name, logo, address, colour, motto and signature, kept once and used on
   sheets, scorecards, reports and Excel; several institutes, one default, a choice per exam.
-- **Test series**: combined rank over several tests.
+- **Test series**: combined leaderboard over several tests, with each test's rank, places gained or
+  lost, improvement, best-of-N and weights, and analysis by test and section.
+- **Send results by email or SMS** (optional, off until set up): any email server, Twilio or your
+  own SMS gateway; preview, a test to yourself, sending limits, a send log, never sent twice.
 - **Back up and restore** every exam in one file.
 
 ## Screenshots
@@ -137,6 +147,8 @@ All screenshots use sheets generated for testing; the names and marks are made u
 | **Review**: doubtful marks shown on the sheet, fixed with one key | **Results**: ranks, section scores, Excel and PDF export |
 | ![Institutes window with name, logo, colour, address and signature, and a live scorecard preview](docs/images/institutes.png) | ![A student's report page in a browser with score, rank, section bars and every question](docs/images/student-report.png) |
 | **Institute branding** with a live scorecard preview | **Student report**: opens offline on any phone or computer |
+| ![Exams page with programs and categories such as IOE and Medical, with archived and deleted exams](docs/images/programs.png) | ![Test series leaderboard with each test's score and rank](docs/images/series-leaderboard.png) |
+| **Programs and categories**, Archive and Trash | **Test series** leaderboard |
 
 <details>
 <summary>A printed answer sheet made by OMR Checker</summary>

@@ -329,7 +329,7 @@ class SendDialog(QDialog):
     def __init__(self, parent, store: Store, exam_id: int, exam: sending.Exam, to_check: int):
         super().__init__(parent)
         self.setWindowTitle(f"Send results: {exam.name}")
-        self.resize(1000, 720)
+        self.resize(1000, 860)
         self.store, self.exam_id, self.exam, self.to_check = store, exam_id, exam, to_check
         self.directory = {same_roll(s.roll_number): s for s in store.directory()}
         saved = store.exam(exam_id).details.get("messages", {})
@@ -356,6 +356,8 @@ class SendDialog(QDialog):
         self.again.toggled.connect(lambda _: self.update())
         self.preview = QLabel(objectName="card", wordWrap=True, textInteractionFlags=Qt.TextSelectableByMouse)
         self.preview.setContentsMargins(12, 8, 12, 8)
+        self.preview.setMaximumHeight(180)
+        self.body.setFixedHeight(130)
         self.problem = QLabel(objectName="error", wordWrap=True)
         self.note = QLabel(objectName="muted", wordWrap=True)
         self.table = QTableWidget(0, 4)

@@ -72,6 +72,8 @@ preview says how many SMS each message takes.
 
 On the exam's **Results** tab, press **Send to students…**.
 
+![Sending results: the message, its preview and who gets what](images/send-results.png)
+
 1. Pick **Send by**: Email or SMS.
 2. Edit the **Subject** and **Message**. Fields in braces are filled for each student: `{name}`,
    `{roll}`, `{exam}`, `{institute}`, `{score}`, `{out_of}`, `{percent}`, `{rank}`, `{of}`,

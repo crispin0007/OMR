@@ -100,11 +100,15 @@ It also shows the number of tests taken and the average percentage.
 - **Show** narrows the list to the top 10 (or any number), or to one batch or class. Ranks stay the
   series ranks.
 
+![The series leaderboard](images/series-leaderboard.png)
+
 **Count**: how the total is made.
 - **best N** counts only each student's best N tests, so one bad day or a missed test doesn't sink
   them. The tests left out show *not counted*.
 - **Weights…** makes a test count more (2 counts double, for example the final mock) or leaves it
   out (0).
+
+![The series analysis](images/series-analysis.png)
 
 **Analysis**: how the class did in each test (students who sat it, average and top percentage) and
 in each section over the whole series (class average, lowest and highest).

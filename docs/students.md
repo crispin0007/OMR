@@ -9,6 +9,8 @@ and scorecard shows the student's name, and the app can tell you who was absent.
 
 ## The student directory
 
+![The student directory](images/student-directory.png)
+
 **Student directory** in the sidebar keeps your institute's students once, for every exam: roll
 number, name, class, **batch** (for example "CEE morning" or "IOE weekend"), **email** and **phone**.
 
@@ -22,6 +24,8 @@ number, name, class, **batch** (for example "CEE morning" or "IOE weekend"), **e
   with a sheet read for that roll number.
 
 ### A student's profile
+
+![A student's profile with their score in each exam](images/student-profile.png)
 
 Choose a student and press **Profile…** (or double-click them). It shows every exam they took, with
 their score, percentage, rank and percentile, a line of their percentage in each exam (point at a

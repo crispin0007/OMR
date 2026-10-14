@@ -6,6 +6,8 @@ An institute often prepares students for several courses at once: IOE, Medical (
 and NEET. **Programs** keep each course's exams and test series together, and **categories** split
 a program further, for example *Chapter tests* and *Full mocks*.
 
+![Programs and categories on the Exams page](images/programs.png)
+
 ## Make a program
 
 1. Open **Exams** in the sidebar.
