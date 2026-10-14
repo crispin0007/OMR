@@ -19,8 +19,13 @@ same Wi-Fi, quickly and without touching the screen for each sheet.
   changes) and serves the phone page securely on the next port. The phone warns once; the guide
   says what to tap. A plain link without the live camera uses the phone's own camera through an
   upload button.
-- **Auto-capture.** The page takes a photo when the picture is bright, sharp and still, then waits for
-  the picture to change (a new sheet) before the next. "Take now" takes one at once.
+- **Targets on the corner marks.** The camera view draws a target where each of the sheet's corner marks
+  should be, the shape of the exam's own marks (square or ring), with the page fitted in the picture.
+  The page finds the dark mark-sized blob near each target. A mark found but out of its target shows
+  amber, with a hint (closer, back, left, right, up, down, more light); all four in their targets turn
+  green. The photo is taken when all four are in, their edges are sharp and the picture is still; the
+  next waits until the marks leave the targets. "Auto: any" keeps the earlier way (any bright, sharp,
+  still picture) for a sheet whose marks aren't found; "Take now" takes one at once.
 - **Read on the PC, at once.** Each photo is read with the exam's sheet. One that can't be read is not
   saved and the phone shows "Retake" and why; one that reads is saved and the phone shows the roll
   number and how many marks are left to check.
@@ -29,5 +34,5 @@ same Wi-Fi, quickly and without touching the screen for each sheet.
 
 ## Out of scope
 
-- Reading on the phone. Finding the sheet's edges in the camera picture; the PC's reader does that.
+- Reading on the phone: the phone only finds the corner marks; the PC reads the sheet.
 - Keeping photos on the phone after its page is closed.

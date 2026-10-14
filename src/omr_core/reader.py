@@ -45,13 +45,17 @@ class PageResult:
 def read_page(page: np.ndarray, template: Template) -> PageResult:
     gray = _prepare(page, template.dropout)
     warped = _align(gray, template)
-    aligned = _flatten(warped)
-    sampled = [_sample(aligned, g, template.bubble) for g in template.grids]
+    try:
+        aligned, sampled = _lined_up(warped, template)
+    except UnreadablePage as shifted:
+        # What was found near the marks' places may be something else, such as the dark table around a sheet
+        # photographed with room to spare: look for the marks anywhere before giving up.
+        try:
+            warped = _warp(gray, template, _whole(gray, template, _markers_anywhere(gray, template)))
+            aligned, sampled = _lined_up(warped, template)
+        except UnreadablePage:
+            raise shifted from None
     pixels = [p for p, _ in sampled]
-    if sum(lost for _, lost in sampled) > MAX_LOST_ROWS * sum(g.rows for g in template.grids):
-        # the corner marks were found but don't match where the bubbles are printed: reading on would
-        # read the whole page shifted
-        raise UnreadablePage("the bubbles don't line up with the corner marks (a corner may be cut off or folded)")
     empty, gap = _levels(np.concatenate([p.mean(-1).ravel() for p in pixels]))
     result = PageResult(aligned=aligned)
     for grid, p in zip(template.grids, pixels):
@@ -84,6 +88,17 @@ def read_page(page: np.ndarray, template: Template) -> PageResult:
         from .names import read_name  # it reads with this module's scale
         result.name = read_name(aligned, template)
     return result
+
+
+def _lined_up(warped: np.ndarray, template: Template) -> tuple[np.ndarray, list]:
+    """The flattened page and every grid sampled, when the bubbles are where the corner marks put them."""
+    aligned = _flatten(warped)
+    sampled = [_sample(aligned, g, template.bubble) for g in template.grids]
+    if sum(lost for _, lost in sampled) > MAX_LOST_ROWS * sum(g.rows for g in template.grids):
+        # the corner marks were found but don't match where the bubbles are printed: reading on would
+        # read the whole page shifted
+        raise UnreadablePage("the bubbles don't line up with the corner marks (a corner may be cut off or folded)")
+    return aligned, sampled
 
 
 def read_or_reason(page: np.ndarray, template: Template) -> tuple[PageResult | None, str]:

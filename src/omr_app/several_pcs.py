@@ -374,9 +374,9 @@ class PhoneDialog(QDialog):
             + ("<li>The phone warns that the connection isn't private, because the address belongs to this PC and "
                "not to a website. That is expected here: tap <b>Advanced</b>, then <b>Proceed</b> (or "
                "<b>Show details</b>, then <b>visit this website</b> on an iPhone). It asks once.</li>"
-               "<li>Allow the camera. Put each sheet down flat in good light and hold the phone over it with the "
-               "four corner marks inside the box: it takes the photo by itself, says the roll number read, and "
-               "waits for the next sheet.</li></ol>" if secure else
+               "<li>Allow the camera. Put each sheet down flat in good light and hold the phone over it until its "
+               "four corner marks sit in the targets and turn green: it takes the photo by itself, says the roll "
+               "number read, and waits for the next sheet.</li></ol>" if secure else
                "<li>Press <b>Photos…</b> for each sheet.</li></ol>")
             + f"<p>Without the warning, open <a href='{plain}'>{plain}</a> instead, and press <b>Photos…</b> "
               "for each sheet.</p>"

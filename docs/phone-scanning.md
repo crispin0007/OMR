@@ -19,9 +19,25 @@ app and no internet: the phone opens a page the PC itself serves.
 
 ## Photograph the sheets
 
-| | |
-|---|---|
-| ![The phone page after reading a sheet](images/phone-page.png) | Put a sheet down flat in good light and hold the phone over it, with the four corner marks inside the box. **Auto** takes the photo by itself once the picture is sharp and still, then shows **✓ Read: roll 00195**, or **Retake** and why. Put down the next sheet and it takes that one. **Take now** takes a photo at once; **Auto: off** leaves it to you. |
+![Left: the sheet too far away, its marks amber outside the targets. Right: lined up, the targets green, and the sheet read](images/phone-targets.png)
+
+The camera view shows a target for each of the sheet's four corner marks, the same shape as the
+marks printed on the exam's sheet (squares or rings).
+
+1. Put a sheet down flat in good light and hold the phone over it.
+2. Move the phone until each corner mark sits in its target. A mark found but not yet in its target
+   shows amber; the line under the picture says what to do: **Move the phone closer**, **Move the
+   phone back a little**, left, right, up or down, or **Need more light**.
+3. When all four marks are in their targets, the targets turn green. Hold still: once the marks are
+   sharp, it takes the photo by itself and shows **✓ Read: roll 00195**, or **Retake** and why.
+4. Put down the next sheet. It waits for the marks to leave the targets, then takes the next one.
+
+The **Auto** button changes how photos are taken:
+
+- **Auto: marks** (the default): as above.
+- **Auto: any**: takes any picture that is bright, sharp and still, without the targets, for a sheet
+  whose marks the phone doesn't find.
+- **Auto: off**: press **Take now** for each sheet.
 
 - Each photo is read on the PC straight away. A photo that can't be read isn't saved; the phone asks
   you to retake it.

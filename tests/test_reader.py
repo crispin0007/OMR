@@ -144,3 +144,15 @@ def _write_pdf(path, bgr):
     page.insert_obj(image)
     page.gen_content()
     pdf.save(path)
+
+
+def test_a_photo_with_dark_table_around_the_sheet_reads():
+    # The table's dark corners sit where the marks of a sheet filling the picture would be; the marks are
+    # looked for further when the bubbles then don't line up.
+    t = TEMPLATE
+    marks, answers, roll, _ = random_marks(t, 5)
+    sheet = cv2.resize(draw(t, marks), (876, 1238), interpolation=cv2.INTER_AREA)
+    picture = np.full((1440, 1080, 3), (60, 70, 80), np.uint8)
+    picture[101:101 + 1238, 102:102 + 876] = (sheet * 0.85).astype(np.uint8)
+    r = read_page(picture, t)
+    assert (r.roll_number, r.answers) == (roll, answers)

@@ -112,7 +112,7 @@ class _Handler(BaseHTTPRequestHandler):
                 if by is None or not exam.isdigit():
                     return self._page("<p>This link has been taken out. Scan the QR code on the PC again.</p>", 401)
                 e = store.exam(int(exam))
-                return self._page(phone_page(e.id, e.name, token, by[0] or by[1]))
+                return self._page(phone_page(e.id, e.name, token, by[0] or by[1], e.template))
             if method == "POST" and self.path == "/join":
                 b = self._body()
                 token = store.join(str(b.get("code", "")), str(b.get("name", "")), str(b.get("pin", "")),
