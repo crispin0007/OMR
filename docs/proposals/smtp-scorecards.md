@@ -17,8 +17,8 @@ puts most of its effort into stopping mistakes before the send, not into the sen
 
 ## Settings (Settings → Email)
 
-- Server, port, and security (STARTTLS on 587 or SSL on 465), with presets for Gmail, Outlook and
-  Zoho.
+- Server, port, and security (STARTTLS on 587 or SSL on 465), with presets for Gmail, Google
+  Workspace, Outlook, Zoho and the bulk services, or any other SMTP server.
 - From name (defaults to the institute name) and from address.
 - **Password: an app password, never the account password.** Gmail and Outlook need 2-step
   verification and an app password for this. It is kept in the Windows Credential Manager (through
@@ -38,13 +38,49 @@ puts most of its effort into stopping mistakes before the send, not into the sen
 
 ## While sending
 
-- One connection, one email at a time, with a pause between emails. Gmail allows about **500 a day**
-  from a normal account (2,000 for Workspace); the app stops before the limit and says when it can
-  go on, rather than getting the account blocked.
+- One connection, one email at a time, at the **sending rate set in Settings**: emails per minute,
+  per hour and per day. Presets fill these in; the institute can change them.
+
+  | Preset | Per day (about) | Notes |
+  |---|---|---|
+  | Gmail (personal) | 500 | Google blocks the account for a day if it is passed |
+  | Google Workspace | 2,000 | A custom-domain address hosted by Google |
+  | Microsoft 365 / Outlook | 10,000 recipients | Lower for new accounts |
+  | Zoho Mail | depends on the plan | Check the plan's limit |
+  | Bulk service (Amazon SES, Brevo, Mailgun…) | what the account allows | Made for sending many emails |
+  | Custom | typed in | Any other SMTP server |
+
+  The app keeps a little under the limit, and counts emails sent earlier the same day.
+- **Big batches carry over.** When the day's limit is reached the app stops, says how many are left
+  and when it can go on, and **Resume** the next day sends only the rest. A batch of 1,500 on
+  personal Gmail goes out over three days, or in one go through a bulk service.
 - A **send log** per exam: student, address, time, result (sent / refused by the server / skipped,
   with the reason). It is saved after every email, so a power cut or a closed app never loses track.
-- **Resume** sends only to students not marked sent. **Never sends twice** unless the institute picks
-  "Send again" for chosen students (for example after a key change).
+- **Never sends twice** unless the institute picks "Send again" for chosen students (for example
+  after a key change).
+
+## Is a custom-domain email unlimited?
+
+No. An address like `results@your-institute.edu.np` is still sent through whoever hosts that
+domain's email (Google Workspace, Microsoft 365, Zoho, a web host's cPanel mail), and that provider
+sets the limit. Many cheap web hosts allow only 100 to 500 emails an hour. For thousands of emails
+at once, a bulk service (Amazon SES, Brevo, Mailgun and others) is the usual answer; the app works
+with any of them because they all offer plain SMTP.
+
+### Getting into the inbox, not spam: SPF, DKIM and DMARC
+
+With your own domain, three settings in the domain's DNS tell other mail servers the email really
+comes from you. Your email provider gives the exact values; you (or whoever manages the domain)
+paste them in once.
+
+- **SPF** lists which servers may send email for your domain. If you send through a bulk service,
+  it must be added here too.
+- **DKIM** signs each email so it can't be altered on the way. The provider gives a key to add.
+- **DMARC** tells receivers what to do with an email that fails the other two (start with "report
+  only", `p=none`).
+
+Without them, scorecards are likely to land in spam or be refused. The app's **Send a test email**
+can't check DNS, but the guide will link to free checkers.
 
 ## After a key change
 
@@ -62,6 +98,8 @@ what changed.
 
 - An address typed wrong in the student list sends a student's marks to a stranger. The preview and
   the shared-address check reduce this; they can't remove it.
+- The limits in the table are what providers publish today and change from time to time; the
+  presets are a starting point, and the institute can always type its own.
 - Providers change their rules (Microsoft is phasing out passwords for SMTP in favour of OAuth).
   Supporting Outlook properly may later need an OAuth sign-in, which is more work.
 - Emails from a school's Gmail can land in spam. A test send to a couple of parents first is advised.
