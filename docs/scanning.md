@@ -91,6 +91,17 @@ send that file with your report so support for your scanner can be added.
 If the driver takes the feeder but not both sides, the fronts are scanned and the app says so when
 the feeder is empty.
 
+## WIA and TWAIN
+
+Windows drives scanners in two ways, and the **Scanner** list shows both: a plain name is the
+scanner's **WIA** driver, and a name ending in **(TWAIN)** is its **TWAIN** driver. Many scanners
+have both. If one won't connect or won't feed, pick the other. TWAIN needs the scanner maker's
+**64-bit** TWAIN driver (most drivers from the last ten years are); an old 32-bit-only driver won't
+be listed.
+
+Either way the app scans in grey at your resolution (or the nearest the scanner takes), from the
+feeder, without the scanner's own window, until the feeder is empty.
+
 ## After scanning: Scanned sheets
 
 The **Scanned sheets** tab has a row for every page: file, page, roll number, name, set, questions

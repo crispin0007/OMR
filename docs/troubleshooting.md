@@ -9,7 +9,8 @@ The Scan tab says **No scanner found through Windows**.
 1. Check the scanner is plugged in and switched on, then press **Find scanners**.
 2. Check Windows can scan with it: try the Windows **Scan** app or **Windows Fax and Scan**. If
    Windows can't, install the scanner's driver from the maker's website (look for a "WIA" or
-   "TWAIN/WIA" driver).
+   "TWAIN/WIA" driver). The list shows each scanner's WIA driver by its name and its TWAIN driver
+   as "name (TWAIN)"; if one doesn't work, try the other.
 3. Still not listed? Scan with the scanner's own software into a folder, and on the Scan tab pick
    **A folder my scanner software saves into**. See [From a folder](scanning.md#2-from-a-folder).
 

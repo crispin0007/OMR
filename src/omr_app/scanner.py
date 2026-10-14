@@ -26,6 +26,7 @@ FEEDER_CATEGORY = "{FE131934-F84C-42AD-8DA4-6129CDDD7288}"  # a WIA 2.0 driver's
 RANGE, LIST = 1, 2  # WiaSubType of a property's allowed values
 MIN_DPI = 150  # below this, bubbles are too few pixels to read
 PAPER_EMPTY = 0x80210003
+FEEDER_EMPTY_TEXT = "The feeder is empty. Put the sheets on the feeder and press Start scanning."
 # What the operator should do for each WIA error that stops a run.
 PROBLEMS = {
     0x80210002: "Paper jam",
@@ -106,7 +107,7 @@ class WiaScanner:
                 except pywintypes.com_error as e:
                     if _code(e) == PAPER_EMPTY:
                         if first:
-                            raise ScanStopped("The feeder is empty. Put the sheets on the feeder and press Start scanning.") from e
+                            raise ScanStopped(FEEDER_EMPTY_TEXT) from e
                         return
                     raise ScanStopped(_problem(e)) from e
                 first = False
@@ -282,10 +283,20 @@ def _resolution(item, dpi: int, com_error) -> int:
     return current if current >= MIN_DPI else 0
 
 
-def scanners() -> list[WiaScanner]:
-    """The WIA scanners Windows knows about; none off Windows or when WIA isn't available."""
+def scanners() -> list:
+    """The scanners Windows knows about through WIA, then through TWAIN (marked so); none off Windows."""
     if sys.platform != "win32":
         return []
+    from . import twain
+    try:
+        found = twain.scanners()
+    except Exception:  # noqa: BLE001 - a broken TWAIN install must not hide the WIA scanners
+        found = []
+    return _wia() + found
+
+
+def _wia() -> list[WiaScanner]:
+    """The WIA scanners; none when WIA isn't available."""
     try:
         import win32com.client
         import pywintypes
