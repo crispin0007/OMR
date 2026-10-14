@@ -86,6 +86,13 @@ the page, marked in the same colours, with a legend underneath.
 
 ![The Scanned sheets tab](images/scanned-sheets.png)
 
+- **Correct a roll number or name in place**: double-click the cell (or select the row and press
+  **F2**), type, and press **Enter**. It is saved at once. For a roll number you can leave out the
+  leading zeros (type `16` for `0016?`); the change is logged like a correction on Review. A name is
+  saved to the [Student directory](students.md), and to the exam's own student list if it has one.
+- **Names** come from the exam's student list, or else from the Student directory by roll number, so
+  once your students are in the directory every sheet shows its name. Handwritten names on the sheet
+  aren't read.
 - **Mark the answers** turns the colours on and off, to see the sheet as it was scanned.
 - **Show every bubble position** draws a thin circle where the sheet expects each bubble. Every
   circle should sit on a printed bubble. If they drift off to one side or down the page, the

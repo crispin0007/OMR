@@ -2,7 +2,7 @@
 
 import getpass
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -21,7 +21,7 @@ from omr_core.parallel import PageReader
 from omr_core.reader import read_or_reason
 from omr_core.sources import read_pages
 from omr_core.store import Exam, Store, StoredPage, sheet_number_problems, to_review
-from omr_core.students import Student
+from omr_core.students import Student, same_roll, with_directory
 
 from . import theme
 from .answer_key import KeyTab
@@ -77,7 +77,8 @@ class CheckPage(QWidget):
         self._scoring: tuple | None = None  # what the scores were worked out from
         self.questions: list[int] = []
         self.sheets: list[StoredPage] = []
-        self.students: dict[str, Student] = {}
+        self.students: dict[str, Student] = {}  # the exam's own list
+        self.named: dict[str, Student] = {}  # those, and the directory's student for any other roll number read
         self.written: dict[str, float] = {}  # typed written marks by roll number
         self.keys: dict[str, list[str]] = {}
         self.sections: list[Section] = []
@@ -167,7 +168,10 @@ class CheckPage(QWidget):
         self.table.setHorizontalHeaderLabels(COLUMNS)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.ExtendedSelection)  # Shift or Ctrl to pick several pages
-        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        # The roll number and name are typed over in place; nothing else in the row can be.
+        self.table.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.EditKeyPressed)
+        self.table.setToolTip("Double-click a roll number or name, or press F2, to correct it")
+        self.table.itemChanged.connect(self.edited)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.itemSelectionChanged.connect(self.show_sheet)
         self.table.itemSelectionChanged.connect(self._enable)
@@ -244,6 +248,7 @@ class CheckPage(QWidget):
         self.exam = None  # keeps the loading below from saving the scheme back
         if exam_id is None:
             self.questions, self.sheets, self.students, self.sections = [], [], {}, []
+            self.named = {}
             self.written, self.topics = {}, {}
             self.template_label.setText("Open or create an exam on the Exams page")
             self.key_edit.clear()
@@ -253,6 +258,7 @@ class CheckPage(QWidget):
             self.questions = t.questions()
             self.sheets = self.store.pages(exam_id)
             self.students = self.store.students(exam_id)
+            self._name()
             self.written = self.store.written(exam_id)
             self.sections = exam.sections
             self.topics = self.store.topics(exam_id)
@@ -334,8 +340,12 @@ class CheckPage(QWidget):
         """Sheets with anything to review: flags, unreadable pages, duplicate or unknown roll numbers."""
         return sorted({i for i, _, _ in self.review_items()})
 
+    def _name(self):
+        self.named = with_directory(self.students, self.store.directory(),
+                                    {s.result.roll_number for s in self.sheets if s.result})
+
     def name_of(self, sheet: StoredPage) -> str:
-        s = sheet.result and self.students.get(sheet.result.roll_number)
+        s = sheet.result and self.named.get(sheet.result.roll_number)
         return s.name if s else ""
 
     def open_sheets(self):
@@ -495,6 +505,8 @@ class CheckPage(QWidget):
         if scoring != self._scoring:  # a corrected sheet is a new object, so only it is scored again
             self._scores.clear()
             self._scoring = scoring
+        self._name()
+        self.table.blockSignals(True)  # filling it isn't a person typing
         self.table.clearSpans()
         self.table.setRowCount(len(self.sheets))
         review_bg = QBrush(QColor(theme.tokens()["warn_bg"]))
@@ -508,12 +520,15 @@ class CheckPage(QWidget):
                      self._score_text(sheet), review, r.serial if r else ""]
             for col, text in enumerate(cells):
                 item = QTableWidgetItem(text)
+                if not (r and COLUMNS[col] in ("Roll number", "Name")):
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 if review:
                     item.setBackground(review_bg)
                 self.table.setItem(row, col, item)
             if r is None:  # say why across the row instead of leaving it empty
                 self.table.item(row, 2).setText(f"Can't read this page: {sheet.problem.removeprefix('unreadable: ')}")
                 self.table.setSpan(row, 2, 1, 5)
+        self.table.blockSignals(False)
         unreadable = sum(s.result is None for s in self.sheets)
         self.mismatch.setText(
             f"{unreadable} of {len(self.sheets)} pages couldn't be read. If students filled a sheet other than this "
@@ -527,6 +542,37 @@ class CheckPage(QWidget):
         self.sheet_numbers.setVisible(bool(self.sheet_numbers.text()))
         self.table.resizeColumnsToContents()
         self.changed.emit()
+
+    def edited(self, item: QTableWidgetItem):
+        """A roll number or name typed over in the table: saved at once, like a correction on Review."""
+        sheet, column, text = self.sheets[item.row()], COLUMNS[item.column()], " ".join(item.text().split())
+        roll = sheet.result.roll_number
+        try:
+            if column == "Roll number":
+                grid = next((g for g in self.exam.template.grids if g.kind == "roll_number"), None)
+                if grid and text.isdigit() and len(text) < len(roll):  # "16" for "0016?"
+                    text = text.zfill(len(roll))
+                if text != roll:
+                    self.sheets[item.row()] = self.store.correct(sheet.id, "roll number", text, getpass.getuser())
+            elif text != self.name_of(sheet):
+                self.save_name(roll, text)
+        except ValueError as e:
+            QMessageBox.warning(self, "Can't save that", str(e))
+        QTimer.singleShot(0, self.fill_table)  # after the editor closes; puts back what was there if not saved
+
+    def save_name(self, roll: str, name: str):
+        """The student's name for this roll number, in the directory and, when the exam has a list, in it too."""
+        if "?" in roll:
+            raise ValueError("correct the roll number first: it has digits that couldn't be read")
+        if not name:
+            raise ValueError("the student needs a name")
+        known = next((s for s in self.store.directory() if same_roll(s.roll_number) == same_roll(roll)), None)
+        self.store.save_student(replace(known, name=name) if known else Student(roll, name),
+                                known.roll_number if known else "")
+        if self.students:
+            self.students[roll] = replace(self.students.get(roll) or Student(roll, name), name=name)
+            self.store.set_students(self.exam.id, list(self.students.values()))
+        self.window().statusBar().showMessage(f"Saved {name} as roll number {roll}", 5000)
 
     def show_sheets(self, rows: list[int] | None, label: str = ""):
         """Show only these sheets (None for all) and bring this page forward."""
@@ -626,7 +672,7 @@ class CheckPage(QWidget):
             return []
         try:
             return grade(self.exam.template, self.sheets, self.key_edit.toPlainText(), self.correct.value(),
-                         self.wrong.value(), self.blank.value(), self.students, self.sections,
+                         self.wrong.value(), self.blank.value(), self.named, self.sections,
                          written=self.written if self.exam.written_out_of else None, topics=self.topics)
         except ValueError:
             return []  # the Answer key tab says why
@@ -640,7 +686,7 @@ class CheckPage(QWidget):
         if not path:
             return
         try:
-            write_csv(path, self.exam.template, self.sheets, self.graded(), self.students, columns)
+            write_csv(path, self.exam.template, self.sheets, self.graded(), self.named, columns)
         except OSError as e:  # e.g. the file is open in Excel
             QMessageBox.warning(self, "Couldn't save", str(e))
             return
@@ -783,6 +829,7 @@ class MainWindow(QMainWindow):
 
     def reload_students(self):
         self.check.students = self.store.students(self.check.exam.id)
+        self.check._name()
         self.check.fill_table()
         self.exams.refresh()
 

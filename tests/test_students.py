@@ -6,7 +6,7 @@ from openpyxl import Workbook
 from omr_core.export import grade
 from omr_core.reader import PageResult
 from omr_core.store import Store, to_review
-from omr_core.students import Student, read_students
+from omr_core.students import Student, read_students, with_directory
 
 TEMPLATE = (Path(__file__).parent.parent / "templates" / "test-100.json").read_text(encoding="utf-8")
 
@@ -142,3 +142,10 @@ def test_a_students_history_and_attendance_match_their_roll_number(tmp_path):
     assert attendance(s, ["12", "34", "56"], [one, three]) == {"12": [True, False], "34": [True, True],
                                                                "56": [False, False]}
     assert s.exams_taken() == {"12": 2, "34": 3}
+
+
+def test_names_come_from_the_directory_when_the_exam_has_no_list_for_them():
+    listed = {"00007": Student("00007", "Asha Rai")}
+    directory = [Student("12", "Bikash Lama"), Student("7", "Someone Else")]
+    named = with_directory(listed, directory, {"00007", "00012", "00099", "0001?"})
+    assert named == {"00007": Student("00007", "Asha Rai"), "00012": Student("12", "Bikash Lama")}

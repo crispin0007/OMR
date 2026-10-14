@@ -695,7 +695,9 @@ class Store:
             before, set_code = set_code, value
         else:
             raise ValueError(f"can't correct {item!r}")
-        flags = [f for f in json.loads(flags) if f[0] != item]
+        # The whole roll number typed settles its unclear digits too.
+        flags = [f for f in json.loads(flags) if f[0] != item and not (item == "roll number" and
+                                                                      f[0].startswith("roll number digit "))]
         with self.db:
             self.db.execute("UPDATE page SET roll_number = ?, set_code = ?, answers = ?, flags = ? WHERE id = ?",
                             (roll, set_code, json.dumps(answers), json.dumps(flags), page_id))

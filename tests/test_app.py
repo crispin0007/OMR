@@ -1646,3 +1646,33 @@ def test_email_and_sms_are_set_up_with_the_secret_kept_out_of_the_settings(app, 
     assert kept["sms:https://api.sparrowsms.com/v2/sms/"] == "sparrow token"
     row = ui.SendingSettings()
     assert row.label.text() == "Results can go by email and SMS"
+
+
+def test_roll_number_and_name_are_typed_over_in_scanned_sheets(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from omr_core.students import Student
+    files = sheet_files(tmp_path, [7, 8])
+    w = window(tmp_path)
+    c = w.check
+    w.store.save_student(Student(files[0][2].lstrip("0") or "0", "Asha Rai"))  # Excel dropped the zeros
+    c.read_files([f[0] for f in files])
+    rows = {c.sheets[i].result.roll_number: i for i in range(2)}
+    assert c.table.item(rows[files[0][2]], 3).text() == "Asha Rai"  # named from the directory
+    assert not c.table.item(0, 0).flags() & Qt.ItemIsEditable and c.table.item(0, 2).flags() & Qt.ItemIsEditable
+
+    row = rows[files[1][2]]
+    c.table.item(row, 2).setText("5")  # padded to the sheet's digits
+    QApplication.processEvents()
+    roll = c.sheets[row].result.roll_number
+    assert roll == "5".zfill(len(files[1][2])) and c.table.item(row, 2).text() == roll
+    c.table.item(row, 3).setText("  Bikash   Lama ")
+    QApplication.processEvents()
+    assert c.table.item(row, 3).text() == "Bikash Lama"
+    assert any(s.name == "Bikash Lama" and s.roll_number == roll for s in w.store.directory())
+
+    warned = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warned.append(a[2]))
+    c.table.item(row, 2).setText("12x")  # not a roll number: refused, and the cell goes back
+    QApplication.processEvents()
+    assert warned and c.table.item(row, 2).text() == roll

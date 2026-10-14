@@ -116,6 +116,15 @@ def test_corrections_update_the_page_clear_the_flag_and_are_logged(tmp_path):
     assert s.page(page.id).result.answers[1] == ""
 
 
+def test_typing_the_whole_roll_number_settles_its_unclear_digits(tmp_path):
+    s = Store(tmp_path / "omr.db")
+    exam = s.create_exam("Mock", TEMPLATE)
+    flags = [("roll number digit 2", "unclear mark"), ("roll number digit 3", "blank"), ("Q1", "unclear mark")]
+    page = s.add_page(exam, "b", "scan.pdf", 1, PageResult("1??", "A", {1: "B"}, flags))
+    fixed = s.correct(page.id, "roll number", "172", "asha")
+    assert fixed.result.roll_number == "172" and fixed.result.flags == [("Q1", "unclear mark")]
+
+
 @pytest.mark.parametrize("item, value", [("Q2", "E"), ("Q2", "AB"), ("Q999", "A"), ("roll number digit 9", "1"),
                                          ("roll number digit 1", "x"), ("roll number", "12"), ("set code", "Z"),
                                          ("name", "A")])

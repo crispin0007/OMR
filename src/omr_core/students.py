@@ -123,6 +123,17 @@ def same_roll(roll: str) -> str:
     return roll.lstrip("0") or "0" if roll.isdigit() else roll
 
 
+def with_directory(listed: dict[str, Student], directory: list[Student], rolls: set[str]) -> dict[str, Student]:
+    """The exam's own students, plus each roll number read that the exam's list doesn't have but the directory
+    does, so a sheet shows its student's name without a list made for every exam."""
+    known = {same_roll(s.roll_number): s for s in directory}
+    out = dict(listed)
+    for roll in rolls:
+        if roll not in out and (s := known.get(same_roll(roll))):
+            out[roll] = s
+    return out
+
+
 def for_sheet(students: list[Student], digits: int | None) -> tuple[list[Student], list[str]]:
     """Directory students for an exam whose sheet has a `digits`-digit roll number (None for a barcode): numeric
     roll numbers padded with the zeros Excel drops, and the ones that can't be on the sheet, with why."""
