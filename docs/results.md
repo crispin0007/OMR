@@ -1,6 +1,6 @@
 # Results, Excel, scorecards and test series
 
-[Guide home](index.md) · Previous: [Students](students.md) · Next: [Backup, restore and settings](backup-and-settings.md)
+[Guide home](index.md) · Previous: [Students](students.md) · Next: [Your institute](institute.md)
 
 ## The Results tab
 
@@ -30,9 +30,30 @@ Press **Merit list (Excel)…** and choose where to save it. The file has:
 ## Scorecards
 
 Press **Scorecards (PDF)…** to save **one PDF page per student**, ready to print or send: their
-score and rank, every answer next to the key and, with topics, how they did on each topic.
+score and rank, every answer next to the key and, with topics, how they did on each topic. With
+[your institute](institute.md) set up, each page has its letterhead, a signature line and footer. If
+the key was changed after the exam (an either answer, a bonus or a dropped question), a note on the
+page says so.
 
-![A student's scorecard](images/scorecard.png)
+![A student's scorecard with the institute's letterhead](images/scorecard-branded.png)
+
+## Student reports
+
+Press **Student reports…** to make, for every student, a **report page** that opens in any phone or
+computer browser, plus the same report as a **PDF**. Choose **One zip file…** to get a single file to
+share, or **A folder…** to get the files loose. Each file is named by roll number (`1001.html`,
+`1001.pdf`).
+
+A report shows the student's score, rank, percentile, right, wrong and blank counts, a bar for each
+section and topic, and every question with their answer and the key. The buttons above the questions
+show all of them, or only the wrong, blank or right ones. It works offline: nothing is
+loaded from the internet, so it is safe to send by WhatsApp or email, or copy to a pen drive.
+
+| On a computer | On a phone |
+|---|---|
+| ![A student report in a browser](images/student-report.png) | ![The same report on a phone](images/student-report-phone.png) |
+
+Like the other exports, it asks first if some sheets are still waiting for Review.
 
 ## CSV with the columns you choose
 
@@ -73,4 +94,4 @@ You get a combined ranking on total score, with each test's score (*absent* wher
 no sheet), the number of tests taken, and the average percentage. **Series merit list (Excel)…**
 saves it.
 
-[Guide home](index.md) · Next: [Backup, restore and settings](backup-and-settings.md)
+[Guide home](index.md) · Next: [Your institute](institute.md)

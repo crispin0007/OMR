@@ -109,9 +109,15 @@ on the **Templates** screen.
 
 **Results**
 - Ranks and percentiles, scores per section and per topic, written (subjective) marks added in.
+- **A mistake in the paper?** Accept either of two answers, give everyone the marks (bonus) or drop
+  the question; every key change is logged and noted on the scorecards.
 - **Merit list in Excel** with every answer coloured right or wrong, plus **item analysis**
   (difficulty and discrimination per question).
-- **One PDF scorecard per student.**
+- **One PDF scorecard per student**, with your institute's letterhead, signature line and footer.
+- **Student reports**: a page per student that opens offline in any phone browser (score, rank,
+  section and topic bars, every question), plus a PDF, in a folder or one zip named by roll number.
+- **Institute branding**: name, logo, address, colour, motto and signature, kept once and used on
+  sheets, scorecards, reports and Excel; several institutes, one default, a choice per exam.
 - **Test series**: combined rank over several tests.
 - **Back up and restore** every exam in one file.
 
@@ -129,6 +135,8 @@ All screenshots use sheets generated for testing; the names and marks are made u
 | **Templates**: edit a pattern and save it as your own | **Print** numbered sheets or **save as PDF** |
 | ![Review screen showing a half-filled bubble boxed for a person to decide](docs/images/review.png) | ![Results ranked by score with section scores, right, wrong, blank and percentile](docs/images/results.png) |
 | **Review**: doubtful marks shown on the sheet, fixed with one key | **Results**: ranks, section scores, Excel and PDF export |
+| ![Institutes window with name, logo, colour, address and signature, and a live scorecard preview](docs/images/institutes.png) | ![A student's report page in a browser with score, rank, section bars and every question](docs/images/student-report.png) |
+| **Institute branding** with a live scorecard preview | **Student report**: opens offline on any phone or computer |
 
 <details>
 <summary>A printed answer sheet made by OMR Checker</summary>
@@ -237,7 +245,7 @@ Every template can be changed and saved under your own name on the **Templates**
 
 ## Accuracy and speed
 
-Measured on our own test sheets with known answers (no private data), on one CPU core:
+Measured on our own test sheets with known answers (no private data):
 
 | Kind of sheet | Bubbles read right | Silently wrong |
 |---|---|---|
@@ -248,8 +256,11 @@ Measured on our own test sheets with known answers (no private data), on one CPU
 | Real marking: pencil, half-filled and erased marks | 95.9%; every other mark sent to Review | 0 |
 | Two real scanned 200-question sheets (kept private) | 200/200 photocopy, 199/200 phone photo (the one miss flagged) | 0 |
 
-- **Speed:** about **250 sheets a minute** read and saved on one core, usually faster than the
-  scanner can feed. Scanning speed is set by your scanner.
+- **Speed:** about **900 sheets a minute** read and saved on a 4-core PC (about 250 on one core),
+  faster than a scanner can feed. Reading uses every core but one, so the app stays responsive.
+  Scanning speed is set by your scanner.
+- **Big batches:** 1,000 sheets make a database of about 370 MB; the Excel merit list for 1,000
+  students saves in about 3 seconds.
 - **Cut or folded corners:** a page whose corner mark is cut off, or whose bubbles don't line up
   with its corner marks, is refused with that reason and kept under Review, never read shifted.
   Keep all four corner marks on the paper.

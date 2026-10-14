@@ -1,6 +1,6 @@
 # Backup, restore and settings
 
-[Guide home](index.md) · Previous: [Results](results.md) · Next: [Troubleshooting](troubleshooting.md)
+[Guide home](index.md) · Previous: [Your institute](institute.md) · Next: [Troubleshooting](troubleshooting.md)
 
 ## Everything saves by itself
 
@@ -28,6 +28,14 @@ On **Exams**, press **Restore…** and pick a backup file. Its exams are **added
 this PC are left exactly as they are. Use this to move to a new PC: back up on the old one, install
 OMR Checker on the new one, and restore.
 
+## Make an older database smaller
+
+Exams read with an earlier version of OMR Checker kept a large picture of every page. If you have
+some, **Exams** shows a **Make smaller…** button. It first asks you to save a backup (the backup is
+made before anything changes), then converts the pictures to a much smaller kind. A database of
+1,000 sheets goes from about 2.2 GB to under 400 MB. Marks, corrections and results don't change.
+It can take a few minutes; you can keep it running and do nothing else.
+
 ## Delete an exam
 
 On the exam's **Exam settings** tab, **Delete exam…** removes the exam and every sheet read for it.
@@ -44,6 +52,8 @@ Open **Settings** in the sidebar. Changes apply at once and are kept for next ti
 - **Accent colour**: the colour of buttons and highlights. **Other colour…** picks any colour.
 - **Text size**: Small, Normal or Large.
 - **Density**: Compact fits more on the screen; Comfortable has more space.
+- **Institute**: your institute's name, logo and details for scorecards and exports. Press
+  **Institutes…**; see [Your institute](institute.md).
 
 Scanner settings (scanner, resolution, both sides) are on each exam's **Scan** tab; see
 [Scan the filled sheets](scanning.md).
