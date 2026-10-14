@@ -161,3 +161,10 @@ def test_emails_go_through_any_smtp_server_with_the_scorecard_attached():
     assert [(p.get_filename(), p.get_payload(decode=True)) for p in parts] == [("12.pdf", b"%PDF-1.4 fake")]
     with pytest.raises(ValueError, match="type the mail server"):
         Mailer(EmailSettings(sender="a@example.org"), "")
+
+
+def test_a_country_code_goes_in_front_of_a_local_number_only():
+    from omr_core.sending import international
+    assert international("9800000001", "+977") == "+9779800000001"
+    assert international("09800000001", "+91") == "+919800000001"
+    assert international("+15005550006", "+977") == "+15005550006" and international("98", "") == "98"

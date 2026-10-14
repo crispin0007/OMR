@@ -36,21 +36,22 @@ there too; see [Templates](templates.md).
 11. [Review: checking unclear marks](review.md): what the app wasn't sure about.
 12. [Students](students.md): names from Excel, and who was absent.
 13. [Results, Excel, scorecards and test series](results.md): sharing the results.
-14. [Your institute](institute.md): name, logo and letterhead on scorecards and exports.
+14. [Send results by email or SMS](sending.md): each student's result, from your own account.
+15. [Your institute](institute.md): name, logo and letterhead on scorecards and exports.
 
 **Looking after your data**
 
-15. [Backup, restore and settings](backup-and-settings.md): keeping exams safe, moving PCs, the look
+16. [Backup, restore and settings](backup-and-settings.md): keeping exams safe, moving PCs, the look
     of the app.
 
 **When something goes wrong**
 
-16. [Troubleshooting](troubleshooting.md): problems and how to fix them.
-17. [FAQ](faq.md): short answers to common questions.
+17. [Troubleshooting](troubleshooting.md): problems and how to fix them.
+18. [FAQ](faq.md): short answers to common questions.
 
 **On paper**
 
-18. [Cheat sheet](cheat-sheet.md): one printable page to keep next to the scanner.
+19. [Cheat sheet](cheat-sheet.md): one printable page to keep next to the scanner.
 
 ## Where to find help in the app
 

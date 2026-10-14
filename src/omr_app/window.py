@@ -27,6 +27,7 @@ from .answer_key import KeyTab
 from .columns import pick_columns
 from .dashboard import DashboardPage, ResultsPage
 from .directory import DirectoryPage
+from .sending import SendingSettings
 from .designer import DesignerPage
 from .exam_page import ExamPage, ExamSettings, PrintSheet, StudentsTab, WrittenTab
 from .exam_templates import TemplatesPage
@@ -665,6 +666,7 @@ class MainWindow(QMainWindow):
         self.designer = DesignerPage()
         self.settings = theme.SettingsPage(self.prefs)
         self.settings.form.addRow("Institute", InstituteSettings(self.store, self.institute_changed))
+        self.settings.form.addRow("Send results", SendingSettings())
         self.settings.changed.connect(self.apply_prefs)
         self.pages = {"Dashboard": self.dashboard, "Exams": self.exams_area, "Student directory": self.directory,
                       "Templates": self.templates,

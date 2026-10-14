@@ -1,6 +1,6 @@
 # Proposal: email each student their scorecard (not built)
 
-Status: **proposal only, waiting for a decision.** Nothing here is in the app yet.
+Status: **built**, with SMS too. How to use it: [Send results by email or SMS](../sending.md). This page is the design it started from.
 
 ## What it would do
 

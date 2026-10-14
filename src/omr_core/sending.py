@@ -11,6 +11,7 @@ import json
 import smtplib
 import ssl
 import string
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -18,8 +19,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from email.utils import formataddr
+from pathlib import Path
 
-from .students import check_email, check_phone
+from .export import write_scorecards
+from .grading import DROPPED, full_marks
+from .report import file_stem, scorecard_html
+from .students import check_email, check_phone, same_roll
 
 FIELDS = {"name": "the student's name", "roll": "roll number", "exam": "exam name", "institute": "institute name",
           "score": "score", "out_of": "full marks", "percent": "percentage", "rank": "rank",
@@ -242,13 +247,15 @@ def sms_request(s: SmsSettings, secret: str, to: str, text: str) -> urllib.reque
 
 
 def send_sms(s: SmsSettings, secret: str, to: str, text: str, opener=urllib.request.urlopen, timeout: float = 30):
-    """Send one SMS. Raises ValueError with the gateway's answer when it isn't sent, OSError when it can't be
-    reached."""
+    """Send one SMS. Raises ValueError with the gateway's answer when it isn't sent, PermissionError when the
+    account or key is refused, OSError when it can't be reached."""
     try:
         with opener(sms_request(s, secret, to, text), timeout=timeout) as reply:
             status, answer = reply.status, reply.read(4000).decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
         status, answer = e.code, e.read(4000).decode("utf-8", "replace")
+    if status in (401, 403):  # every other message would fail the same way, so the run stops
+        raise PermissionError(f"the gateway refused the account or key ({status}): {answer[:300]}")
     if not 200 <= status < 300:
         raise ValueError(f"the gateway answered {status}: {answer[:300]}")
     if s.kind == "twilio":
@@ -268,3 +275,72 @@ def sms_parts(text: str) -> int:
     gsm = all(ord(c) < 128 for c in text)
     one, part = (160, 153) if gsm else (70, 67)
     return 1 if len(text) <= one else -(-len(text) // part)
+
+
+# -- an exam's messages --------------------------------------------------------------------------------------
+
+@dataclass
+class Exam:
+    """What a message needs to know about the exam: as on its Results tab."""
+    name: str
+    template: object  # Template
+    graded: list  # [Graded], best first
+    marks: list[tuple]
+    sections: list = field(default_factory=list)
+    institute: object = None  # Institute | None
+    written_out_of: float = 0
+    date: str = ""
+
+
+def values(exam: Exam, g, student=None) -> dict[str, object]:
+    """The fields of one student's message; `student` is who they are when the exam's list doesn't say."""
+    qs = exam.template.questions()
+    out_of = full_marks(g.key, exam.marks) + exam.written_out_of
+    parts = []
+    for sec in exam.sections:
+        most = sum(exam.marks[n][0] for n, q in enumerate(qs) if sec.first <= q <= sec.last and g.key[n] != DROPPED)
+        parts.append(f"{sec.name} {g.sections.get(sec.name, 0):g}/{most:g}")
+    who = g.student if g.student and g.student.name else student
+    return {"name": who.name if who and who.name else f"Roll number {g.page.result.roll_number}",
+            "roll": g.page.result.roll_number, "exam": exam.name,
+            "institute": exam.institute.name if exam.institute else "", "score": f"{g.score:g}",
+            "out_of": f"{out_of:g}", "percent": f"{100 * g.score / out_of:.1f}" if out_of else "0",
+            "rank": g.rank, "of": len(exam.graded), "percentile": f"{g.percentile:.1f}",
+            "sections": ", ".join(parts), "date": exam.date}
+
+
+def messages(exam: Exam, channel: str, subject: str, body: str, directory: dict = None) -> list[Message]:
+    """One message per graded student, best first, to the email or phone on the exam's student list, else in the
+    directory (by `same_roll`); "" when neither has one. Raises ValueError for a template with a wrong field."""
+    directory = directory or {}
+    out = []
+    for g in exam.graded:
+        found = [s for s in (g.student, directory.get(same_roll(g.page.result.roll_number))) if s]
+        v = values(exam, g, found[-1] if found else None)
+        to = next((a for s in found if (a := address(s, channel))), "")
+        out.append(Message(v["roll"], v["name"], to, fill(subject, v) if channel == "email" else "", fill(body, v)))
+    return out
+
+
+def attachments(exam: Exam, g, pdf: bool, html: bool) -> list[tuple[str, bytes, str]]:
+    """The student's scorecard as a PDF and as a page for any browser, named by roll number."""
+    stem = file_stem(g.page.result.roll_number, set())
+    out = []
+    if pdf:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+            path = Path(d) / "card.pdf"
+            write_scorecards(path, exam.name, exam.template, [g], exam.institute, out_of=len(exam.graded))
+            out.append((f"{stem}.pdf", path.read_bytes(), "application/pdf"))
+    if html:
+        page = scorecard_html(exam.name, exam.template, g, exam.graded, exam.marks, exam.sections, exam.institute,
+                              exam.written_out_of)
+        out.append((f"{stem}.html", page.encode("utf-8"), "text/html"))
+    return out
+
+
+def international(phone: str, code: str) -> str:
+    """A phone number with the country code (e.g. "+977") put in front when it has none and one is set; the
+    gateway gets what the directory has otherwise."""
+    if not code or not phone or phone.startswith("+"):
+        return phone
+    return code + phone.lstrip("0")

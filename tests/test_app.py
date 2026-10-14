@@ -1535,3 +1535,101 @@ def test_a_students_profile_and_attendance_come_from_every_exam(app, tmp_path):
     a = AttendanceDialog(d, w.store)
     assert [a.table.item(1, c).text() for c in (1, 3, 4)] == ["Bikash Thapa", "absent", "0 of 1"]
     assert "1 missed at least one" in a.note.text()
+
+
+def test_results_are_emailed_and_texted_once_each_within_the_limits(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+    from omr_app import sending as ui
+    from omr_core.reader import PageResult
+    from omr_core.sending import EmailSettings, SmsSettings
+    from omr_core.students import Student
+    from test_sending import FakeSmtp
+    w = window(tmp_path)
+    exam = w.check.exam.id
+    w.store.save_scheme(exam, "A" * 100, 1, 0, 0)
+    for roll, right in (("00012", 80), ("00034", 60)):
+        w.store.add_page(exam, "b", "x.png", 1, PageResult(roll, "A", {q: "A" if q <= right else "B"
+                                                                       for q in range(1, 101)}, []))
+    w.store.add_to_directory([Student("12", "Asha Rai", email="asha@example.org", phone="9800000001"),
+                              Student("34", "Bikash Thapa")])
+    w.check.open_exam(exam)
+    r = w.results
+    r.refresh()
+    assert not ui.load("email")[0]
+    d = ui.SendDialog(r, w.store, exam, ui.sending.Exam("Mock", w.check.exam.template, r.graded, w.check.marks),
+                      0)
+    assert "aren't set up" in d.problem.text() and not d.send_button.isEnabled()
+
+    server = FakeSmtp()
+    ui.save("email", EmailSettings("127.0.0.1", server.port, "none", "", "results@example.org", "First Academy"),
+            {"limits": [10, 100, 1000]})
+    ui.save("sms", SmsSettings("twilio", "AC1", "", "+15005550006"), {"limits": [10, 100, 1000], "code": "+977"})
+    monkeypatch.setattr(ui, "get_secret", lambda name: "secret")
+    d = ui.SendDialog(r, w.store, exam, ui.sending.Exam("Mock", w.check.exam.template, r.graded, w.check.marks),
+                      0)
+    statuses = {d.table.item(i, 1).text(): d.table.item(i, 3).text() for i in range(d.table.rowCount())}
+    assert statuses == {"Asha Rai": "Will send", "Bikash Thapa": "No address"}
+    assert "Dear Asha Rai" in d.preview.text() and "80 out of 100" in d.preview.text()
+    d.body.setPlainText("Dear {nam}")
+    assert "{nam}" in d.problem.text() and not d.send_button.isEnabled()
+    d.body.setPlainText("Dear {name}, {score}/{out_of}")
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("2", True))
+    d.start()
+    assert not d.timer.isActive()  # 1 to send, and 2 was typed: nothing sent
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("1", True))
+    d.start()
+    while d.timer.isActive():
+        d.step()
+        app.processEvents()
+    (rcpt, email), = server.received
+    assert email["To"] == "asha@example.org" and email.get_payload()[0].get_payload().startswith("Dear Asha Rai, 80/100")
+    assert [p.get_filename() for p in email.walk() if p.get_filename()] == ["00012.pdf"]
+    assert w.store.sent_to(exam, "email") == {"00012"} and "Done: 1 sent" in d.status.text()
+    assert d.table.item(0, 3).text() == "Already sent" and not d.send_button.isEnabled()
+    assert w.store.exam(exam).details["messages"]["email"] == "Dear {name}, {score}/{out_of}"
+
+    texts = []
+    monkeypatch.setattr(ui, "send_sms", lambda s, secret, to, text: texts.append((to, text)))
+    d.channel.setCurrentIndex(d.channel.findData("sms"))
+    d.update()
+    assert d.body.toPlainText().startswith("{institute}: {name}")  # the SMS keeps its own text
+    d.start()
+    while d.timer.isActive():
+        d.step()
+        app.processEvents()
+    assert texts == [("+9779800000001", texts[0][1])] and "Asha Rai (00012) scored 80/100" in texts[0][1]
+    d.reject()
+
+    held = ui.SendDialog(r, w.store, exam, ui.sending.Exam("Mock", w.check.exam.template, r.graded, w.check.marks), 3)
+    assert "3 marks still wait on Review" in held.problem.text() and not held.send_button.isEnabled()
+
+
+def test_email_and_sms_are_set_up_with_the_secret_kept_out_of_the_settings(app, tmp_path, monkeypatch):
+    from omr_app import sending as ui
+    kept = {}
+    monkeypatch.setattr(ui, "set_secret", lambda name, value: kept.__setitem__(name, value))
+    monkeypatch.setattr(ui, "get_secret", lambda name: kept.get(name, ""))
+    e = ui.EmailSetup(None)
+    assert e.host.text() == "smtp.gmail.com" and e.port.value() == 587 and e.limits[2].value() == 450
+    assert not e.save() and "From address" in e.problem.text()
+    e.sender.setText("results@example.org")
+    e.user.setText("results@example.org")
+    e.password.setText("abcd efgh ijkl mnop")
+    assert e.save()
+    assert kept == {"smtp:results@example.org@smtp.gmail.com": "abcd efgh ijkl mnop"}
+    assert "abcd" not in str(ui.settings().value("sending/email"))
+    assert ui.load("email")[0].sender == "results@example.org"
+
+    s = ui.SmsSetup(None)
+    s.kind.setCurrentText("Sparrow SMS (Nepal)")
+    s.preset()
+    assert s.url.text() == "https://api.sparrowsms.com/v2/sms/" and "{key}" in s.body.toPlainText()
+    s.sender.setText("Academy")
+    s.code.setText("977")
+    assert not s.save() and "country code" in s.problem.text()
+    s.code.setText("")
+    s.key.setText("sparrow token")
+    assert s.save() and ui.load("sms")[1]["preset"] == "Sparrow SMS (Nepal)"
+    assert kept["sms:https://api.sparrowsms.com/v2/sms/"] == "sparrow token"
+    row = ui.SendingSettings()
+    assert row.label.text() == "Results can go by email and SMS"

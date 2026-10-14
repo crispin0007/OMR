@@ -1,6 +1,6 @@
 # Results, Excel, scorecards and test series
 
-[Guide home](index.md) · Previous: [Students](students.md) · Next: [Your institute](institute.md)
+[Guide home](index.md) · Previous: [Students](students.md) · Next: [Send results by email or SMS](sending.md)
 
 ## The Results tab
 
@@ -112,4 +112,4 @@ in each section over the whole series (class average, lowest and highest).
 **Series merit list (Excel)…** saves the leaderboard and the analysis, under the institute's name.
 On **Exams**, choosing a program first lists only that program's series.
 
-[Guide home](index.md) · Next: [Your institute](institute.md)
+[Guide home](index.md) · Next: [Send results by email or SMS](sending.md)

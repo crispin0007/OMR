@@ -1,6 +1,6 @@
 # Your institute: name, logo and letterhead
 
-[Guide home](index.md) · Previous: [Results](results.md) · Next: [Backup, restore and settings](backup-and-settings.md)
+[Guide home](index.md) · Previous: [Send results by email or SMS](sending.md) · Next: [Backup, restore and settings](backup-and-settings.md)
 
 Tell the app your institute's name, logo and details once. They are then printed as a letterhead
 on every scorecard and student report, put at the top of the Excel merit list, shown on the exam's

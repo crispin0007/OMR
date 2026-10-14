@@ -118,6 +118,16 @@ CREATE TABLE IF NOT EXISTS institute (
     logo BLOB NOT NULL DEFAULT x'',  -- PNG
     is_default INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS send_log (    -- each result emailed or texted to a student, or tried
+    id INTEGER PRIMARY KEY,
+    exam_id INTEGER NOT NULL REFERENCES exam(id) ON DELETE CASCADE,
+    roll_number TEXT NOT NULL,
+    channel TEXT NOT NULL,                  -- "email" or "sms"
+    address TEXT NOT NULL,
+    at TEXT NOT NULL,
+    status TEXT NOT NULL,                   -- "sent" or "failed"
+    detail TEXT NOT NULL DEFAULT ''         -- why it failed
+);
 CREATE TABLE IF NOT EXISTS series (      -- how a test series adds up; its exams carry its name in details
     name TEXT PRIMARY KEY,
     best_of INTEGER NOT NULL DEFAULT 0      -- count only each student's best N tests; 0 counts them all
@@ -243,6 +253,12 @@ class Store:
             for exam_id, w in weights.items():
                 self.db.execute("UPDATE exam SET details = json_set(details, '$.weight', ?) WHERE id = ?",
                                 (w, exam_id))
+
+    def set_messages(self, exam_id: int, messages: dict):
+        """The exam's own email subject and body and SMS text, and what to attach (details["messages"])."""
+        with self.db:
+            self.db.execute("UPDATE exam SET details = json_set(details, '$.messages', json(?)) WHERE id = ?",
+                            (json.dumps(messages), exam_id))
 
     def set_series(self, exam_id: int, series: str):
         """Put an exam in a test series by name, or take it out with ""."""
@@ -504,6 +520,9 @@ class Store:
                                             (page, old_page))
                         self.db.execute("INSERT INTO written (exam_id, roll_number, marks) SELECT ?, roll_number, "
                                         "marks FROM b.written WHERE exam_id = ?", (exam, old))
+                        self.db.execute("INSERT INTO send_log (exam_id, roll_number, channel, address, at, status, "
+                                        "detail) SELECT ?, roll_number, channel, address, at, status, detail FROM "
+                                        "b.send_log WHERE exam_id = ? ORDER BY id", (exam, old))
                         self.db.execute("INSERT INTO key_log (exam_id, at, user, set_code, question, before, after) "
                                         "SELECT ?, at, user, set_code, question, before, after FROM b.key_log "
                                         "WHERE exam_id = ? ORDER BY id", (exam, old))
@@ -773,6 +792,31 @@ class Store:
         """(exam id, roll number) for every roll number read on a sheet, once per exam."""
         return self.db.execute("SELECT DISTINCT exam_id, roll_number FROM page WHERE roll_number IS NOT NULL"
                                ).fetchall()
+
+    def log_send(self, exam_id: int, roll: str, channel: str, address: str, status: str, detail: str = "",
+                 at: datetime | None = None):
+        """Note one message sent or failed, as soon as it is known, so a closed app never loses track."""
+        with self.db:
+            self.db.execute("INSERT INTO send_log (exam_id, roll_number, channel, address, at, status, detail) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?)", (exam_id, roll, channel, address,
+                                                             (at or datetime.now()).isoformat(timespec="seconds"),
+                                                             status, detail))
+
+    def sent_to(self, exam_id: int, channel: str) -> set[str]:
+        """Roll numbers this exam's result was already sent to by `channel`."""
+        return {r for (r,) in self.db.execute("SELECT roll_number FROM send_log WHERE exam_id = ? AND channel = ? "
+                                              "AND status = 'sent'", (exam_id, channel))}
+
+    def send_times(self, channel: str, since: datetime) -> list[datetime]:
+        """When each message was sent by `channel` since then, over every exam, for the provider's limits."""
+        return [datetime.fromisoformat(a) for (a,) in self.db.execute(
+            "SELECT at FROM send_log WHERE channel = ? AND status = 'sent' AND at >= ?",
+            (channel, since.isoformat(timespec="seconds")))]
+
+    def send_log(self, exam_id: int) -> list[tuple[str, str, str, str, str, str]]:
+        """(at, roll number, channel, address, status, detail) for the exam, newest first."""
+        return self.db.execute("SELECT at, roll_number, channel, address, status, detail FROM send_log WHERE "
+                               "exam_id = ? ORDER BY id DESC", (exam_id,)).fetchall()
 
     def exams_taken(self) -> dict[str, int]:
         """Roll number (as `same_roll` gives it) to the number of exams, not in the Trash, with a sheet read for it."""

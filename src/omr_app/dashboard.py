@@ -10,8 +10,10 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QGridLayout, QHBoxLayo
                                QTableWidgetItem, QToolTip, QVBoxLayout, QWidget)
 
 from omr_core.export import Graded, write_excel, write_scorecards
+from omr_core import sending
 from omr_core.report import write_reports
 
+from .sending import SendDialog
 from .theme import tokens
 
 
@@ -304,12 +306,16 @@ class ResultsPage(ShownPage):
         self.reports = QPushButton("Student reports…", toolTip="Each student's scorecard as a page that opens in any "
                                    "browser or phone, and as a PDF, named by roll number, in a folder or a zip")
         self.reports.clicked.connect(self.save_reports)
+        self.send = QPushButton("Send to students…", toolTip="Email or text each student their result; set it up "
+                                "under Settings, Send results")
+        self.send.clicked.connect(self.send_results)
         self.csv.clicked.connect(check.save_csv)
         top = QHBoxLayout()
         top.addStretch()
         top.addWidget(self.excel)
         top.addWidget(self.pdf)
         top.addWidget(self.reports)
+        top.addWidget(self.send)
         top.addWidget(self.csv)
         layout = QVBoxLayout(self)
         layout.addLayout(top)
@@ -330,6 +336,7 @@ class ResultsPage(ShownPage):
         self.excel.setEnabled(bool(self.graded))
         self.pdf.setEnabled(bool(self.graded))
         self.reports.setEnabled(bool(self.graded))
+        self.send.setEnabled(bool(self.graded))
         self.csv.setEnabled(bool(c.sheets))
         self.table.setSortingEnabled(False)
         names = [s.name for s in c.sections]
@@ -364,6 +371,13 @@ class ResultsPage(ShownPage):
             self, "Marks still to check",
             f"{waiting} items still need checking on Review, so some scores may change. Export anyway?",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes
+
+    def send_results(self):
+        c = self.check
+        exam = sending.Exam(c.exam.name, c.exam.template, self.graded, c.marks, c.sections,
+                            c.store.institute_for(c.exam.id), c.exam.written_out_of,
+                            c.exam.details.get("date") or c.exam.created[:10])
+        SendDialog(self, c.store, c.exam.id, exam, len(c.review_items())).exec()
 
     def save_reports(self):
         c = self.check
