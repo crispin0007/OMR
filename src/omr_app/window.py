@@ -26,6 +26,7 @@ from . import theme
 from .answer_key import KeyTab
 from .columns import pick_columns
 from .dashboard import DashboardPage, ResultsPage
+from .directory import DirectoryPage
 from .designer import DesignerPage
 from .exam_page import ExamPage, ExamSettings, PrintSheet, StudentsTab, WrittenTab
 from .exam_templates import TemplatesPage
@@ -618,7 +619,7 @@ class CheckPage(QWidget):
 
 
 class MainWindow(QMainWindow):
-    PAGES = ["Dashboard", "Exams", "Templates", "Map printed sheet", "Question Bank", "Syllabus", "Settings"]
+    PAGES = ["Dashboard", "Exams", "Student directory", "Templates", "Map printed sheet", "Question Bank", "Syllabus", "Settings"]
     LATER = {"Question Bank": "Comes in phase 2", "Syllabus": "Comes in phase 3"}
 
     def __init__(self, db_path: str | Path | None = None):
@@ -660,11 +661,13 @@ class MainWindow(QMainWindow):
         self.exams_area.addWidget(self.exams)
         self.exams_area.addWidget(self.exam_page)
         self.templates = TemplatesPage(self.store)
+        self.directory = DirectoryPage(self.store)
         self.designer = DesignerPage()
         self.settings = theme.SettingsPage(self.prefs)
         self.settings.form.addRow("Institute", InstituteSettings(self.store, self.institute_changed))
         self.settings.changed.connect(self.apply_prefs)
-        self.pages = {"Dashboard": self.dashboard, "Exams": self.exams_area, "Templates": self.templates,
+        self.pages = {"Dashboard": self.dashboard, "Exams": self.exams_area, "Student directory": self.directory,
+                      "Templates": self.templates,
                       "Map printed sheet": self.designer, "Settings": self.settings}
 
         self.stack = QStackedWidget()

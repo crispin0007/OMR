@@ -963,7 +963,7 @@ def test_absent_students_are_listed_and_saved(app, tmp_path, monkeypatch):
     s = w.students
     assert "2 students, 1 absent" in s.note.text() and s.save_absent.isEnabled()
     s.absent_only.setChecked(True)
-    assert s.table.rowCount() == 1 and s.table.item(0, 1).text() == "Bikash Shah" and s.table.item(0, 3).text() == "Absent"
+    assert s.table.rowCount() == 1 and s.table.item(0, 1).text() == "Bikash Shah" and s.table.item(0, 6).text() == "Absent"
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "absent.csv"), ""))
     s.save_absent_list()
     assert (tmp_path / "absent.csv").read_text(encoding="utf-8-sig") == f"Roll number,Name,Class\n{other},Bikash Shah,10 A\n"
@@ -1432,3 +1432,40 @@ def test_portable_copy_keeps_its_data_beside_it(tmp_path, monkeypatch):
     assert portable_dir() is None and data_dir().name == "OMR"  # installed: %LOCALAPPDATA%\OMR
     (tmp_path / "portable.txt").write_text("")
     assert portable_dir() == data_dir() == tmp_path / "data"
+
+
+def test_the_student_directory_is_kept_once_and_an_exam_takes_a_batch(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+    from omr_app.directory import StudentDialog
+    from omr_core.students import Student
+    w = window(tmp_path)
+    d = w.directory
+    w.go("Student directory")
+    assert d.table.rowCount() == 0 and "No students yet" in d.note.text()
+
+    dialog = StudentDialog(d, w.store)
+    dialog.edits["roll_number"].setText("12")
+    dialog.edits["name"].setText("Asha Rai")
+    dialog.edits["batch"].setText("CEE morning")
+    dialog.edits["phone"].setText("98")
+    dialog.save()
+    assert "isn't a phone number" in dialog.problem.text() and w.store.directory() == []
+    dialog.edits["phone"].setText("+977 9800000001")
+    dialog.save()
+    assert w.store.directory() == [Student("12", "Asha Rai", "", "CEE morning", "", "+9779800000001")]
+    w.store.add_to_directory([Student("34", "Bikash Thapa", batch="IOE"), Student("56", "Chandra KC", batch="IOE")])
+    d.redraw()
+    assert d.table.rowCount() == 3 and [d.batch.itemText(i) for i in range(d.batch.count())] == [
+        "All batches", "CEE morning", "IOE"]
+    d.search.setText("chandra")
+    assert d.table.rowCount() == 1 and d.table.item(0, 1).text() == "Chandra KC"
+    d.search.clear()
+    d.batch.setCurrentText("IOE")
+    d.redraw()
+    assert d.table.rowCount() == 2
+
+    monkeypatch.setattr(QInputDialog, "getItem", lambda _p, _t, _l, items, *a: (items[1], True))
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    w.students.use_batch()
+    assert sorted(w.check.students) == ["00034", "00056"] and w.check.students["00034"].batch == "IOE"
+    assert w.students.table.item(0, 3).text() == "IOE"

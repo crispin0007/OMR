@@ -77,3 +77,43 @@ def test_absent_students_have_no_sheet_read():
     students = {r: Student(r, n) for r, n in (("003", "C"), ("001", "A"), ("002", "B"))}
     assert [s.roll_number for s in absent(students, {"002", "999"})] == ["001", "003"]
     assert absent({}, {"001"}) == []
+
+
+def test_reads_batch_email_and_phone_and_leaves_out_a_bad_contact(tmp_path):
+    path = workbook(tmp_path, [
+        ["Roll", "Name", "Batch", "Email", "Mobile"],
+        [101, "Asha Rai", "IOE morning", "asha@example.org", 9800000001],
+        [102, "Bikash Thapa", "IOE morning", "not an email", "+977 980-000-0002"],
+        [103, "Chandra KC", "", "", "12"],
+    ])
+    students, problems = read_students(path, None)
+    assert students == [Student("101", "Asha Rai", "", "IOE morning", "asha@example.org", "9800000001"),
+                        Student("102", "Bikash Thapa", "", "IOE morning", "", "+9779800000002"),
+                        Student("103", "Chandra KC")]
+    assert problems == ["row 3: email 'not an email' doesn't look like an email address; 102 imported without it",
+                        "row 4: phone '12' isn't a phone number; 103 imported without it"]
+
+
+def test_the_directory_keeps_students_once_and_an_exam_takes_a_batch(tmp_path):
+    from omr_core.students import for_sheet
+    s = Store(tmp_path / "omr.db")
+    s.save_student(Student("12", " Asha  Rai ", "11", "CEE", "asha@example.org", "+977 9800000001"))
+    with pytest.raises(ValueError, match="already in the directory"):
+        s.save_student(Student("12", "Someone"))
+    with pytest.raises(ValueError, match="doesn't look like an email"):
+        s.save_student(Student("13", "Bikash", email="bikash@"))
+    assert s.add_to_directory([Student("12", "Asha Rai", "", "", "", "9811111111"), Student("123456", "Too Long",
+                                                                                            batch="CEE")]) == (1, 1)
+    assert s.directory() == [Student("12", "Asha Rai", "11", "CEE", "asha@example.org", "9811111111"),
+                             Student("123456", "Too Long", batch="CEE")]  # an empty cell kept what was there
+    assert s.batches() == ["CEE"]
+    s.save_student(Student("14", "Asha Rai", batch="IOE"), replacing="12")
+    assert [x.roll_number for x in s.directory()] == ["14", "123456"]
+
+    fit, problems = for_sheet(s.directory(), 5)
+    assert [x.roll_number for x in fit] == ["00014"] and problems == ["123456 Too Long: not a roll number of 5 digits"]
+    exam = s.create_exam("Mock", TEMPLATE)
+    s.set_students(exam, fit)
+    assert s.students(exam)["00014"].batch == "IOE"
+    s.remove_students(["14"])
+    assert [x.roll_number for x in s.directory()] == ["123456"] and "00014" in s.students(exam)

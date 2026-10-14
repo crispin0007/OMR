@@ -19,7 +19,7 @@ from omr_core.reader import read_or_reason
 from omr_core.sheet import render
 from omr_core.sources import read_pages
 from omr_core.store import TRASH_DAYS
-from omr_core.students import absent, read_students
+from omr_core.students import absent, for_sheet, read_students
 from omr_core.template import parse
 
 from .institutes import logo_pixmap
@@ -106,14 +106,17 @@ class StudentsTab(QWidget):
         self.save_absent.clicked.connect(self.save_absent_list)
         self.copy_button = QPushButton("Use the list of another exam…")
         self.copy_button.clicked.connect(self.copy_students)
+        self.batch_button = QPushButton("Use a batch…", toolTip="Take the list from the student directory, by batch")
+        self.batch_button.clicked.connect(self.use_batch)
         top = QHBoxLayout()
         top.addWidget(self.note, 1)
         top.addWidget(self.absent_only)
         top.addWidget(self.save_absent)
         top.addWidget(self.copy_button)
+        top.addWidget(self.batch_button)
         top.addWidget(self.import_button)
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Roll number", "Name", "Class", "Sheet"])
+        self.table = QTableWidget(0, 7)
+        self.table.setHorizontalHeaderLabels(["Roll number", "Name", "Class", "Batch", "Email", "Phone", "Sheet"])
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.verticalHeader().hide()
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -144,10 +147,10 @@ class StudentsTab(QWidget):
         warn = QColor(tokens()["warn"])
         self.table.setRowCount(len(students))
         for row, s in enumerate(students):
-            for col, text in enumerate((s.roll_number, s.name, s.class_name,
+            for col, text in enumerate((s.roll_number, s.name, s.class_name, s.batch, s.email, s.phone,
                                         "Absent" if s.roll_number in away else "Read")):
                 item = QTableWidgetItem(text)
-                if col == 3 and s.roll_number in away:
+                if col == 6 and s.roll_number in away:
                     item.setForeground(warn)
                 self.table.setItem(row, col, item)
         self.table.resizeColumnsToContents()
@@ -155,6 +158,7 @@ class StudentsTab(QWidget):
         self.save_absent.setEnabled(bool(away))
         self.absent_only.setEnabled(bool(c.students))
         self.copy_button.setEnabled(c.exam is not None)
+        self.batch_button.setEnabled(c.exam is not None)
 
     def save_absent_list(self):
         exam = self.check.exam
@@ -211,6 +215,31 @@ class StudentsTab(QWidget):
         if ok:
             other = others[labels.index(picked)]
             self._replace(list(store.students(other[0]).values()), f"of “{other[1]}”")
+
+    def use_batch(self):
+        store, exam = self.check.store, self.check.exam
+        batches = store.batches()
+        everyone = store.directory()
+        if not everyone:
+            QMessageBox.information(self, "No students in the directory", "Add students under Student directory in "
+                                    "the sidebar first, or import an Excel list here.")
+            return
+        labels = [f"{b} ({sum(s.batch == b for s in everyone)} students)" for b in batches]
+        labels.append(f"Everyone in the directory ({len(everyone)} students)")
+        picked, ok = QInputDialog.getItem(self, "Use a batch", "Batch", labels, 0, False)
+        if not ok:
+            return
+        n = labels.index(picked)
+        chosen = [s for s in everyone if n == len(batches) or s.batch == batches[n]]
+        roll = next((g for g in exam.template.grids if g.kind == "roll_number"), None)
+        students, problems = for_sheet(chosen, roll.cols if roll else None)
+        if not students:
+            QMessageBox.warning(self, "Can't use that batch", "None of its roll numbers fit this sheet.\n\n"
+                                + "\n".join(problems[:30]))
+            return
+        if self._replace(students, "of the batch") and problems:
+            QMessageBox.information(self, "Some students left out", f"{len(problems)} students can't be on this "
+                                    "sheet:\n" + "\n".join(problems[:30]))
 
     def _replace(self, students: list, source: str) -> bool:
         """Give the exam these students, asking first when it has some; False when the person says no."""

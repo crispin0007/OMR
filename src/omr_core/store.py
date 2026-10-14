@@ -10,7 +10,7 @@ import os
 import shutil
 import sqlite3
 import tempfile
-from dataclasses import dataclass
+from dataclasses import astuple, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -20,10 +20,11 @@ import numpy as np
 from .branding import Institute, check, from_json, to_json
 from .grading import Section, check_sections, sections_from_json, sections_to_json
 from .reader import PageResult
-from .students import Student
+from .students import Student, check_email, check_phone
 from .template import Template, parse
 
 JPEG_QUALITY = 60
+STUDENT = "roll_number, name, class_name, batch, email, phone"  # a Student's columns, in its order
 TRASH_DAYS = 30  # an exam in the Trash is deleted for good after this many days
 PNG_MAGIC = b"\x89PNG"
 
@@ -90,7 +91,18 @@ CREATE TABLE IF NOT EXISTS student (
     roll_number TEXT NOT NULL,
     name TEXT NOT NULL,
     class_name TEXT NOT NULL DEFAULT '',
+    batch TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (exam_id, roll_number)
+);
+CREATE TABLE IF NOT EXISTS directory (   -- the institute's students, kept once for every exam
+    roll_number TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    class_name TEXT NOT NULL DEFAULT '',
+    batch TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS institute (
     id INTEGER PRIMARY KEY,
@@ -150,6 +162,10 @@ class Store:
         if "serial" not in [r[1] for r in self.db.execute("PRAGMA table_info(page)")]:
             with self.db:
                 self.db.execute("ALTER TABLE page ADD COLUMN serial TEXT NOT NULL DEFAULT ''")
+        if "batch" not in [r[1] for r in self.db.execute("PRAGMA table_info(student)")]:
+            with self.db:
+                for column in ("batch", "email", "phone"):
+                    self.db.execute(f"ALTER TABLE student ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
 
     def close(self):
         self.db.close()
@@ -388,10 +404,12 @@ class Store:
                         self.db.execute("INSERT INTO key_log (exam_id, at, user, set_code, question, before, after) "
                                         "SELECT ?, at, user, set_code, question, before, after FROM b.key_log "
                                         "WHERE exam_id = ? ORDER BY id", (exam, old))
-                        self.db.execute("INSERT INTO student (exam_id, roll_number, name, class_name) SELECT ?, "
-                                        "roll_number, name, class_name FROM b.student WHERE exam_id = ?", (exam, old))
+                        self.db.execute(f"INSERT INTO student (exam_id, {STUDENT}) SELECT ?, {STUDENT} "
+                                        "FROM b.student WHERE exam_id = ?", (exam, old))
                         restored.append(name)
                     self.db.execute("INSERT OR IGNORE INTO exam_template SELECT name, body FROM b.exam_template")
+                    # a student already in the directory here keeps their details
+                    self.db.execute(f"INSERT OR IGNORE INTO directory ({STUDENT}) SELECT {STUDENT} FROM b.directory")
             finally:
                 self.db.execute("DETACH DATABASE b")
         return restored, skipped
@@ -572,8 +590,8 @@ class Store:
         """Replace the exam's student list."""
         with self.db:
             self.db.execute("DELETE FROM student WHERE exam_id = ?", (exam_id,))
-            self.db.executemany("INSERT INTO student (exam_id, roll_number, name, class_name) VALUES (?, ?, ?, ?)",
-                                [(exam_id, s.roll_number, s.name, s.class_name) for s in students])
+            self.db.executemany(f"INSERT INTO student (exam_id, {STUDENT}) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                [(exam_id, *astuple(s)) for s in students])
 
     def set_written_out_of(self, exam_id: int, out_of: float):
         """Marks of the exam's written part, 0 for none. Raises ValueError below a mark already typed."""
@@ -600,8 +618,63 @@ class Store:
         return dict(self.db.execute("SELECT roll_number, marks FROM written WHERE exam_id = ?", (exam_id,)))
 
     def students(self, exam_id: int) -> dict[str, Student]:
-        rows = self.db.execute("SELECT roll_number, name, class_name FROM student WHERE exam_id = ?", (exam_id,))
+        rows = self.db.execute(f"SELECT {STUDENT} FROM student WHERE exam_id = ?", (exam_id,))
         return {r[0]: Student(*r) for r in rows}
+
+
+    def directory(self) -> list[Student]:
+        """The institute's students, by roll number."""
+        return [Student(*r) for r in self.db.execute(f"SELECT {STUDENT} FROM directory ORDER BY "
+                                                     "length(roll_number), roll_number")]
+
+    def save_student(self, student: Student, replacing: str = "") -> Student:
+        """Add a student to the directory, or change the one with roll number `replacing`; the student as saved.
+        Raises ValueError for a missing roll number or name, a roll number already taken, or a bad contact."""
+        roll, name = student.roll_number.strip(), " ".join(student.name.split())
+        if not roll or any(c.isspace() for c in roll):
+            raise ValueError("the roll number can't be empty or have spaces")
+        if not name:
+            raise ValueError("the student needs a name")
+        saved = Student(roll, name, student.class_name.strip(), student.batch.strip(), check_email(student.email),
+                        check_phone(student.phone))
+        with self.db:
+            if roll != replacing and self.db.execute("SELECT 1 FROM directory WHERE roll_number = ?",
+                                                     (roll,)).fetchone():
+                raise ValueError(f"roll number {roll} is already in the directory")
+            if replacing:
+                self.db.execute("DELETE FROM directory WHERE roll_number = ?", (replacing,))
+            self.db.execute(f"INSERT INTO directory ({STUDENT}) VALUES (?, ?, ?, ?, ?, ?)", astuple(saved))
+        return saved
+
+    def add_to_directory(self, students: list[Student]) -> tuple[int, int]:
+        """Add imported students, updating those already there: (added, updated). An empty cell in the import
+        keeps what the directory has."""
+        known = {s.roll_number: s for s in self.directory()}
+        with self.db:
+            for s in students:
+                old = known.get(s.roll_number)
+                if old:
+                    s = Student(*(new or was for new, was in zip(astuple(s), astuple(old))))
+                self.db.execute(f"INSERT OR REPLACE INTO directory ({STUDENT}) VALUES (?, ?, ?, ?, ?, ?)",
+                                astuple(s))
+        added = sum(s.roll_number not in known for s in students)
+        return added, len(students) - added
+
+    def remove_students(self, rolls: list[str]):
+        """Take students out of the directory; exams keep their own lists and results."""
+        with self.db:
+            self.db.executemany("DELETE FROM directory WHERE roll_number = ?", [(r,) for r in rolls])
+
+    def exams_taken(self) -> dict[str, int]:
+        """Roll number to the number of exams (not in the Trash) with a sheet read for it."""
+        return dict(self.db.execute("SELECT p.roll_number, COUNT(DISTINCT p.exam_id) FROM page p JOIN exam e ON "
+                                    "e.id = p.exam_id WHERE e.deleted_at IS NULL AND p.roll_number IS NOT NULL "
+                                    "GROUP BY p.roll_number"))
+
+    def batches(self) -> list[str]:
+        """The directory's batches, by name."""
+        return [b for (b,) in self.db.execute("SELECT DISTINCT batch FROM directory WHERE batch != '' "
+                                              "ORDER BY batch COLLATE NOCASE")]
 
     def png_pages(self) -> int:
         """Read pages whose image is still a PNG, from before images were saved as JPEG."""

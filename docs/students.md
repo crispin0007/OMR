@@ -7,10 +7,29 @@ and scorecard shows the student's name, and the app can tell you who was absent.
 
 ![The Students tab](images/students.png)
 
+## The student directory
+
+**Student directory** in the sidebar keeps your institute's students once, for every exam: roll
+number, name, class, **batch** (for example "CEE morning" or "IOE weekend"), **email** and **phone**.
+
+- **Import from Excel…** adds a list. Students already in the directory are updated; an empty cell
+  keeps what was there. An email or phone that doesn't look right is left out and listed, and the
+  student is still added.
+- **Add student…** and **Change…** (or double-click a row) edit one student. Phone numbers are
+  saved with their country code, for example `+9779800000001`.
+- **Remove…** takes students out of the directory. Exams keep their own lists and results.
+- Search by name, roll number, email or phone, or pick a batch. **Exams taken** counts the exams
+  with a sheet read for that roll number.
+
+On an exam's **Students** tab, **Use a batch…** gives the exam the students of one batch (or
+everyone). Roll numbers get back the leading zeros Excel drops, and anyone whose roll number can't
+be on that sheet is listed and left out.
+
 ## Import the list from Excel
 
 1. Make an Excel file (`.xlsx`) with a column for **roll number**, one for **name**, and,
-   if you like, one for **class**. The first row holds the column headings.
+   if you like, ones for **class**, **batch**, **email** and **phone**. The first row holds the
+   column headings.
 2. Open the exam's **Students** tab and press **Import students…**.
 3. Pick the file.
 
