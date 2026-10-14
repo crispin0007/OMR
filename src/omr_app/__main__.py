@@ -18,6 +18,8 @@ def main() -> int:
     if portable_dir():  # the portable copy keeps its settings with its exams
         QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, str(portable_dir()))
     window = MainWindow()
+    if not window.log_in():
+        return 0
     window.show()
     return app.exec()
 

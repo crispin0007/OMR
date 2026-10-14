@@ -1,6 +1,5 @@
 """Review page: every item the reader flagged, on the sheet image, fixed with a click or a key (US2, FR-013)."""
 
-import getpass
 from pathlib import Path
 
 import cv2
@@ -53,7 +52,6 @@ class ReviewPage(QWidget):
     def __init__(self, check):
         super().__init__()
         self.check = check
-        self.user = getpass.getuser()
         self.items: list[tuple[int, str, str]] = []
         self.queue = QListWidget()
         self.queue.currentRowChanged.connect(self.show_item)
@@ -252,7 +250,7 @@ class ReviewPage(QWidget):
         c = self.check
         i = self.items[self.queue.currentRow()][0]
         try:
-            c.sheets[i] = c.store.correct(c.sheets[i].id, item, value, self.user)
+            c.sheets[i] = c.store.correct(c.sheets[i].id, item, value, c.user)
         except ValueError as e:
             self.error.setText(str(e))
             return

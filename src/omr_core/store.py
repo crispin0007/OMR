@@ -6,6 +6,8 @@ editing the template file later doesn't change an exam's results.
 """
 
 import json
+import hashlib
+import hmac
 import os
 import secrets
 import shutil
@@ -30,6 +32,11 @@ STUDENT = "roll_number, name, class_name, batch, email, phone"  # a Student's co
 LISTED = STUDENT + ", student_id"  # and on an exam's list, the directory student it is
 TRASH_DAYS = 30  # an exam in the Trash is deleted for good after this many days
 PNG_MAGIC = b"\x89PNG"
+JPEG_MAGIC = b"\xff\xd8\xff"
+ROLES = ("admin", "operator")
+PAGE_COLUMNS = ("batch", "file", "page_no", "read_at", "roll_number", "set_code", "answers", "flags", "problem",
+                "serial", "name_read")  # a page as a scanning PC sends it, with its image
+JOIN_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS exam (
@@ -140,6 +147,32 @@ CREATE TABLE IF NOT EXISTS series (      -- how a test series adds up; its exams
 CREATE TABLE IF NOT EXISTS setting (     -- the institute's own choices that the reading and results depend on
     name TEXT PRIMARY KEY,
     value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS operator (    -- who may use the app; with none, nobody logs in
+    name TEXT PRIMARY KEY,
+    role TEXT NOT NULL,                     -- "admin" or "operator"
+    salt BLOB NOT NULL,
+    pin_hash BLOB NOT NULL                  -- PBKDF2 of the PIN
+);
+CREATE TABLE IF NOT EXISTS station (     -- on the main PC: each PC let in to scan into its exams
+    token TEXT PRIMARY KEY,
+    operator TEXT NOT NULL,
+    pc TEXT NOT NULL,
+    joined TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS received (    -- on the main PC: each page a scanning PC sent, so none is saved twice
+    uid TEXT PRIMARY KEY,
+    page_id INTEGER NOT NULL REFERENCES page(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS link (        -- on a scanning PC: an exam that is a copy of one on a main PC
+    exam_id INTEGER PRIMARY KEY REFERENCES exam(id) ON DELETE CASCADE,
+    address TEXT NOT NULL,                  -- host:port of the main PC
+    remote_id INTEGER NOT NULL,             -- the exam's id there
+    token TEXT NOT NULL,
+    main TEXT NOT NULL                      -- the main PC's name, to show
+);
+CREATE TABLE IF NOT EXISTS sent (        -- on a scanning PC: pages the main PC has saved
+    page_id INTEGER PRIMARY KEY REFERENCES page(id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS exam_template (
     name TEXT PRIMARY KEY,
@@ -573,7 +606,9 @@ class Store:
                     self.db.execute("INSERT OR IGNORE INTO exam_template SELECT name, body FROM b.exam_template")
                     self.db.execute("INSERT OR IGNORE INTO series SELECT name, best_of FROM b.series")
                     # a new PC takes the backup's settings, so students' results codes stay the same
-                    self.db.execute("INSERT OR IGNORE INTO setting SELECT name, value FROM b.setting")
+                    # but never its PC id: two scanning PCs restored from one backup must still send apart
+                    self.db.execute("INSERT OR IGNORE INTO setting SELECT name, value FROM b.setting "
+                                    "WHERE name != 'pc_id'")
                     # a student already in the directory here keeps their details
                     self.db.execute(f"INSERT OR IGNORE INTO directory ({STUDENT}) SELECT {STUDENT} FROM b.directory")
             finally:
@@ -984,6 +1019,191 @@ class Store:
         if not row or row[0] is None:
             return None
         return cv2.imdecode(np.frombuffer(row[0], np.uint8), cv2.IMREAD_UNCHANGED if as_saved else cv2.IMREAD_GRAYSCALE)
+
+
+    # -- operators and several PCs (specs/005-several-pcs) --------------------------------------------------
+
+    def add_operator(self, name: str, pin: str, role: str):
+        """Add an operator, or give one a new PIN and role. The first must be an admin."""
+        name = name.strip()
+        if not name:
+            raise ValueError("the operator needs a name")
+        if len(pin) < 4:
+            raise ValueError("the PIN needs at least 4 characters")
+        if role not in ROLES:
+            raise ValueError(f"the role must be one of {', '.join(ROLES)}")
+        if role != "admin" and not any(r == "admin" for n, r in self.operators() if n != name):
+            raise ValueError("the first operator must be an admin, so someone can manage the rest")
+        salt = os.urandom(16)
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO operator (name, role, salt, pin_hash) VALUES (?, ?, ?, ?)",
+                            (name, role, salt, _pin_hash(pin, salt)))
+
+    def remove_operator(self, name: str):
+        if [n for n, r in self.operators() if r == "admin"] == [name] and len(self.operators()) > 1:
+            raise ValueError("keep one admin while there are other operators")
+        with self.db:
+            self.db.execute("DELETE FROM operator WHERE name = ?", (name,))
+            self.db.execute("DELETE FROM station WHERE operator = ?", (name,))
+
+    def operators(self) -> list[tuple[str, str]]:
+        """(name, role) for each operator, by name."""
+        return self.db.execute("SELECT name, role FROM operator ORDER BY name COLLATE NOCASE").fetchall()
+
+    def login(self, name: str, pin: str) -> str | None:
+        """The operator's role when the PIN is theirs, else None."""
+        row = self.db.execute("SELECT role, salt, pin_hash FROM operator WHERE name = ?", (name.strip(),)).fetchone()
+        return row[0] if row and hmac.compare_digest(_pin_hash(pin, row[1]), row[2]) else None
+
+    @property
+    def join_code(self) -> str:
+        """The code another PC needs to join this one; made once, and new with `new_join_code`."""
+        row = self.db.execute("SELECT value FROM setting WHERE name = 'join_code'").fetchone()
+        return row[0] if row else self.new_join_code()
+
+    def new_join_code(self) -> str:
+        code = "".join(secrets.choice(JOIN_LETTERS) for _ in range(8))
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO setting (name, value) VALUES ('join_code', ?)", (code,))
+        return code
+
+    def join(self, code: str, name: str, pin: str, pc: str) -> str:
+        """Let a PC in to scan into this PC's exams, for an operator: its token. Raises PermissionError."""
+        if not hmac.compare_digest(code.strip().upper().encode(), self.join_code.encode()):
+            raise PermissionError("the join code is wrong")
+        if self.operators() and self.login(name, pin) is None:
+            raise PermissionError("the name or PIN is wrong")
+        token = secrets.token_urlsafe(24)
+        with self.db:
+            self.db.execute("INSERT INTO station (token, operator, pc, joined) VALUES (?, ?, ?, ?)",
+                            (token, name.strip(), pc.strip()[:60] or "?", datetime.now().isoformat(timespec="seconds")))
+        return token
+
+    def station(self, token: str) -> tuple[str, str] | None:
+        """(operator, PC) of a joined PC, or None."""
+        return self.db.execute("SELECT operator, pc FROM station WHERE token = ?", (token,)).fetchone()
+
+    def stations(self) -> list[tuple[str, str, str, str]]:
+        """(token, operator, PC, joined at) for each PC let in, newest first."""
+        return self.db.execute("SELECT token, operator, pc, joined FROM station ORDER BY joined DESC").fetchall()
+
+    def remove_station(self, token: str):
+        with self.db:
+            self.db.execute("DELETE FROM station WHERE token = ?", (token,))
+
+    def exam_copy(self, exam_id: int) -> dict:
+        """What a scanning PC needs of an open exam: its sheet, key, marks and student list."""
+        row = self.db.execute("SELECT name, template, answer_key, correct, wrong, blank, sections, details, "
+                              "written_out_of FROM exam WHERE id = ? AND deleted_at IS NULL AND NOT archived",
+                              (exam_id,)).fetchone()
+        if row is None:
+            raise KeyError(exam_id)
+        keys = ("name", "template", "answer_key", "correct", "wrong", "blank", "sections", "details", "written_out_of")
+        out = dict(zip(keys, row))
+        out["students"] = [list(r) for r in self.db.execute(f"SELECT {LISTED} FROM student WHERE exam_id = ?",
+                                                             (exam_id,))]
+        return out
+
+    def receive_page(self, exam_id: int, uid: str, page: dict, image: bytes | None, by: tuple[str, str]) -> int:
+        """Save a page a scanning PC sent, once however often it is sent: the page's id here. `by` is the
+        (operator, PC), named in its batch. Raises ValueError for anything that isn't a page."""
+        if not self.db.execute("SELECT 1 FROM exam WHERE id = ? AND deleted_at IS NULL AND NOT archived",
+                               (exam_id,)).fetchone():
+            raise KeyError(exam_id)
+        if not isinstance(uid, str) or not 0 < len(uid) <= 100 or not isinstance(page, dict):
+            raise ValueError("not a page")
+        values = [page.get(c) for c in PAGE_COLUMNS]
+        texts = dict(zip(PAGE_COLUMNS, values))
+        if not isinstance(texts["page_no"], int) or not all(
+                isinstance(texts[c], str) for c in ("batch", "file", "read_at", "problem", "serial", "name_read")):
+            raise ValueError("not a page")
+        read = texts["roll_number"] is not None
+        if read:
+            if not all(isinstance(texts[c], str) for c in ("roll_number", "set_code", "answers", "flags")):
+                raise ValueError("not a page")
+            answers, flags = json.loads(texts["answers"]), json.loads(texts["flags"])
+            if not isinstance(answers, dict) or not all(str(q).isdigit() and isinstance(a, str)
+                                                        for q, a in answers.items()):
+                raise ValueError("not a page: its answers")
+            if not isinstance(flags, list) or not all(isinstance(f, list) and len(f) == 2 for f in flags):
+                raise ValueError("not a page: its flags")
+        elif any(texts[c] is not None for c in ("set_code", "answers", "flags")):
+            raise ValueError("not a page")
+        json.loads(texts["name_read"])
+        if image is not None and not image.startswith((PNG_MAGIC, JPEG_MAGIC)):
+            raise ValueError("not a page: its image")
+        texts["batch"] = f"{texts['batch'][:120]}  ·  {by[1]}" + (f", {by[0]}" if by[0] else "")
+        done = self.db.execute("SELECT page_id FROM received WHERE uid = ?", (uid,)).fetchone()
+        if done:
+            return done[0]
+        with self.db:
+            page_id = self.db.execute(
+                f"INSERT INTO page (exam_id, {', '.join(PAGE_COLUMNS)}, image) VALUES (?{', ?' * len(PAGE_COLUMNS)}, ?)",
+                (exam_id, *texts.values(), image)).lastrowid
+            self.db.execute("INSERT INTO received (uid, page_id) VALUES (?, ?)", (uid, page_id))
+        return page_id
+
+    def pages_after(self, exam_id: int, page_id: int) -> list[StoredPage]:
+        """An exam's pages saved after `page_id`, such as the ones other PCs sent."""
+        return [p for p in self._pages("exam_id = ?", exam_id) if p.id > page_id]
+
+    def copy_exam(self, copy: dict, address: str, remote_id: int, token: str, main: str) -> int:
+        """On a scanning PC: the main PC's exam (from `exam_copy`) as an exam here, linked to it. The same exam
+        joined again is brought up to date instead, keeping the pages scanned here."""
+        known = self.db.execute("SELECT exam_id FROM link WHERE address = ? AND remote_id = ?",
+                                (address, remote_id)).fetchone()
+        parse(json.loads(copy["template"]))  # refuse a sheet the reader can't use
+        sections_from_json(json.loads(copy["sections"]))
+        values = (copy["name"], copy["template"], copy["answer_key"], float(copy["correct"]), float(copy["wrong"]),
+                  float(copy["blank"]), copy["sections"], json.dumps({k: v for k, v in json.loads(
+                      copy["details"]).items() if k != "institute"}), float(copy["written_out_of"]))
+        students = [Student(*map(str, r[:6]), student_id=str(r[6])) for r in copy["students"]]
+        with self.db:
+            if known:
+                exam_id = known[0]
+                self.db.execute("UPDATE exam SET name = ?, template = ?, answer_key = ?, correct = ?, wrong = ?, "
+                                "blank = ?, sections = ?, details = ?, written_out_of = ? WHERE id = ?",
+                                (*values, exam_id))
+                self.db.execute("UPDATE link SET token = ?, main = ? WHERE exam_id = ?", (token, main, exam_id))
+            else:
+                exam_id = self.db.execute(
+                    "INSERT INTO exam (name, template, answer_key, correct, wrong, blank, sections, details, "
+                    "written_out_of, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (*values, datetime.now().isoformat(timespec="seconds"))).lastrowid
+                self.db.execute("INSERT INTO link (exam_id, address, remote_id, token, main) VALUES (?, ?, ?, ?, ?)",
+                                (exam_id, address, remote_id, token, main))
+        self.set_students(exam_id, students)
+        return exam_id
+
+    def link(self, exam_id: int) -> tuple[str, int, str, str] | None:
+        """(address, exam id there, token, main PC's name) when this exam is a copy of a main PC's."""
+        return self.db.execute("SELECT address, remote_id, token, main FROM link WHERE exam_id = ?",
+                               (exam_id,)).fetchone()
+
+    def unsent(self, exam_id: int) -> list[int]:
+        """Pages of a linked exam the main PC hasn't saved yet, oldest first."""
+        return [i for (i,) in self.db.execute("SELECT id FROM page WHERE exam_id = ? AND id NOT IN (SELECT page_id "
+                                              "FROM sent) ORDER BY id", (exam_id,))]
+
+    def page_to_send(self, page_id: int) -> tuple[dict, bytes | None]:
+        row = self.db.execute(f"SELECT {', '.join(PAGE_COLUMNS)}, image FROM page WHERE id = ?", (page_id,)).fetchone()
+        return dict(zip(PAGE_COLUMNS, row[:-1])), row[-1]
+
+    def mark_sent(self, page_id: int):
+        with self.db:
+            self.db.execute("INSERT OR IGNORE INTO sent (page_id) VALUES (?)", (page_id,))
+
+    def pc_id(self) -> str:
+        """This PC's own id, so the pages it sends are told apart from another PC's."""
+        row = self.db.execute("SELECT value FROM setting WHERE name = 'pc_id'").fetchone()
+        if row:
+            return row[0]
+        with self.db:
+            self.db.execute("INSERT INTO setting (name, value) VALUES ('pc_id', ?)", (secrets.token_hex(8),))
+        return self.pc_id()
+
+def _pin_hash(pin: str, salt: bytes) -> bytes:
+    return hashlib.pbkdf2_hmac("sha256", pin.encode(), salt, 200_000)
 
 
 def _png(image: np.ndarray) -> bytes | None:

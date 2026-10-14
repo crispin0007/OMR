@@ -1,6 +1,6 @@
 # Scan the filled sheets
 
-[Guide home](index.md) · Previous: [Use a sheet you already print](map-printed-sheet.md) · Next: [The answer key](answer-key.md)
+[Guide home](index.md) · Previous: [Use a sheet you already print](map-printed-sheet.md) · Next: [Several PCs on one exam](several-pcs.md)
 
 After the exam, the filled sheets go into the computer in one of three ways:
 
@@ -139,4 +139,4 @@ the page, marked in the same colours, with a legend underneath.
 - If some pages couldn't be read, a note explains why, with a **Map my printed sheet…** button
   for sheets other than the exam's own.
 
-[Guide home](index.md) · Next: [The answer key](answer-key.md)
+[Guide home](index.md) · Next: [Several PCs on one exam](several-pcs.md)

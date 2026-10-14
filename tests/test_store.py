@@ -228,7 +228,7 @@ def test_backup_restores_on_another_pc_without_replacing_anything(tmp_path):
     s.set_students(exam, [Student("12", "Asha", "10A")])
     s.add_page(exam, "b", "a.pdf", 2, PageResult("13", "A", {1: "A"}, [], serial="0007"))
     s.save_template("Weekly NEET", "{}")
-    secret = s.results_secret
+    secret, pc = s.results_secret, s.pc_id()
     s.backup(tmp_path / "backup.db")
     s.backup(tmp_path / "backup.db")  # again, over the last one
 
@@ -247,6 +247,7 @@ def test_backup_restores_on_another_pc_without_replacing_anything(tmp_path):
     assert other.students(new_id)["12"].name == "Asha"
     assert other.templates() == {"Weekly NEET": '{"kept": 1}'}  # a template here is never replaced
     assert other.results_secret == secret  # students keep their results codes on the new PC
+    assert other.pc_id() != pc  # but each PC sends its scans to a main PC under its own id
 
     (tmp_path / "notes.txt").write_text("not a backup")
     with pytest.raises(sqlite3.DatabaseError):

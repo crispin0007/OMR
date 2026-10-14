@@ -167,6 +167,8 @@ class ScanPage(QWidget):
         layout.addLayout(top)
         layout.addLayout(options)
         layout.addWidget(self.status)
+        self.sending = QLabel(objectName="muted", wordWrap=True, visible=False)  # for an exam of another PC's
+        layout.addWidget(self.sending)
         layout.addLayout(tiles)
         layout.addWidget(split, 1)
 

@@ -20,6 +20,7 @@ from .dashboard import ShownPage
 from .help import steps_html
 from .new_exam import TEMPLATES, USER_TEMPLATES, NewExamWizard  # noqa: F401  (TEMPLATES is used by window.py)
 from .series import SeriesDialog
+from .several_pcs import JoinDialog
 
 class ExamsPage(ShownPage):
     """Every exam; click one to open its page."""
@@ -31,6 +32,7 @@ class ExamsPage(ShownPage):
         self.store = store
         self.open_id: int | None = None
         self.purged: list[str] = []  # exams the Trash deleted for good when the app started
+        self.admin = True  # an operator logged in can't restore backups or delete exams for good
         new = QPushButton("New exam…", objectName="primary")
         new.clicked.connect(self.new_exam)
         backup = QPushButton("Back up…", toolTip="Save every exam, with its sheets, corrections and students, "
@@ -38,6 +40,10 @@ class ExamsPage(ShownPage):
         backup.clicked.connect(self.backup)
         restore = QPushButton("Restore…", toolTip="Add the exams in a backup file; exams already here stay as they are")
         restore.clicked.connect(self.restore)
+        self.restore_backup = restore
+        join = QPushButton("Scan into another PC…", toolTip="Scan on this PC into an exam kept on another PC on "
+                           "your network; each page is sent there")
+        join.clicked.connect(self.join)
         self.series = QPushButton("Test series…", toolTip="Rank students on their combined score over the exams "
                                   "of a test series")
         self.series.clicked.connect(lambda: SeriesDialog(self, self.store, program=self.program_chosen()).exec())
@@ -51,6 +57,7 @@ class ExamsPage(ShownPage):
         top.addWidget(self.series)
         top.addWidget(backup)
         top.addWidget(restore)
+        top.addWidget(join)
         top.addWidget(new)
         self.note = QLabel(objectName="muted", wordWrap=True)
         self.views = QTabBar(drawBase=False)
@@ -293,7 +300,9 @@ class ExamsPage(ShownPage):
                               (self.restore_button, view == "trash"), (self.delete_button, view == "trash"),
                               (self.empty, view == "trash")):
             button.setVisible(shown)
-            button.setEnabled(chosen or button is self.empty and bool(self.store.trash()))
+            button.setEnabled((chosen or button is self.empty and bool(self.store.trash()))
+                              and (self.admin or button in (self.open_button, self.unarchive)))
+        self.restore_backup.setEnabled(self.admin)
 
     def chosen(self) -> int | None:
         rows = self.table.selectionModel().selectedRows()
@@ -392,6 +401,11 @@ class ExamsPage(ShownPage):
         QMessageBox.information(self, "Done", f"The exams went from {before / 1e6:,.0f} MB to {after / 1e6:,.0f} MB."
                                 + (f"\n\n{self.store.png_pages()} pages are left for next time."
                                    if self.store.png_pages() else "") + f"\n\nYour backup is in {path}.")
+
+    def join(self):
+        dialog = JoinDialog(self, self.store)
+        if dialog.exec():
+            self.opened.emit(dialog.exam_id)
 
     def restore(self):
         docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)

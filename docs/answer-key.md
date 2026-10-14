@@ -1,6 +1,6 @@
 # The answer key
 
-[Guide home](index.md) · Previous: [Scan the filled sheets](scanning.md) · Next: [Marks, sections, topics and written marks](marks-and-sections.md)
+[Guide home](index.md) · Previous: [Several PCs on one exam](several-pcs.md) · Next: [Marks, sections, topics and written marks](marks-and-sections.md)
 
 The **answer key** is the list of right answers. Open the exam's **Answer key** tab. Every
 question has a row with its section and options.

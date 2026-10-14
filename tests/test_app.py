@@ -1,4 +1,5 @@
 import os
+import time
 
 import cv2
 import numpy as np
@@ -1806,3 +1807,55 @@ def test_a_sheet_is_printed_for_each_student_on_the_list(app, tmp_path, monkeypa
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(tmp_path / "sheets.pdf"), ""))
     p.save.click()
     assert len(pypdfium2.PdfDocument(tmp_path / "sheets.pdf")) == 2
+
+
+def test_a_second_pc_scans_into_the_main_pcs_exam_and_operators_log_in(app, tmp_path, monkeypatch):
+    from omr_app.several_pcs import JoinDialog, LoginDialog
+    from omr_core import lan
+    monkeypatch.setattr(lan, "PORT", 0)  # any free port
+    main = window(tmp_path / "main")
+    exam = main.check.exam.id
+    main.store.add_operator("Asha", "9876", "admin")
+    main.store.add_operator("Ravi", "1234", "operator")
+    main.let_pcs_in(True)
+    try:
+        pc = MainWindow(tmp_path / "pc" / "omr.db")
+        join = JoinDialog(pc.exams, pc.store)
+        join.address.setText(f"127.0.0.1:{main.server.port}")
+        join.code.setText(main.store.join_code)
+        join.name.setText("Ravi")
+        join.pin.setText("0000")
+        join.connect_main()
+        assert "name or PIN is wrong" in join.status.text() and not join.exams.isEnabled()
+        join.pin.setText("1234")
+        join.connect_main()
+        assert join.exams.currentText() == "Mock"
+        join.open_exam()
+        pc.open_exam(join.exam_id)
+        assert pc.check.exam.name == "Mock" and pc.scan.sending.isVisibleTo(pc.scan)
+
+        (path, answers, roll, _), = sheet_files(tmp_path, [3])
+        pc.check.read_files([path])
+        pc.send_waiting()
+        for _ in range(200):  # the page goes on the sender's thread; the main PC shows it when it arrives
+            app.processEvents()
+            if not pc.sender.busy and len(main.check.sheets) == 1 and "All sent" in pc.scan.sending.text():
+                break
+            time.sleep(0.02)
+        assert [s.result.roll_number for s in main.check.sheets] == [roll]
+        assert main.check.sheets[0].batch.endswith(", Ravi") and "All sent" in pc.scan.sending.text()
+        pc.close()
+    finally:
+        main.let_pcs_in(False)
+
+    login = LoginDialog(main, main.store)
+    login.name.setCurrentText("Ravi")
+    login.pin.setText("1111")
+    login.log_in()
+    assert login.role is None and "isn't right" in login.error.text()
+    login.pin.setText("1234")
+    login.log_in()
+    main.set_operator("Ravi", login.role)
+    assert main.check.user == "Ravi" and not main.check.key_edit.isEnabled()
+    assert not main.exam_page.tabs.isTabEnabled(main.exam_page.names.index("Answer key"))
+    assert not main.pcs_settings.operators.isEnabled()

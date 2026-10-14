@@ -127,6 +127,9 @@ on the **Templates** screen.
   section and topic bars, every question), plus a PDF, in a folder or one zip named by roll number.
 - **Hindi, Marathi and Nepali** headings, instructions, names and letterheads print with their
   letters joined, on sheets, scorecards and marked sheets.
+- **Several PCs on one exam**: scan on two or three PCs at once into the main PC's exam over your
+  office network; pages wait safely on each PC until the main PC has them. Operator logins with PINs,
+  and every correction logged under who made it.
 - **Results website**: a folder to upload where each student opens their own report with their roll
   number and a private code that stays the same in every exam.
 - **Institute branding**: name, logo, address, colour, motto and signature, kept once and used on

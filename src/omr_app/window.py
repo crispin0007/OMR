@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QDoubleSpi
                                QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
+from omr_core import lan
 from omr_core.export import Graded, csv_columns, grade, single_questions, write_csv
 from omr_core.grading import (BONUS, DROPPED, EITHER, Section, format_topics, full_marks, key_changes, marks_for,
                               parse_key, parse_topics, score)
@@ -40,6 +41,7 @@ from .paths import data_dir
 from .new_exam import Deduction
 from .review import ReviewPage
 from .scan import ScanPage, marked_sheet
+from .several_pcs import LoginDialog, PcsSettings, Sender, refresh_copy
 from .sections import SectionsDialog
 
 APP = "OMR Checker"
@@ -78,6 +80,8 @@ class CheckPage(QWidget):
         self._scoring: tuple | None = None  # what the scores were worked out from
         self.questions: list[int] = []
         self.sheets: list[StoredPage] = []
+        self.user = getpass.getuser()  # who corrections are logged under; the operator logged in, when there are
+        self.admin = True  # may change the key and marks and delete sheets
         self.students: dict[str, Student] = {}  # the exam's own list
         self.named: dict[str, Student] = {}  # those, and the directory's student for any other roll number read
         self._suggested: dict[int, tuple] = {}  # page id: (what it was worked out from, the student or None)
@@ -242,14 +246,14 @@ class CheckPage(QWidget):
         return box
 
     def _enable(self):
-        for w in (self.open_button, self.key_edit, self.correct, self.wrong, self.blank, self.sections_button,
-                  self.topics_button):
-            w.setEnabled(self.exam is not None)
+        self.open_button.setEnabled(self.exam is not None)
+        for w in (self.key_edit, self.correct, self.wrong, self.blank, self.sections_button, self.topics_button):
+            w.setEnabled(self.exam is not None and self.admin)
         self.save_button.setEnabled(bool(self.sheets))
         chosen = bool(self.selected())
-        self.delete_button.setEnabled(chosen)
+        self.delete_button.setEnabled(chosen and self.admin)
         self.names_button.setEnabled(chosen)
-        self.move_button.setEnabled(chosen)
+        self.move_button.setEnabled(chosen and self.admin)
 
     def open_exam(self, exam_id: int | None):
         """Show an exam's saved key, marks and sheets; None closes it."""
@@ -283,7 +287,7 @@ class CheckPage(QWidget):
     def scheme_changed(self, changes: list[tuple[str, int, str, str]] = ()):
         if self.exam is not None:
             self.store.save_scheme(self.exam.id, self.key_edit.toPlainText(), self.correct.value(),
-                                   self.wrong.value(), self.blank.value(), changes, getpass.getuser())
+                                   self.wrong.value(), self.blank.value(), changes, self.user)
         self.fill_table()
 
     @property
@@ -470,6 +474,15 @@ class CheckPage(QWidget):
         self.sheets.append(stored)
         return stored
 
+    def pull_new(self):
+        """Show the pages saved since the exam was opened, such as the ones another PC sent."""
+        if self.exam is None:
+            return
+        new = self.store.pages_after(self.exam.id, max((s.id for s in self.sheets), default=0))
+        if new:
+            self.sheets += new
+            self.refresh_soon()
+
     def read_again(self, template) -> dict[int, tuple] | None:
         """Every page of the exam read with `template`, for changing its sheet: from the original file while it
         is still there, else from the image saved for the page. None when stopped."""
@@ -636,7 +649,7 @@ class CheckPage(QWidget):
                 if grid and text.isdigit() and len(text) < len(roll):  # "16" for "0016?"
                     text = text.zfill(len(roll))
                 if text != roll:
-                    self.sheets[item.row()] = self.store.correct(sheet.id, "roll number", text, getpass.getuser())
+                    self.sheets[item.row()] = self.store.correct(sheet.id, "roll number", text, self.user)
             elif text != self.name_of(sheet):
                 self.save_name(roll, text)
         except ValueError as e:
@@ -801,6 +814,7 @@ class CheckPage(QWidget):
 
 
 class MainWindow(QMainWindow):
+    arrived = Signal(int)  # another PC's page was saved into this exam, from the server's thread
     PAGES = ["Dashboard", "Exams", "Student directory", "Templates", "Map printed sheet", "Question Bank", "Syllabus", "Settings"]
     LATER = {"Question Bank": "Comes in phase 2", "Syllabus": "Comes in phase 3"}
 
@@ -812,6 +826,9 @@ class MainWindow(QMainWindow):
             db_path = data_dir() / "omr.db"
         self.store_path = Path(db_path)
         self.store = Store(db_path)
+        self.admin = True
+        self.server: lan.MainServer | None = None
+        self.server_error = ""
         self.check = CheckPage(self.store)
         self.exams = ExamsPage(self.store)
         self.exams.purged = self.store.purge_trash()
@@ -849,6 +866,8 @@ class MainWindow(QMainWindow):
         self.settings = theme.SettingsPage(self.prefs)
         self.settings.form.addRow("Institute", InstituteSettings(self.store, self.institute_changed))
         self.settings.form.addRow("Send results", SendingSettings())
+        self.pcs_settings = PcsSettings(self)
+        self.settings.form.addRow("Logins and PCs", self.pcs_settings)
         self.settings.changed.connect(self.apply_prefs)
         self.pages = {"Dashboard": self.dashboard, "Exams": self.exams_area, "Student directory": self.directory,
                       "Templates": self.templates,
@@ -913,6 +932,15 @@ class MainWindow(QMainWindow):
         self.apply_prefs(self.prefs)
         QApplication.styleHints().colorSchemeChanged.connect(lambda _: self.apply_prefs(self.prefs))  # Windows switched
 
+        self.arrived.connect(lambda exam_id: self.check.exam and self.check.exam.id == exam_id and self.check.pull_new())
+        self.sender = Sender(self.store_path)
+        self.sender.done.connect(self.sent)
+        self.send_timer = QTimer(self, interval=3000)
+        self.send_timer.timeout.connect(self.send_waiting)
+        self.send_timer.start()
+        if str(theme.settings().value("let_pcs_in", "false")) == "true":
+            self.let_pcs_in(True)
+
         last = theme.settings().value("last_exam")
         known = {e[0] for e in self.store.exams("kept")}
         last = int(last) if str(last).isdigit() and int(last) in known else None
@@ -920,7 +948,9 @@ class MainWindow(QMainWindow):
         self.go("Dashboard" if last else "Exams")
 
     def open_exam(self, exam_id: int | None, go: bool = True):
+        note = refresh_copy(self.store, exam_id) if exam_id is not None and self.store.link(exam_id) else ""
         self.check.open_exam(exam_id)
+        self.show_sending(note)
         self.exams.refresh(exam_id)
         self.exam_page.refresh()
         self.students.refresh()
@@ -1004,6 +1034,66 @@ class MainWindow(QMainWindow):
         self.theme_button.setText("☀  Light mode" if theme.is_dark(prefs) else "☾  Dark mode")
         self.check.fill_table()  # repaints review rows and, through `changed`, the dashboard and results
 
+    def log_in(self) -> bool:
+        """Ask who is using the app when it has operators; False when nobody logged in."""
+        if not self.store.operators():
+            return True
+        dialog = LoginDialog(self, self.store)
+        if not dialog.exec():
+            return False
+        self.set_operator(dialog.name.currentText(), dialog.role)
+        return True
+
+    def set_operator(self, name: str, role: str):
+        """Log corrections under `name`; an operator can't change the key or marks or delete anything."""
+        self.check.user = name
+        self.admin = self.check.admin = self.exams.admin = role == "admin"
+        for tab in ("Answer key", "Marks and sections", "Exam settings"):
+            self.exam_page.tabs.setTabEnabled(self.exam_page.names.index(tab), self.admin)
+        self.check._enable()
+        self.exams.redraw()
+        self.pcs_settings.refresh()
+        self.setWindowTitle(f"{self.windowTitle()}  ·  {name}")
+
+    def let_pcs_in(self, on: bool):
+        """Answer other PCs scanning into this PC's exams, or stop."""
+        if self.server:
+            self.server.stop()
+            self.server = None
+        self.server_error = ""
+        if on:
+            try:
+                self.server = lan.MainServer(self.store_path, lan.PORT, self.arrived.emit)
+            except OSError as e:
+                self.server_error = f"Can't let other PCs in: {e}. Is another copy of OMR Checker open?"
+        theme.settings().setValue("let_pcs_in", "true" if on else "false")
+        self.pcs_settings.refresh()
+
+    def send_waiting(self):
+        """Send the open exam's waiting pages to its main PC, when it is a copy of one."""
+        exam = self.check.exam
+        if exam and not self.sender.busy and self.store.link(exam.id) and self.store.unsent(exam.id):
+            self.sender.start(exam.id)
+
+    def sent(self, exam_id: int, n: int, refused: list[str], error: str):
+        if self.check.exam and self.check.exam.id == exam_id:
+            self.show_sending({"unreachable": "Can't reach {main} now; the pages wait here and go when it's back.",
+                               "taken out": "{main} took this PC out; join it again from Exams, Scan into another "
+                                            "PC, to send the pages waiting here."}.get(error, ""), refused)
+
+    def show_sending(self, note: str = "", refused: list[str] = ()):
+        """On the Scan tab of an exam copied from a main PC: where its pages go, and how many wait here."""
+        link = self.check.exam and self.store.link(self.check.exam.id)
+        self.scan.sending.setVisible(bool(link))
+        if link:
+            main = link[3]
+            waiting = len(self.store.unsent(self.check.exam.id))
+            self.scan.sending.setText(
+                f"Scanning into {main}'s exam: each page is saved here and sent to {main}. "
+                + (f"{waiting} waiting to go. " if waiting else "All sent. ")
+                + note.replace("{main}", main) + (f" {main} refused: " + "; ".join(refused) + "." if refused else "")
+                + f" Check sheets and see results on {main}.")
+
     def closeEvent(self, e):
         thread = self.scan.thread
         if thread is not None:
@@ -1013,5 +1103,7 @@ class MainWindow(QMainWindow):
         self.scan.timer.stop()
         if self.scan.reader is not None:  # pages already read and saved stay; the rest are read next time
             self.scan.stop()
+        if self.server:
+            self.server.stop()
         self.store.close()
         super().closeEvent(e)
