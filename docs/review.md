@@ -25,6 +25,10 @@ read, so you can see at once whether the mark sits in its bubble.
 
 - Press the **letter** of the right answer (or click its button).
 - Press **Delete** for **Blank**.
+- Press **X** for **Invalid**: two or more marks on a question that takes one answer, even when the
+  second is only a light scribble. It scores what the exam's [Marks](marks-and-sections.md#two-marks-on-one-question)
+  tab says for two marks, and shows as *invalid* on the scorecard, in Excel, and as a red box on the
+  marked sheet.
 - Press **Space** for **Keep as read**.
 - A numeric answer: type the number and press **Save number**.
 - A roll number: type it and press **Save roll number**.

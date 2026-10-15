@@ -1,7 +1,7 @@
 import pytest
 
 from omr_core.grading import (Section, check_sections, format_key, full_marks, key_from_csv, key_to_csv, marks_for,
-                               parse_key, rank, score)
+                               parse_key, rank, score, shown, status)
 
 
 def test_score_plain_mcq():
@@ -27,6 +27,13 @@ def test_two_bubbles_on_a_single_answer_question_earn_nothing():
     # where the sheet allows several answers, the same marks are just wrong
     marks = marks_for([1, 2], 4, -1, 0, single={2})
     assert score(["AB", "AB"], ["A", "A"], marks=marks) == -1 + 0
+
+
+def test_an_answer_marked_invalid_scores_as_two_marks_nothing_or_the_wrong_marks():
+    assert score(["!", "!", "!", "AB"], ["A", "*", "-", "A"], correct=4, wrong=-1) == 0 + 4 + 0 + 0
+    marks = marks_for([1, 2, 3, 4], 4, -1, 0, single={1, 2, 3}, doubled_wrong=True)
+    assert score(["!", "AB", "C", "AB"], ["A", "A", "C", "A"], marks=marks) == -1 - 1 + 4 - 1
+    assert status("!", "A") == "wrong" and shown("!") == "invalid" and shown("AB") == "AB"
 
 
 def test_score_rejects_length_mismatch():
@@ -63,7 +70,7 @@ def test_a_short_key_drops_the_rest():
 def test_sections_have_their_own_marks():
     physics, maths = Section("Physics", 1, 2, 4, -1), Section("Maths", 3, 3, 3, -1)
     marks = marks_for([1, 2, 3, 4], 1, 0, 0, [physics, maths])
-    assert marks == [(4, -1, 0, False, True), (4, -1, 0, False, True), (3, -1, 0, False, True), (1, 0, 0, False, True)]  # Q4: no section
+    assert marks == [(4, -1, 0, False, True, 0.0), (4, -1, 0, False, True, 0.0), (3, -1, 0, False, True, 0.0), (1, 0, 0, False, True, 0.0)]  # Q4: no section
     assert score(["A", "B", "C", "D"], ["A", "A", "C", "A"], marks=marks) == 4 - 1 + 3 + 0
     assert full_marks(["A", "A", "C", "-"], marks) == 11
 
@@ -127,7 +134,7 @@ def test_numeric_answers_are_right_when_the_number_is():
     assert parse_key("B42", 2, each[:2]) == {"": ["B", "42"]}  # a number's digits stay together
     assert parse_key("B, 042, 7", 3, each) == {"": ["B", "42", "7"]}
     assert score(["B", "042", "5"], ["B", "42", "7"], wrong=-1) == 1  # 042 is 42; 5 isn't 7
-    assert score(["4", ""], ["42", "7"], marks=[(4, -1, 0, True, False)] * 2) == -1  # no part marks for part of a number
+    assert score(["4", ""], ["42", "7"], marks=[(4, -1, 0, True, False, 0.0)] * 2) == -1  # no part marks for part of a number
     with pytest.raises(ValueError, match="4 is not an option"):
         parse_key("4, 42", 2, each[:2])
     with pytest.raises(ValueError, match="X is not a number"):

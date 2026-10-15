@@ -116,6 +116,24 @@ def test_corrections_update_the_page_clear_the_flag_and_are_logged(tmp_path):
     assert s.page(page.id).result.answers[1] == ""
 
 
+def test_a_second_mark_is_marked_invalid_in_review_or_by_the_strict_rule(tmp_path):
+    s = Store(tmp_path / "omr.db")
+    exam = s.create_exam("Mock", TEMPLATE)
+    flags = [("Q1", "unclear mark"), ("Q2", "unclear mark"), ("Q3", "multiple marks")]
+    page = s.add_page(exam, "b", "scan.pdf", 1, PageResult("123", "A", {1: "B", 2: "", 3: "AC"}, flags))
+    assert s.correct(page.id, "Q3", "!", "asha").result.answers[3] == "!"
+    assert s.audit(exam)[0][4:] == ("Q3", "AC", "!")
+    assert not s.exam(exam).strict and s.page(page.id).result.flags == flags[:2]
+    s.set_double_marks(exam, wrong=True, strict=True)
+    e = s.exam(exam)
+    assert e.doubled_wrong and e.strict
+    # Q1: filled B and a faint second mark, invalid; Q2: only a faint mark, still to check
+    (got,) = s.pages(exam)
+    assert got.result.answers == {1: "!", 2: "", 3: "!"} and got.result.flags == [("Q2", "unclear mark")]
+    s.set_double_marks(exam, wrong=False, strict=False)  # off again: the reading and its flag come back
+    assert s.page(page.id).result.answers[1] == "B" and s.page(page.id).result.flags == flags[:2]
+
+
 def test_typing_the_whole_roll_number_settles_its_unclear_digits(tmp_path):
     s = Store(tmp_path / "omr.db")
     exam = s.create_exam("Mock", TEMPLATE)
@@ -127,7 +145,7 @@ def test_typing_the_whole_roll_number_settles_its_unclear_digits(tmp_path):
 
 @pytest.mark.parametrize("item, value", [("Q2", "E"), ("Q2", "AB"), ("Q999", "A"), ("roll number digit 9", "1"),
                                          ("roll number digit 1", "x"), ("roll number", "12"), ("set code", "Z"),
-                                         ("name", "A")])
+                                         ("name", "A"), ("set code", "!")])
 def test_refuses_bad_corrections(tmp_path, item, value):
     s = Store(tmp_path / "omr.db")
     exam = s.create_exam("Mock", TEMPLATE)
@@ -261,7 +279,7 @@ def test_a_numeric_answer_is_corrected_with_its_digits(tmp_path):
         SheetSection("MCQ", 2), SheetSection("Numeric", 1, digits=3)]))))
     page = s.add_page(exam, "b", "scan.pdf", 1, PageResult("12345", "A", {1: "A", 2: "", 3: "4?2"},
                                                            [("Q3", "gap between digits")]))
-    for bad in ("4A", "1234", "B"):
+    for bad in ("4A", "1234", "B", "!"):
         with pytest.raises(ValueError, match="up to 3 digits"):
             s.correct(page.id, "Q3", bad, "asha")
     fixed = s.correct(page.id, "Q3", "042", "asha")

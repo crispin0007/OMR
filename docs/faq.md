@@ -26,7 +26,9 @@ No. Scan whenever you like; scores appear as soon as the key is in.
 Yes. Change them on **Marks and sections** and every score is worked out again.
 
 **What if a student fills two bubbles?**
-It goes to [Review](review.md), where you decide. The app never guesses.
+It goes to [Review](review.md), where you decide; press **X** to mark it invalid. The app never
+guesses. Whether an invalid answer scores nothing or the wrong marks is set on
+[Marks](marks-and-sections.md#two-marks-on-one-question).
 
 **Can students have different question paper sets?**
 Yes, up to 8 sets, with an answer key each. The student fills their set on the sheet.

@@ -21,7 +21,7 @@ from reportlab.pdfgen import canvas
 
 from . import pdftext
 from .branding import Institute
-from .grading import BONUS, DROPPED, Section, changed_questions, marks_for, parse_key, rank, score, status
+from .grading import BONUS, DROPPED, Section, changed_questions, marks_for, parse_key, rank, score, shown, status
 from .store import StoredPage, to_review
 from .students import Student
 from .template import Template
@@ -56,17 +56,19 @@ def single_questions(t: Template) -> set[int]:
 
 def grade(t: Template, pages: list[StoredPage], answer_key: str, correct: float, wrong: float,
           blank: float, students: dict[str, Student] | None = None, sections: list[Section] = (),
-          written: dict[str, float] | None = None, topics: dict[int, str] | None = None) -> list[Graded]:
+          written: dict[str, float] | None = None, topics: dict[int, str] | None = None,
+          doubled_wrong: bool = False) -> list[Graded]:
     """Every page that can be scored, best first, with rank and percentile.
 
     `written` holds typed marks for a written part by roll number; they add to the sheet's score.
+    `doubled_wrong` scores two bubbles filled on a single-answer question as wrong instead of nothing.
 
     Pages that couldn't be read, or whose set has no key, are left out; they show in review instead.
     Raises ValueError if the key doesn't fit the sheet.
     """
     qs = questions(t)
     keys = parse_key(answer_key, len(qs), t.answer_options())
-    marks = marks_for(qs, correct, wrong, blank, sections, single_questions(t))
+    marks = marks_for(qs, correct, wrong, blank, sections, single_questions(t), doubled_wrong)
     students = students or {}
     flagged = {i for i, _, _ in to_review(pages, students)}
     out = []
@@ -116,7 +118,7 @@ def item_analysis(t: Template, graded: list[Graded]) -> list[list]:
             rows.append([f"Q{q}", "dropped", None, None, None, "", None])
             continue
         states = Counter(status(g.page.result.answers[q], g.key[n]) for g in counted)
-        wrong = Counter(g.page.result.answers[q] for g in counted if status(g.page.result.answers[q], g.key[n]) == "wrong")
+        wrong = Counter(shown(g.page.result.answers[q]) for g in counted if status(g.page.result.answers[q], g.key[n]) == "wrong")
         pct = lambda k: round(100 * states[k] / len(counted), 1)
         right_share = lambda gs: sum(status(g.page.result.answers[q], g.key[n]) == "right" for g in gs
                                      if g.key[n] != DROPPED) / max(1, sum(g.key[n] != DROPPED for g in gs))
@@ -175,7 +177,7 @@ def write_csv(path: str | Path, t: Template, pages: list[StoredPage], graded: li
                       **{section_column(n): num(v) for n, v in (g.sections.items() if g else ())}}
             row = []
             for c in columns:
-                row += [r.answers[q] if r else "" for q in qs] if c == ANSWERS else ["" if values.get(c) is None else values[c]]
+                row += [shown(r.answers[q]) if r else "" for q in qs] if c == ANSWERS else ["" if values.get(c) is None else values[c]]
             w.writerow(row)
 
 
@@ -208,7 +210,7 @@ def write_excel(path: str | Path, exam_name: str, t: Template, graded: list[Grad
     styles = {}  # status to the style of the first cell given that fill; copying it skips openpyxl's slow lookup
     for row, g in enumerate(graded, start=2):  # max_row would scan the whole sheet on every row
         r = g.page.result
-        answers.append([r.roll_number, g.student.name if g.student else "", r.set_code, *(r.answers[q] for q in qs)])
+        answers.append([r.roll_number, g.student.name if g.student else "", r.set_code, *(shown(r.answers[q]) for q in qs)])
         for col, (q, k) in enumerate(zip(qs, g.key), start=4):
             state = status(r.answers[q], k)
             if state not in fills:
@@ -342,7 +344,7 @@ def write_scorecards(path: str | Path, exam_name: str, t: Template, graded: list
             sign, colour = marks[status(r.answers[q], k)]
             c.setFillColor(colors.black)
             c.drawString(x, y, f"Q{q}")
-            c.drawString(x + 10 * mm, y, r.answers[q] or "-")
+            c.drawString(x + 10 * mm, y, shown(r.answers[q]) or "-")
             c.setFillColor(colors.grey)
             c.drawString(x + 19 * mm, y, "bonus" if k == BONUS else k if k != DROPPED else "")
             c.setFillColor(colour)

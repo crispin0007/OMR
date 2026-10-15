@@ -39,14 +39,14 @@ def history(store: Store, student_id: str, exam_ids: list[int] | None = None) ->
         e = store.exam(i)
         try:
             graded = grade(e.template, store.pages(i), e.answer_key, e.correct, e.wrong, e.blank, store.students(i),
-                           e.sections, topics=store.topics(i))
+                           e.sections, topics=store.topics(i), doubled_wrong=e.doubled_wrong)
         except ValueError:
             continue  # no usable key yet: the exam's own Answer key tab says why
         g = next((g for g in graded if person(i, g.page.result.roll_number) == want), None)
         if g is None:
             continue
         qs = questions(e.template)
-        marks = marks_for(qs, e.correct, e.wrong, e.blank, e.sections)
+        marks = marks_for(qs, e.correct, e.wrong, e.blank, e.sections, doubled_wrong=e.doubled_wrong)
         out_of = full_marks(g.key, marks)
         sections = {}
         for sec in e.sections:

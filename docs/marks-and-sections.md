@@ -15,6 +15,24 @@ Open the exam's **Marks and sections** tab.
 
 You can change the marks at any time, even after scanning. Every score is worked out again at once.
 
+## Two marks on one question
+
+Two or more bubbles filled on a question that takes one answer are **invalid**. Under the marks,
+choose what an invalid answer scores:
+
+- **no marks** (the default): no marks, and no negative marks either;
+- **the wrong marks**: the same as a wrong answer, negative marking included.
+
+A clearly filled second bubble is caught by the reader and goes to [Review](review.md). A second mark
+that is only a **light scribble** or a **mark not quite rubbed out** goes to Review as an *unclear
+mark*, where you press **X** for Invalid.
+
+To make such answers invalid **without Review**, tick **Even a faint second mark counts**. A question
+with one filled bubble and any faint mark beside it is then invalid at once, on every sheet already
+scanned too; untick it and they go back to Review. Leave it off if students may rub out an answer
+to change it: a rubbed-out bubble that still shows will make their answer invalid. A faint mark on
+its own, with no filled bubble, still goes to Review.
+
 ## Sections
 
 A **section** is a group of questions with its own name and marks, for example *Physics, questions

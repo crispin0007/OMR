@@ -9,7 +9,7 @@ pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QCoreApplication, QEvent, QRectF, QSettings, Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton  # noqa: E402
 
 from omr_app import designer, scanner, theme  # noqa: E402
 from omr_app.columns import ColumnsDialog  # noqa: E402
@@ -182,6 +182,42 @@ def test_review_fixes_a_flagged_answer_and_logs_it(app, tmp_path):
     assert w.review.items == [] and float(c.table.item(0, 6).text()) == before + 1
     assert w.store.audit(c.exam.id)[0][4:] == ("Q1", "", "C")
     assert w.review.log.count() == 1
+
+
+def test_a_faint_second_mark_is_marked_invalid_in_review_or_by_the_strict_setting(app, tmp_path):
+    t = load(TEMPLATES / "test-100.json")
+    marks, answers, roll, set_code = random_marks(t, 5)
+    q_grid = next(i for i, g in enumerate(t.grids) if g.kind == "questions")
+    for c in range(4):
+        marks.pop((q_grid, 0, c), None)
+    marks[q_grid, 0, 1], marks[q_grid, 0, 3] = "pen", "half"  # Q1: B filled, and a faint mark on D
+    path = tmp_path / "scribble.png"
+    cv2.imwrite(str(path), scan(draw(t, marks)))
+    w = window(tmp_path)
+    c = w.check
+    c.read_files([str(path)])
+    c.key_edit.setPlainText("".join(["B"] + [answers[q] or "A" for q in c.questions[1:]]))
+    c.wrong.setValue(-1)
+    right = float(c.table.item(0, 6).text())
+    w.go("Review")
+    assert [(item, why) for _, item, why in w.review.items] == [("Q1", "unclear mark")]
+    invalid = next(b for b in w.review.findChildren(QPushButton) if b.text() == "Invalid" and not b.isHidden())
+    assert invalid.shortcut().toString() == "X"
+    invalid.click()
+    assert w.review.items == [] and float(c.table.item(0, 6).text()) == right - 1  # no marks for Q1
+    assert w.store.page(c.sheets[0].id).result.answers[1] == "!"
+    c.doubled.setCurrentIndex(1)  # two marks score the wrong marks
+    assert float(c.table.item(0, 6).text()) == right - 2
+
+    page = w.store.page(c.sheets[0].id).id  # back as read, and to Review once more
+    w.store.db.execute("UPDATE page SET answers = json_set(answers, '$.1', 'B'), flags = ? WHERE id = ?",
+                       ('[["Q1", "unclear mark"]]', page))
+    w.store.db.commit()
+    c.open_exam(c.exam.id)
+    w.go("Review")
+    assert c.doubled.currentIndex() == 1 and len(w.review.items) == 1
+    c.strict.setChecked(True)  # a faint second mark makes it invalid without Review
+    assert w.review.items == [] and float(c.table.item(0, 6).text()) == right - 2
 
 
 def test_results_export_asks_while_marks_wait_for_review(app, tmp_path, monkeypatch):

@@ -26,6 +26,7 @@
 | `/` | Answer key | Either of the ticked answers is right |
 | A, B, C… | Review | Pick that answer |
 | Delete | Review | Blank |
+| X | Review | Invalid: two marks, even a faint one |
 | Space | Review | Keep as read |
 
 ## Colours on the live sheet

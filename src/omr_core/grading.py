@@ -12,8 +12,10 @@ for Physics 1 to 50; questions outside every section use the exam's marks.
 A section with partial marking gives part of the correct marks to an answer
 that picks some of a multi-correct question's options and no wrong one.
 Two or more bubbles filled on a single-answer question (one printed for one
-answer, with a one-letter key) are invalid: no marks, not even negative ones;
-the reader flags them for review.
+answer, with a one-letter key) are invalid: no marks, not even negative ones,
+or the wrong marks when the exam counts them as wrong; the reader flags them for
+review. "!" is an answer a person marked invalid in review, e.g. for a second
+mark too faint for the reader to count; it scores as two bubbles filled.
 """
 
 import csv
@@ -24,7 +26,7 @@ from dataclasses import asdict, dataclass
 
 from .template import DIGITS
 
-BONUS, DROPPED, EITHER = "*", "-", "/"
+BONUS, DROPPED, EITHER, INVALID = "*", "-", "/", "!"
 
 
 @dataclass(frozen=True)
@@ -72,17 +74,18 @@ def sections_from_json(data: list[dict]) -> list[Section]:
         raise ValueError(f"sections need a name, first and last question, and correct and wrong marks ({e})") from e
 
 
-def marks_for(questions: list[int], correct: float, wrong: float, blank: float,
-              sections: list[Section] = (), single: set[int] | None = None) -> list[tuple[float, float, float, bool, bool]]:
-    """(correct, wrong, blank, partial, single) marks for each question, from its section or the exam's marks.
+def marks_for(questions: list[int], correct: float, wrong: float, blank: float, sections: list[Section] = (),
+              single: set[int] | None = None, doubled_wrong: bool = False) -> list[tuple]:
+    """(correct, wrong, blank, partial, single, doubled) marks for each question, from its section or the exam's.
 
-    `single` are the questions printed for one answer only; None means all of them.
+    `single` are the questions printed for one answer only; None means all of them. `doubled` is what an invalid
+    answer (two bubbles filled on one of them) scores: nothing, or the wrong marks when `doubled_wrong`.
     """
     out = []
     for q in questions:
         s = next((s for s in sections if s.first <= q <= s.last), None)
-        out.append(((s.correct, s.wrong, s.blank, s.partial) if s else (correct, wrong, blank, False))
-                   + (single is None or q in single,))
+        c, w, b, partial = (s.correct, s.wrong, s.blank, s.partial) if s else (correct, wrong, blank, False)
+        out.append((c, w, b, partial, single is None or q in single, w if doubled_wrong else 0.0))
     return out
 
 
@@ -90,16 +93,18 @@ def score(answers: list[str], key: list[str], correct: float = 1.0, wrong: float
           marks: list[tuple] | None = None) -> float:
     """Total marks for one sheet. `wrong` is negative for negative marking, e.g. -1.
 
-    `marks` gives each question its own (correct, wrong, blank, partial, single), from `marks_for`.
+    `marks` gives each question its own (correct, wrong, blank, partial, single, doubled), from `marks_for`.
     Without `marks` every question is single-answer.
     """
     if len(answers) != len(key):
         raise ValueError(f"sheet has {len(answers)} answers but key has {len(key)}")
-    marks = marks or [(correct, wrong, blank, False, True)] * len(key)
+    marks = marks or [(correct, wrong, blank, False, True, 0.0)] * len(key)
     total = 0.0
-    for answer, right, (c, w, b, partial, single) in zip(answers, key, marks):
-        if single and len(answer) > 1 and all(len(a) == 1 and a.isalpha() for a in right.split(EITHER)):
-            continue  # invalid: two bubbles where one answer was asked for earns nothing
+    for answer, right, (c, w, b, partial, single, doubled) in zip(answers, key, marks):
+        if right not in (BONUS, DROPPED) and (answer == INVALID or single and len(answer) > 1 and all(
+                len(a) == 1 and a.isalpha() for a in right.split(EITHER))):
+            total += doubled  # invalid: two bubbles where one answer was asked for
+            continue
         if partial and _part_right(answer, right):
             # shortcut: counted as wrong in right/wrong/blank counts and colours; only the marks are partial
             total += c * len(set(answer)) / len(set(right))
@@ -205,6 +210,11 @@ def format_key(keys: dict[str, list[str]]) -> str:
         answers = ", ".join(key) if any(len(a) > 1 for a in key) else "".join(key)
         lines.append(f"{set_code}: {answers}" if set_code else answers)
     return "\n".join(lines)
+
+
+def shown(answer: str) -> str:
+    """A sheet's answer as people read it: "invalid" for one marked invalid in review."""
+    return "invalid" if answer == INVALID else answer
 
 
 def describe(answer: str) -> str:

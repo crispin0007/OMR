@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QKeySequence, QPixmap, QShortcut
-from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QInputDialog,
+from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QInputDialog,
                                QLabel, QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QProgressDialog,
                                QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QDoubleSpi
 from omr_core import lan
 from omr_core.export import Graded, csv_columns, grade, single_questions, write_csv
 from omr_core.grading import (BONUS, DROPPED, EITHER, Section, format_topics, full_marks, key_changes, marks_for,
-                              parse_key, parse_topics, score)
+                              parse_key, parse_topics, score, shown)
 from omr_core.marking import LEGEND
 from omr_core.names import as_text, suggest
 from omr_core.parallel import PageReader
@@ -120,6 +120,19 @@ class CheckPage(QWidget):
             marks.addWidget(QLabel(text))
             marks.addWidget(box)
         marks.addStretch()
+        self.doubled = QComboBox()
+        self.doubled.addItems(["no marks", "the wrong marks"])
+        self.doubled.setToolTip("What a question with two or more bubbles filled scores, where one answer is asked "
+                                "for, including one marked Invalid in Review")
+        self.strict = QCheckBox("Even a faint second mark counts: such answers are invalid without going to Review")
+        self.strict.setToolTip("A light scribble or a mark not quite rubbed out beside a filled bubble makes the "
+                               "answer invalid. Leave off if students may rub out a changed answer.")
+        for w, signal in ((self.doubled, self.doubled.currentIndexChanged), (self.strict, self.strict.toggled)):
+            signal.connect(lambda _: self.double_marks_changed())
+        doubled = QHBoxLayout()
+        doubled.addWidget(QLabel("Two marks on one question score"))
+        doubled.addWidget(self.doubled)
+        doubled.addStretch()
         self.sections_button = QPushButton("Sections…")
         self.sections_button.setToolTip("Give ranges of questions their own name and marks, e.g. Physics 1 to 50")
         self.sections_button.clicked.connect(self.edit_sections)
@@ -128,6 +141,8 @@ class CheckPage(QWidget):
         marks_layout = QVBoxLayout(self.marks_tab)
         marks_layout.addWidget(QLabel("Marks for every question not in a section", objectName="muted"))
         marks_layout.addLayout(marks)
+        marks_layout.addLayout(doubled)
+        marks_layout.addWidget(self.strict)
         marks_layout.addSpacing(12)
         marks_layout.addWidget(QLabel("Sections give ranges of questions their own name and marks, and results show "
                                       "a score per section.", objectName="muted", wordWrap=True))
@@ -247,7 +262,8 @@ class CheckPage(QWidget):
 
     def _enable(self):
         self.open_button.setEnabled(self.exam is not None)
-        for w in (self.key_edit, self.correct, self.wrong, self.blank, self.sections_button, self.topics_button):
+        for w in (self.key_edit, self.correct, self.wrong, self.blank, self.doubled, self.strict, self.sections_button,
+                  self.topics_button):
             w.setEnabled(self.exam is not None and self.admin)
         self.save_button.setEnabled(bool(self.sheets))
         chosen = bool(self.selected())
@@ -277,6 +293,8 @@ class CheckPage(QWidget):
             self.template_label.setText(f"{exam.name}  ·  {t.name}, {len(self.questions)} questions")
             for box, v in ((self.correct, exam.correct), (self.wrong, exam.wrong), (self.blank, exam.blank)):
                 box.setValue(v)
+            self.doubled.setCurrentIndex(int(exam.doubled_wrong))
+            self.strict.setChecked(exam.strict)
             self.key_edit.setPlainText(exam.answer_key)
             self.exam = exam
         self.logged_keys = None  # the key as last logged; set from the opened exam's key, with nothing to log
@@ -288,6 +306,14 @@ class CheckPage(QWidget):
         if self.exam is not None:
             self.store.save_scheme(self.exam.id, self.key_edit.toPlainText(), self.correct.value(),
                                    self.wrong.value(), self.blank.value(), changes, self.user)
+        self.fill_table()
+
+    def double_marks_changed(self):
+        if self.exam is None:
+            return  # an exam opening
+        self.store.set_double_marks(self.exam.id, self.doubled.currentIndex() == 1, self.strict.isChecked())
+        self.exam = self.store.exam(self.exam.id)
+        self.sheets = self.store.pages(self.exam.id)  # the strict rule changes what the pages say
         self.fill_table()
 
     @property
@@ -308,10 +334,10 @@ class CheckPage(QWidget):
     def marks(self) -> list[tuple]:
         """Each question's marks, worked out again only when the exam, marks or sections change."""
         state = (self.exam and self.exam.id, len(self.questions), self.correct.value(), self.wrong.value(),
-                 self.blank.value(), tuple(self.sections))
+                 self.blank.value(), tuple(self.sections), bool(self.exam and self.exam.doubled_wrong))
         if self._marks_cache[0] != state:
             self._marks_cache = (state, marks_for(self.questions, *state[2:5], self.sections,
-                                            single_questions(self.exam.template) if self.exam else None))
+                                            single_questions(self.exam.template) if self.exam else None, state[6]))
         return self._marks_cache[1]
 
     def full_marks(self) -> float:
@@ -736,7 +762,7 @@ class CheckPage(QWidget):
         self.page_view.setPixmap(QPixmap.fromImage(image).scaledToWidth(
             max(self.page_view.width() - 20, 300), Qt.SmoothTransformation))
         self.review_list.addItems([f"{where}: {why}" for where, why in r.flags] or ["Nothing to check"])
-        self.answers_view.setPlainText("   ".join(f"{q}:{r.answers[q] or '·'}" for q in self.questions))
+        self.answers_view.setPlainText("   ".join(f"{q}:{shown(r.answers[q]) or '·'}" for q in self.questions))
 
     def selected(self) -> list[int]:
         """Rows of the selected pages that are shown."""
@@ -793,7 +819,8 @@ class CheckPage(QWidget):
         try:
             return grade(self.exam.template, self.sheets, self.key_edit.toPlainText(), self.correct.value(),
                          self.wrong.value(), self.blank.value(), self.named, self.sections,
-                         written=self.written if self.exam.written_out_of else None, topics=self.topics)
+                         written=self.written if self.exam.written_out_of else None, topics=self.topics,
+                         doubled_wrong=self.exam.doubled_wrong)
         except ValueError:
             return []  # the Answer key tab says why
 

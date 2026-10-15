@@ -2,7 +2,7 @@
 bubble of the template sits on a bubble of the paper.
 
 Green rings a filled bubble that is right, red one that is wrong, and blue the right answer the student missed
-(wrong or blank). Purple rings what was read where there is nothing to mark (the roll number, the set, a question
+(wrong or blank); a red box is a row marked invalid (two marks). Purple rings what was read where there is nothing to mark (the roll number, the set, a question
 with no key yet), grey a filled bubble on a dropped question, and orange boxes what waits on Review. With
 `every_bubble`, a thin circle shows where each bubble was read: on a printed bubble when the sheet is mapped
 right.
@@ -20,7 +20,7 @@ from reportlab.pdfgen import canvas
 
 from . import pdftext
 from .branding import Institute
-from .grading import BONUS, DROPPED, EITHER, status
+from .grading import BONUS, DROPPED, EITHER, INVALID, status
 from .reader import SCALE, PageResult, row_shifts
 from .template import Template
 
@@ -64,6 +64,9 @@ def mark_sheet(aligned: np.ndarray, t: Template, r: PageResult, key: dict[int, s
                 for letter in answer:
                     if letter in g.options:
                         ring(g, row, g.options.index(letter), colour)
+                if answer == INVALID:  # marked invalid in review: the whole row, as no one bubble is the answer
+                    (x0, y0), (x1, y1) = at(g, row, 0), at(g, row, g.cols - 1)
+                    cv2.rectangle(out, (x0 - radius, y0 - radius), (x1 + radius, y1 + radius), WRONG, 3)
                 if state in ("wrong", "blank") and right not in (BONUS, DROPPED):
                     for option in right.replace(EITHER, ""):  # every right option, of each answer accepted
                         if option in g.options and option not in answer:

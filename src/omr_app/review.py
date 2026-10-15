@@ -9,6 +9,7 @@ from PySide6.QtGui import QImage, QKeySequence, QPixmap
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
                                QSplitter, QVBoxLayout, QWidget)
 
+from omr_core.grading import INVALID, shown
 from omr_core.marking import mark_sheet
 from omr_core.reader import SCALE
 from omr_core.template import Grid, Template
@@ -64,8 +65,7 @@ class ReviewPage(QWidget):
         self.read_as = QLabel()
         self.buttons = QHBoxLayout()
         self.error = QLabel(objectName="error")
-        self.help = QLabel("Press a letter or digit to pick it, Delete for blank, Space to keep the reading.",
-                           objectName="muted")
+        self.help = QLabel(objectName="muted")
         item_card, item_layout = card("Item to check")
         for w in (self.where, self.why, self.picture, self.read_as):
             item_layout.addWidget(w)
@@ -107,7 +107,7 @@ class ReviewPage(QWidget):
                            "Nothing to check. Results are ready." if c.sheets else "No sheets read yet.")
         self.log.clear()
         for at, user, file, page, item, before, after in reversed(c.store.audit(c.exam.id) if c.exam else []):
-            self.log.addItem(f"{at.replace('T', ' ')}  {user}:  {Path(file).name}  p{page}  {item}  {before or 'blank'} → {after or 'blank'}")
+            self.log.addItem(f"{at.replace('T', ' ')}  {user}:  {Path(file).name}  p{page}  {item}  {shown(before) or 'blank'} → {shown(after) or 'blank'}")
         if self.items:
             self.queue.setCurrentRow(min(max(keep, 0), len(self.items) - 1))
             self.show_item(self.queue.currentRow())
@@ -145,14 +145,14 @@ class ReviewPage(QWidget):
         r = sheet.result
         if item.startswith("Q"):
             current = r.answers[int(item[1:])]
-            self.read_as.setText(f"Read as: {current or 'blank'}")
+            self.read_as.setText(f"Read as: {shown(current) or 'blank'}")
             grid = found[0] if found else None
             if grid and grid.kind == "numeric":
                 self._number_entry(item, current, grid.cols)
                 return
             options = grid.options if grid else ""
-            self._choice_buttons(item, list(options) + [""], keep=current if grid and (grid.multi or
-                                                                                        len(current) <= 1) else None)
+            self._choice_buttons(item, list(options) + [""] + ([INVALID] if grid and not grid.multi else []),
+                                 keep=current if grid and (grid.multi or len(current) <= 1) else None)
         elif item.startswith("roll number digit "):
             current = r.roll_number[int(item.rsplit(" ", 1)[1]) - 1]
             looks = c.suggestion(sheet)
@@ -200,10 +200,17 @@ class ReviewPage(QWidget):
         edit.setFocus()
 
     def _choice_buttons(self, item: str, choices: list[str], keep: str | None):
+        # Invalid (two marks, even a faint one) takes X, unless X is one of the options
+        invalid_key = "X" if "X" not in choices else ""
+        self.help.setText("Press a letter or digit to pick it, Delete for blank, "
+                          + (f"{invalid_key} for invalid (two marks), " if INVALID in choices and invalid_key else "")
+                          + "Space to keep the reading.")
         for value in choices:
-            b = QPushButton(value or "Blank")
+            b = QPushButton("Invalid" if value == INVALID else value or "Blank")
             b.setMinimumWidth(56)
-            b.setShortcut(QKeySequence(value or "Delete"))
+            b.setShortcut(QKeySequence(invalid_key if value == INVALID else value or "Delete"))
+            if value == INVALID:
+                b.setToolTip("Two or more marks, even a faint one: scored as the exam's Marks tab says for two marks")
             b.clicked.connect(lambda _=False, v=value: self.fix(item, v))
             self.buttons.addWidget(b)
         self.buttons.addSpacing(16)

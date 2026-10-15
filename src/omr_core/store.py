@@ -22,7 +22,7 @@ import cv2
 import numpy as np
 
 from .branding import Institute, check, from_json, to_json
-from .grading import Section, check_sections, sections_from_json, sections_to_json
+from .grading import INVALID, Section, check_sections, sections_from_json, sections_to_json
 from .reader import PageResult
 from .students import Student, check_email, check_phone, link, same_roll
 from .template import Template, parse
@@ -196,6 +196,16 @@ class Exam:
     details: dict
     written_out_of: float = 0
     archived: bool = False
+
+    @property
+    def doubled_wrong(self) -> bool:
+        """Whether two marks on a single-answer question score the wrong marks rather than nothing."""
+        return self.details.get("doubled") == "wrong"
+
+    @property
+    def strict(self) -> bool:
+        """Whether even a faint second mark beside a filled bubble makes the answer invalid."""
+        return bool(self.details.get("strict"))
 
 
 @dataclass
@@ -377,6 +387,13 @@ class Store:
                             (answer_key, correct, wrong, blank, exam_id))
             self.db.executemany("INSERT INTO key_log (exam_id, at, user, set_code, question, before, after) "
                                 "VALUES (?, ?, ?, ?, ?, ?, ?)", [(exam_id, at, user, *c) for c in changes])
+
+    def set_double_marks(self, exam_id: int, wrong: bool, strict: bool):
+        """How the exam takes two marks on a single-answer question: the wrong marks or nothing, and whether a
+        faint second mark beside a filled bubble counts as one without review (details "doubled" and "strict")."""
+        with self.db:
+            self.db.execute("UPDATE exam SET details = json_set(details, '$.doubled', ?, '$.strict', json(?)) "
+                            "WHERE id = ?", ("wrong" if wrong else "nothing", json.dumps(strict), exam_id))
 
     def key_log(self, exam_id: int) -> list[tuple[str, str, str, int, str, str]]:
         """(at, user, set code, question, before, after) for every logged change to the key, newest first."""
@@ -712,14 +729,19 @@ class Store:
 
     def _pages(self, where: str, arg: int) -> list[StoredPage]:
         rows = self.db.execute(
-            "SELECT id, batch, file, page_no, read_at, roll_number, set_code, answers, flags, problem, serial, name_read "
-            "FROM "
-            f"page WHERE {where} ORDER BY id", (arg,)).fetchall()
-        out = []
-        for id_, batch, file, page_no, read_at, roll, set_code, answers, flags, problem, serial, name in rows:
+            "SELECT p.id, batch, file, page_no, read_at, roll_number, set_code, answers, flags, problem, serial, "
+            "name_read, json_extract(e.details, '$.strict'), e.template FROM page p JOIN exam e ON e.id = p.exam_id "
+            f"WHERE p.{where} ORDER BY p.id", (arg,)).fetchall()
+        out, single = [], {}
+        for id_, batch, file, page_no, read_at, roll, set_code, answers, flags, problem, serial, name, strict, t in rows:
             result = None if roll is None else PageResult(
                 roll, set_code, {int(q): a for q, a in json.loads(answers).items()},
                 [tuple(f) for f in json.loads(flags)], serial=serial, name=json.loads(name))
+            if result and strict:
+                if t not in single:
+                    single[t] = {g.first + r for g in parse(json.loads(t)).grids if g.kind == "questions"
+                                 and not g.multi for r in range(g.rows)}
+                _strict(result, single[t])
             out.append(StoredPage(id_, batch, file, page_no, read_at, result, problem))
         return out
 
@@ -727,7 +749,7 @@ class Store:
         """Set one answer, roll number digit or set code by hand, clear its flag, and log the change (FR-013).
 
         `item` is a flag's "where": "Q12", "roll number digit 3" or "set code"; a numeric question takes its
-        digits. Keeping a reading as it is is a correction too: it clears the flag and is logged.
+        digits, and a single-answer question "!" for invalid (two marks). Keeping a reading as it is is a correction too: it clears the flag and is logged.
         """
         row = self.db.execute("SELECT p.exam_id, p.roll_number, p.set_code, p.answers, p.flags, e.template "
                               "FROM page p JOIN exam e ON e.id = p.exam_id WHERE p.id = ?", (page_id,)).fetchone()
@@ -747,6 +769,10 @@ class Store:
                 if value and (not value.isdigit() or len(value.lstrip("0") or "0") > grid.cols):
                     raise ValueError(f"{item} takes a whole number of up to {grid.cols} digits")
                 value = str(int(value)) if value else ""
+                before, answers[str(q)] = answers[str(q)], value
+            elif value == INVALID:  # two marks seen where the reader counted one, or none
+                if grid.multi:
+                    raise ValueError(f"{item} takes more than one answer, so two marks aren't invalid")
                 before, answers[str(q)] = answers[str(q)], value
             elif any(c not in grid.options for c in value) or len(set(value)) != len(value):
                 raise ValueError(f"{value!r} isn't an answer to {item} (options {grid.options})")
@@ -1249,6 +1275,16 @@ def encode_page(image: np.ndarray) -> bytes | None:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     ok, jpg = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
     return jpg.tobytes() if ok else None
+
+
+def _strict(result: PageResult, single: set[int]):
+    """An exam's strict rule: a faint second mark beside a filled bubble makes the answer invalid, without review.
+    Applied as pages are read from the store, so turning the rule off gives back the readings and their flags."""
+    faint = {int(w[1:]) for w, why in result.flags if why == "unclear mark" and w[1:].isdigit()}
+    doubled = {q for q in faint & single if result.answers.get(q)}
+    for q in doubled:
+        result.answers[q] = INVALID
+    result.flags = [f for f in result.flags if not (f[0][1:].isdigit() and int(f[0][1:]) in doubled)]
 
 
 def _row(result: PageResult | None) -> tuple[tuple, bytes | None]:

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .branding import Institute
 from .export import Graded, write_scorecards
-from .grading import BONUS, DROPPED, Section, changed_questions, describe, score, status
+from .grading import BONUS, DROPPED, Section, changed_questions, describe, score, shown, status
 from .students import same_roll
 from .template import Template
 
@@ -25,7 +25,7 @@ STATES = {"right": "Right", "wrong": "Wrong", "blank": "Blank", "dropped": "Not 
 def scorecard_html(exam_name: str, t: Template, g: Graded, everyone: list[Graded], marks: list[tuple],
                    sections: list[Section] = (), institute: Institute | None = None, written_out_of: float = 0) -> str:
     """One student's scorecard. `everyone` is the whole class, for rank and the class average; `marks` gives
-    each question's (correct, wrong, blank, partial, single) marks, from `marks_for`; `written_out_of` is the
+    each question's (correct, wrong, blank, partial, single, doubled) marks, from `marks_for`; `written_out_of` is the
     marks of a written part added to the sheet's."""
     qs = t.questions()
     r = g.page.result
@@ -38,7 +38,7 @@ def scorecard_html(exam_name: str, t: Template, g: Graded, everyone: list[Graded
         answer = r.answers[q]
         state = status(answer, k)
         got = score([answer], [k], marks=[marks[n]]) if k != DROPPED else 0.0
-        rows.append(f'<tr class="{state}"><td>Q{q}</td><td>{escape(answer or "–")}</td>'
+        rows.append(f'<tr class="{state}"><td>Q{q}</td><td>{escape(shown(answer) or "–")}</td>'
                     f'<td>{escape("bonus" if k == BONUS else "" if k == DROPPED else describe(k))}</td>'
                     f'<td><span class="tag {state}">{STATES[state]}</span></td><td class="num">{got:+g}</td></tr>')
     bars = []

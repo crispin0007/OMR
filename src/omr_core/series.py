@@ -51,14 +51,14 @@ def series_results(store: Store, series: str) -> tuple[list[str], list[SeriesRow
         students = store.students(e.id)
         try:
             graded = grade(e.template, store.pages(e.id), e.answer_key, e.correct, e.wrong, e.blank, students,
-                           e.sections)
+                           e.sections, doubled_wrong=e.doubled_wrong)
         except ValueError as err:
             problems.append(f"{e.name}: {err}")
             continue
         if not graded:
             problems.append(f"{e.name}: no results yet (no answer key, or no sheets read)")
         qs = questions(e.template)
-        marks = marks_for(qs, e.correct, e.wrong, e.blank, e.sections)
+        marks = marks_for(qs, e.correct, e.wrong, e.blank, e.sections, doubled_wrong=e.doubled_wrong)
         sat = []
         for g in graded:  # best first, so a roll number read twice keeps its better sheet
             roll = g.page.result.roll_number
