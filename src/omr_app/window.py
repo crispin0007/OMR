@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QKeySequence, QPixmap, QShortcut
-from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QInputDialog,
+from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout, QHBoxLayout, QInputDialog,
                                QLabel, QListWidget, QMainWindow, QMessageBox, QPlainTextEdit, QProgressDialog,
                                QPushButton, QScrollArea, QSplitter, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
@@ -43,6 +43,8 @@ from .review import ReviewPage
 from .scan import ScanPage, marked_sheet
 from .several_pcs import LoginDialog, PcsSettings, PhoneDialog, Sender, refresh_copy
 from .sections import SectionsDialog
+
+FAINT = ["review", "invalid", "filled"]  # the choices of Exam.faint, in the order the Marks tab lists them
 
 APP = "OMR Checker"
 
@@ -120,19 +122,23 @@ class CheckPage(QWidget):
             marks.addWidget(QLabel(text))
             marks.addWidget(box)
         marks.addStretch()
-        self.doubled = QComboBox()
+        # The exam's rule for two marks on a question that takes one answer, as Exam.multiple and Exam.faint
+        self.multiple, self.faint, self.doubled = QComboBox(), QComboBox(), QComboBox()
+        self.multiple.addItems(["invalid, without Review", "sent to Review"])
+        self.faint.addItems(["sent to Review", "invalid, without Review", "left out: the filled bubble is the answer"])
+        self.faint.setToolTip("A light scribble or a mark not quite rubbed out beside a filled bubble. Invalid or left "
+                              "out decides it without Review; if students may rub out a changed answer, a rubbed-out "
+                              "bubble that still shows counts too.")
         self.doubled.addItems(["no marks", "the wrong marks"])
-        self.doubled.setToolTip("What a question with two or more bubbles filled scores, where one answer is asked "
-                                "for, including one marked Invalid in Review")
-        self.strict = QCheckBox("Even a faint second mark counts: such answers are invalid without going to Review")
-        self.strict.setToolTip("A light scribble or a mark not quite rubbed out beside a filled bubble makes the "
-                               "answer invalid. Leave off if students may rub out a changed answer.")
-        for w, signal in ((self.doubled, self.doubled.currentIndexChanged), (self.strict, self.strict.toggled)):
-            signal.connect(lambda _: self.double_marks_changed())
-        doubled = QHBoxLayout()
-        doubled.addWidget(QLabel("Two marks on one question score"))
-        doubled.addWidget(self.doubled)
-        doubled.addStretch()
+        self.doubled.setToolTip("Including an answer marked Invalid in Review")
+        doubled = QGridLayout()
+        for row, (text, box) in enumerate((("Two filled bubbles on one question are", self.multiple),
+                                           ("A filled bubble with a faint second mark is", self.faint),
+                                           ("An invalid answer scores", self.doubled))):
+            box.currentIndexChanged.connect(lambda _: self.double_marks_changed())
+            doubled.addWidget(QLabel(text), row, 0)
+            doubled.addWidget(box, row, 1)
+        doubled.setColumnStretch(2, 1)
         self.sections_button = QPushButton("Sections…")
         self.sections_button.setToolTip("Give ranges of questions their own name and marks, e.g. Physics 1 to 50")
         self.sections_button.clicked.connect(self.edit_sections)
@@ -141,8 +147,9 @@ class CheckPage(QWidget):
         marks_layout = QVBoxLayout(self.marks_tab)
         marks_layout.addWidget(QLabel("Marks for every question not in a section", objectName="muted"))
         marks_layout.addLayout(marks)
+        marks_layout.addSpacing(12)
+        marks_layout.addWidget(QLabel("Two marks where one answer is asked for", objectName="muted"))
         marks_layout.addLayout(doubled)
-        marks_layout.addWidget(self.strict)
         marks_layout.addSpacing(12)
         marks_layout.addWidget(QLabel("Sections give ranges of questions their own name and marks, and results show "
                                       "a score per section.", objectName="muted", wordWrap=True))
@@ -262,7 +269,8 @@ class CheckPage(QWidget):
 
     def _enable(self):
         self.open_button.setEnabled(self.exam is not None)
-        for w in (self.key_edit, self.correct, self.wrong, self.blank, self.doubled, self.strict, self.sections_button,
+        for w in (self.key_edit, self.correct, self.wrong, self.blank, self.multiple, self.faint, self.doubled,
+                  self.sections_button,
                   self.topics_button):
             w.setEnabled(self.exam is not None and self.admin)
         self.save_button.setEnabled(bool(self.sheets))
@@ -294,7 +302,8 @@ class CheckPage(QWidget):
             for box, v in ((self.correct, exam.correct), (self.wrong, exam.wrong), (self.blank, exam.blank)):
                 box.setValue(v)
             self.doubled.setCurrentIndex(int(exam.doubled_wrong))
-            self.strict.setChecked(exam.strict)
+            self.multiple.setCurrentIndex(["invalid", "review"].index(exam.multiple))
+            self.faint.setCurrentIndex(FAINT.index(exam.faint))
             self.key_edit.setPlainText(exam.answer_key)
             self.exam = exam
         self.logged_keys = None  # the key as last logged; set from the opened exam's key, with nothing to log
@@ -311,9 +320,10 @@ class CheckPage(QWidget):
     def double_marks_changed(self):
         if self.exam is None:
             return  # an exam opening
-        self.store.set_double_marks(self.exam.id, self.doubled.currentIndex() == 1, self.strict.isChecked())
+        self.store.set_double_marks(self.exam.id, self.doubled.currentIndex() == 1,
+                                    ["invalid", "review"][self.multiple.currentIndex()], FAINT[self.faint.currentIndex()])
         self.exam = self.store.exam(self.exam.id)
-        self.sheets = self.store.pages(self.exam.id)  # the strict rule changes what the pages say
+        self.sheets = self.store.pages(self.exam.id)  # the rule changes what the pages say
         self.fill_table()
 
     @property

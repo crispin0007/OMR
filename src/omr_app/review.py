@@ -54,9 +54,14 @@ class ReviewPage(QWidget):
         super().__init__()
         self.check = check
         self.items: list[tuple[int, str, str]] = []
+        self.ruled: list[tuple[int, str, str]] = []  # settled by the exam's rule for two marks: listed, not to check
+        self.current: tuple[int, str, str] | None = None
         self.queue = QListWidget()
         self.queue.currentRowChanged.connect(self.show_item)
         self.count = QLabel(objectName="muted")
+        self.ruled_list = QListWidget()
+        self.ruled_list.currentRowChanged.connect(self.show_ruled)
+        self.ruled_count = QLabel(objectName="muted", wordWrap=True)
 
         self.where = QLabel(objectName="title")
         self.why = QLabel(objectName="muted")
@@ -83,7 +88,9 @@ class ReviewPage(QWidget):
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.addWidget(self.count)
-        left_layout.addWidget(self.queue, 1)
+        left_layout.addWidget(self.queue, 2)
+        left_layout.addWidget(self.ruled_count)
+        left_layout.addWidget(self.ruled_list, 1)
         split = QSplitter()
         split.addWidget(left)
         split.addWidget(right)
@@ -103,6 +110,17 @@ class ReviewPage(QWidget):
             sheet = c.sheets[i]
             self.queue.addItem(QListWidgetItem(f"{c.file_name(sheet)}  p{sheet.page}   {item}   ·  {why}"))
         self.queue.blockSignals(False)
+        self.ruled = [(i, where, why) for i, sheet in enumerate(c.sheets) if c.exam and sheet.result
+                      for where, why in sheet.result.ruled]
+        self.ruled_list.blockSignals(True)
+        self.ruled_list.clear()
+        for i, item, why in self.ruled:
+            self.ruled_list.addItem(f"{c.file_name(c.sheets[i])}  p{c.sheets[i].page}   {item}   ·  {why}")
+        self.ruled_list.blockSignals(False)
+        self.ruled_count.setText(f"{len(self.ruled)} settled by the exam's rule for two marks (Marks tab), not to "
+                                 "check. Click one to see it or change it." if self.ruled else "")
+        self.ruled_count.setVisible(bool(self.ruled))
+        self.ruled_list.setVisible(bool(self.ruled))
         self.count.setText(f"{len(self.items)} to check" if self.items else
                            "Nothing to check. Results are ready." if c.sheets else "No sheets read yet.")
         self.log.clear()
@@ -115,13 +133,22 @@ class ReviewPage(QWidget):
             self.show_item(-1)
 
     def show_item(self, row: int):
+        self._show(self.items[row] if 0 <= row < len(self.items) else None)
+
+    def show_ruled(self, row: int):
+        if 0 <= row < len(self.ruled):
+            self.queue.setCurrentRow(-1)
+            self._show(self.ruled[row])
+
+    def _show(self, entry: tuple[int, str, str] | None):
+        self.current = entry
         while self.buttons.count():
             w = self.buttons.takeAt(0).widget()
             if w:
                 w.hide()  # deleted once the click that got us here has finished
                 w.deleteLater()
         self.error.clear()
-        if row < 0 or row >= len(self.items):
+        if entry is None:
             self.where.setText("")
             self.why.setText("")
             self.picture.clear()
@@ -129,7 +156,7 @@ class ReviewPage(QWidget):
             self.help.hide()
             return
         c = self.check
-        i, item, why = self.items[row]
+        i, item, why = entry
         sheet = c.sheets[i]
         self.where.setText(f"{c.file_name(sheet)}  page {sheet.page}  ·  {item}")
         self.why.setText(why)
@@ -255,7 +282,7 @@ class ReviewPage(QWidget):
         if value is None:
             return
         c = self.check
-        i = self.items[self.queue.currentRow()][0]
+        i = self.current[0]
         try:
             c.sheets[i] = c.store.correct(c.sheets[i].id, item, value, c.user)
         except ValueError as e:

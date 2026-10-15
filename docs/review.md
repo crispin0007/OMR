@@ -10,7 +10,9 @@ person to decide. Everything else is already done.
 ## What lands in Review
 
 - A bubble **half filled**, **faint**, or **partly erased**.
-- **Two bubbles** filled where only one is allowed.
+- **Two bubbles** filled where only one is allowed, when the exam's
+  [rule for two marks](marks-and-sections.md#two-marks-on-one-question) says to send them to Review.
+  New exams make them invalid without Review, and list them under the queue instead.
 - A **roll number** or **set** that can't be read clearly.
 - The **same roll number** on more than one sheet.
 - A roll number that isn't on your [student list](students.md).

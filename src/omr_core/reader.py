@@ -41,6 +41,7 @@ class PageResult:
     aligned: np.ndarray | bytes | None = None  # page in template coordinates, for review; bytes once encoded to save
     serial: str = ""  # the sheet number printed on the sheet, "?" when it can't be read; "" for sheets without one
     name: list = field(default_factory=list)  # the odds of each letter in the name boxes, as names.read_name gives
+    ruled: list[tuple[str, str]] = field(default_factory=list)  # (where, why) settled by the exam's rule, not kept
 
 
 def read_page(page: np.ndarray, template: Template) -> PageResult:

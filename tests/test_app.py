@@ -216,8 +216,33 @@ def test_a_faint_second_mark_is_marked_invalid_in_review_or_by_the_strict_settin
     c.open_exam(c.exam.id)
     w.go("Review")
     assert c.doubled.currentIndex() == 1 and len(w.review.items) == 1
-    c.strict.setChecked(True)  # a faint second mark makes it invalid without Review
+    c.faint.setCurrentIndex(1)  # the exam's rule: a faint second mark makes it invalid without Review
     assert w.review.items == [] and float(c.table.item(0, 6).text()) == right - 2
+    assert [(item, why) for _, item, why in w.review.ruled] == [("Q1", "invalid: a faint second mark")]
+    w.review.ruled_list.setCurrentRow(0)  # listed apart, to see or change
+    assert w.review.where.text().endswith("Q1")
+    w.review.fix("Q1", "B")
+    assert w.review.ruled == [] and float(c.table.item(0, 6).text()) == right
+
+
+def test_two_filled_bubbles_are_invalid_by_the_new_exams_rule_without_review(app, tmp_path):
+    t = load(TEMPLATES / "test-100.json")
+    marks, answers, roll, set_code = random_marks(t, 5)
+    q_grid = next(i for i, g in enumerate(t.grids) if g.kind == "questions")
+    for c in range(4):
+        marks.pop((q_grid, 0, c), None)
+    marks[q_grid, 0, 1] = marks[q_grid, 0, 3] = "pen"  # Q1: B and D both filled
+    path = tmp_path / "two.png"
+    cv2.imwrite(str(path), scan(draw(t, marks)))
+    w = window(tmp_path)
+    c = w.check
+    c.read_files([str(path)])
+    w.go("Review")
+    assert w.review.items == [] and [(item, why) for _, item, why in w.review.ruled] == [
+        ("Q1", "invalid: two bubbles filled")]
+    assert c.multiple.currentIndex() == 0
+    c.multiple.setCurrentIndex(1)  # back to Review, as before
+    assert [(item, why) for _, item, why in w.review.items] == [("Q1", "multiple marks")] and w.review.ruled == []
 
 
 def test_results_export_asks_while_marks_wait_for_review(app, tmp_path, monkeypatch):

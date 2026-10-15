@@ -17,21 +17,33 @@ You can change the marks at any time, even after scanning. Every score is worked
 
 ## Two marks on one question
 
-Two or more bubbles filled on a question that takes one answer are **invalid**. Under the marks,
-choose what an invalid answer scores:
+Your exam rules already say what two marks on a question that takes one answer mean, so the app
+can follow them instead of asking you on every sheet. Under **Two marks where one answer is asked
+for**:
 
-- **no marks** (the default): no marks, and no negative marks either;
-- **the wrong marks**: the same as a wrong answer, negative marking included.
+- **Two filled bubbles on one question are**
+  - **invalid, without Review** (the default for new exams): no one checks them;
+  - **sent to Review**: you decide each one.
+- **A filled bubble with a faint second mark is** (a light scribble, or a mark not quite rubbed out)
+  - **sent to Review** (the default): you decide, and press **X** for Invalid;
+  - **invalid, without Review**;
+  - **left out: the filled bubble is the answer**.
+- **An invalid answer scores**
+  - **no marks** (the default): no marks, and no negative marks either;
+  - **the wrong marks**: the same as a wrong answer, negative marking included.
 
-A clearly filled second bubble is caught by the reader and goes to [Review](review.md). A second mark
-that is only a **light scribble** or a **mark not quite rubbed out** goes to Review as an *unclear
-mark*, where you press **X** for Invalid.
+A rule covers every sheet already scanned as well. Change it back to **sent to Review** and those
+questions go back to Review as they were read.
 
-To make such answers invalid **without Review**, tick **Even a faint second mark counts**. A question
-with one filled bubble and any faint mark beside it is then invalid at once, on every sheet already
-scanned too; untick it and they go back to Review. Leave it off if students may rub out an answer
-to change it: a rubbed-out bubble that still shows will make their answer invalid. A faint mark on
-its own, with no filled bubble, still goes to Review.
+What a rule settled is listed under the Review queue, not in it, so you can glance down the list,
+click one to see that part of the sheet, and change it if you need to.
+
+Before choosing **invalid** or **left out** for faint marks, think about erasing. If students rub
+out an answer to change it and the old bubble still shows, *invalid* voids their answer and *left
+out* takes whichever bubble the reader counted as filled. A faint mark on its own, with no filled bubble, always goes
+to Review.
+
+Exams made before this rule keep sending both kinds to Review until you change them here.
 
 ## Sections
 

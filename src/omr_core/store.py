@@ -203,9 +203,15 @@ class Exam:
         return self.details.get("doubled") == "wrong"
 
     @property
-    def strict(self) -> bool:
-        """Whether even a faint second mark beside a filled bubble makes the answer invalid."""
-        return bool(self.details.get("strict"))
+    def multiple(self) -> str:
+        """What two filled bubbles on a single-answer question do: "invalid" at once, or go to "review"."""
+        return self.details.get("multiple", "review")
+
+    @property
+    def faint(self) -> str:
+        """What a faint second mark beside a filled bubble does: go to "review", make the answer "invalid", or
+        is left out so the filled bubble is the answer ("filled")."""
+        return self.details.get("faint", "invalid" if self.details.get("strict") else "review")
 
 
 @dataclass
@@ -266,7 +272,8 @@ class Store:
         self.db.close()
 
     def create_exam(self, name: str, template_json: str, details: dict | None = None) -> int:
-        """A new exam. One in a test series (details["series"]) starts with the student list of the latest exam
+        """A new exam, where two filled bubbles on a question are invalid without Review (`Exam.multiple`).
+        One in a test series (details["series"]) starts with the student list of the latest exam
         of that series that has one, so the list is imported once for the whole series."""
         name = name.strip()
         if not name:
@@ -280,7 +287,8 @@ class Store:
             cur = self.db.execute("INSERT INTO exam (name, template, created, sections, details) "
                                   "VALUES (?, ?, ?, ?, ?)",
                                   (name, template_json, datetime.now().isoformat(timespec="seconds"),
-                                   json.dumps(sections_to_json(sections)), json.dumps(details or {})))
+                                   json.dumps(sections_to_json(sections)),
+                                   json.dumps({"multiple": "invalid", **(details or {})})))  # no Review for doubles
         exam_id = cur.lastrowid
         earlier = [e for e in self.series_exams((details or {}).get("series", "")) if e != exam_id]
         listed = next((s for e in reversed(earlier) if (s := self.students(e))), None)
@@ -388,12 +396,16 @@ class Store:
             self.db.executemany("INSERT INTO key_log (exam_id, at, user, set_code, question, before, after) "
                                 "VALUES (?, ?, ?, ?, ?, ?, ?)", [(exam_id, at, user, *c) for c in changes])
 
-    def set_double_marks(self, exam_id: int, wrong: bool, strict: bool):
-        """How the exam takes two marks on a single-answer question: the wrong marks or nothing, and whether a
-        faint second mark beside a filled bubble counts as one without review (details "doubled" and "strict")."""
+    def set_double_marks(self, exam_id: int, wrong: bool, multiple: str, faint: str):
+        """The exam's rule for two marks on a single-answer question (details "doubled", "multiple", "faint"):
+        what an invalid answer scores (the wrong marks or nothing), and what two filled bubbles and a faint
+        second mark do, as `Exam.multiple` and `Exam.faint` say."""
+        if multiple not in ("invalid", "review") or faint not in ("review", "invalid", "filled"):
+            raise ValueError(f"no such rule: {multiple}, {faint}")
         with self.db:
-            self.db.execute("UPDATE exam SET details = json_set(details, '$.doubled', ?, '$.strict', json(?)) "
-                            "WHERE id = ?", ("wrong" if wrong else "nothing", json.dumps(strict), exam_id))
+            self.db.execute("UPDATE exam SET details = json_remove(json_set(details, '$.doubled', ?, '$.multiple', ?, "
+                            "'$.faint', ?), '$.strict') WHERE id = ?",
+                            ("wrong" if wrong else "nothing", multiple, faint, exam_id))
 
     def key_log(self, exam_id: int) -> list[tuple[str, str, str, int, str, str]]:
         """(at, user, set code, question, before, after) for every logged change to the key, newest first."""
@@ -718,6 +730,10 @@ class Store:
                 "INSERT INTO page (exam_id, batch, file, page_no, read_at, roll_number, set_code, answers, flags, "
                 "serial, name_read, problem, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (exam_id, batch, file, page_no, read_at, *values, problem, image))
+        if result is not None:  # as `pages` gives it, with the exam's rule for two marks
+            d, t = self.db.execute("SELECT details, template FROM exam WHERE id = ?", (exam_id,)).fetchone()
+            result = replace(result, answers=dict(result.answers), flags=list(result.flags), ruled=[])
+            _rule(result, *_rules(d, t, {}, {}))
         return StoredPage(cur.lastrowid, batch, file, page_no, read_at, result, problem)
 
     def pages(self, exam_id: int) -> list[StoredPage]:
@@ -730,18 +746,15 @@ class Store:
     def _pages(self, where: str, arg: int) -> list[StoredPage]:
         rows = self.db.execute(
             "SELECT p.id, batch, file, page_no, read_at, roll_number, set_code, answers, flags, problem, serial, "
-            "name_read, json_extract(e.details, '$.strict'), e.template FROM page p JOIN exam e ON e.id = p.exam_id "
+            "name_read, e.details, e.template FROM page p JOIN exam e ON e.id = p.exam_id "
             f"WHERE p.{where} ORDER BY p.id", (arg,)).fetchall()
-        out, single = [], {}
-        for id_, batch, file, page_no, read_at, roll, set_code, answers, flags, problem, serial, name, strict, t in rows:
+        out, single, rules = [], {}, {}  # parsed once per exam
+        for id_, batch, file, page_no, read_at, roll, set_code, answers, flags, problem, serial, name, d, t in rows:
             result = None if roll is None else PageResult(
                 roll, set_code, {int(q): a for q, a in json.loads(answers).items()},
                 [tuple(f) for f in json.loads(flags)], serial=serial, name=json.loads(name))
-            if result and strict:
-                if t not in single:
-                    single[t] = {g.first + r for g in parse(json.loads(t)).grids if g.kind == "questions"
-                                 and not g.multi for r in range(g.rows)}
-                _strict(result, single[t])
+            if result:
+                _rule(result, *_rules(d, t, single, rules))
             out.append(StoredPage(id_, batch, file, page_no, read_at, result, problem))
         return out
 
@@ -1277,14 +1290,42 @@ def encode_page(image: np.ndarray) -> bytes | None:
     return jpg.tobytes() if ok else None
 
 
-def _strict(result: PageResult, single: set[int]):
-    """An exam's strict rule: a faint second mark beside a filled bubble makes the answer invalid, without review.
-    Applied as pages are read from the store, so turning the rule off gives back the readings and their flags."""
-    faint = {int(w[1:]) for w, why in result.flags if why == "unclear mark" and w[1:].isdigit()}
-    doubled = {q for q in faint & single if result.answers.get(q)}
-    for q in doubled:
-        result.answers[q] = INVALID
-    result.flags = [f for f in result.flags if not (f[0][1:].isdigit() and int(f[0][1:]) in doubled)]
+def _rules(details: str, template: str, single: dict, rules: dict) -> tuple[set[int], str, str]:
+    """The exam's single-answer questions and its rule for two marks (`Exam.multiple`, `Exam.faint`), from its
+    stored details and template; `single` and `rules` keep what was worked out, for the next page."""
+    if details not in rules:
+        d = json.loads(details)
+        rules[details] = d.get("multiple", "review"), d.get("faint", "invalid" if d.get("strict") else "review")
+    if rules[details] == ("review", "review"):
+        return set(), "review", "review"
+    if template not in single:
+        single[template] = {g.first + r for g in parse(json.loads(template)).grids if g.kind == "questions"
+                            and not g.multi for r in range(g.rows)}
+    return single[template], *rules[details]
+
+
+def _rule(result: PageResult, single: set[int], multiple: str, faint: str):
+    """The exam's rule for two marks on a single-answer question, instead of Review: two filled bubbles are
+    invalid as read; a faint second mark beside a filled bubble makes the answer invalid, or is left out so the
+    filled bubble is the answer. What it settles moves from `flags` to `ruled`. A faint mark with no filled bubble
+    always goes to Review. Applied as pages are read from the store, so a change of rule covers sheets already
+    scanned, and going back to Review gives back the readings and their flags."""
+    kept = []
+    for where, why in result.flags:
+        q = int(where[1:]) if where[:1] == "Q" and where[1:].isdigit() else None
+        answer = result.answers.get(q, "")
+        if q not in single or not answer or why not in ("multiple marks", "unclear mark"):
+            kept.append((where, why))
+        elif why == "unclear mark" and faint == "invalid":
+            result.answers[q] = INVALID
+            result.ruled.append((where, "invalid: a faint second mark"))
+        elif why == "unclear mark" and faint == "filled" and len(answer) == 1:
+            result.ruled.append((where, f"{answer}: a faint second mark left out"))
+        elif (why == "multiple marks" or faint == "filled") and multiple == "invalid":
+            result.ruled.append((where, "invalid: two bubbles filled"))
+        else:
+            kept.append((where, "multiple marks" if faint == "filled" else why))
+    result.flags = kept
 
 
 def _row(result: PageResult | None) -> tuple[tuple, bytes | None]:

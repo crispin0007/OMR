@@ -116,22 +116,37 @@ def test_corrections_update_the_page_clear_the_flag_and_are_logged(tmp_path):
     assert s.page(page.id).result.answers[1] == ""
 
 
-def test_a_second_mark_is_marked_invalid_in_review_or_by_the_strict_rule(tmp_path):
+def test_two_marks_follow_the_exams_rule_instead_of_review(tmp_path):
     s = Store(tmp_path / "omr.db")
     exam = s.create_exam("Mock", TEMPLATE)
-    flags = [("Q1", "unclear mark"), ("Q2", "unclear mark"), ("Q3", "multiple marks")]
-    page = s.add_page(exam, "b", "scan.pdf", 1, PageResult("123", "A", {1: "B", 2: "", 3: "AC"}, flags))
+    flags = [("Q1", "unclear mark"), ("Q2", "unclear mark"), ("Q3", "multiple marks"), ("Q4", "unclear mark"),
+             ("roll number digit 1", "multiple marks")]
+    page = s.add_page(exam, "b", "scan.pdf", 1,
+                      PageResult("?23", "A", {1: "B", 2: "", 3: "AC", 4: "AC"}, flags))
+    e = s.exam(exam)
+    assert (e.multiple, e.faint, e.doubled_wrong) == ("invalid", "review", False)  # a new exam's rule
+    got = s.page(page.id).result
+    assert got.ruled == [("Q3", "invalid: two bubbles filled")] and ("Q3", "multiple marks") not in got.flags
+
+    s.set_double_marks(exam, wrong=True, multiple="invalid", faint="invalid")
+    got = s.page(page.id).result
+    # Q2, a faint mark alone, and the roll number still go to Review
+    assert got.answers == {1: "!", 2: "", 3: "AC", 4: "!"}
+    assert got.flags == [("Q2", "unclear mark"), ("roll number digit 1", "multiple marks")]
+    assert [w for w, _ in got.ruled] == ["Q1", "Q3", "Q4"] and s.exam(exam).doubled_wrong
+
+    s.set_double_marks(exam, wrong=False, multiple="review", faint="filled")
+    got = s.page(page.id).result
+    assert got.answers[1] == "B" and got.ruled == [("Q1", "B: a faint second mark left out")]
+    assert got.flags == [("Q2", "unclear mark"), ("Q3", "multiple marks"), ("Q4", "multiple marks"),
+                         ("roll number digit 1", "multiple marks")]
+
+    s.set_double_marks(exam, wrong=False, multiple="review", faint="review")  # all back to Review, as read
+    assert s.page(page.id).result.flags == flags and s.page(page.id).result.answers[1] == "B"
+    with pytest.raises(ValueError):
+        s.set_double_marks(exam, wrong=False, multiple="darkest", faint="review")
     assert s.correct(page.id, "Q3", "!", "asha").result.answers[3] == "!"
     assert s.audit(exam)[0][4:] == ("Q3", "AC", "!")
-    assert not s.exam(exam).strict and s.page(page.id).result.flags == flags[:2]
-    s.set_double_marks(exam, wrong=True, strict=True)
-    e = s.exam(exam)
-    assert e.doubled_wrong and e.strict
-    # Q1: filled B and a faint second mark, invalid; Q2: only a faint mark, still to check
-    (got,) = s.pages(exam)
-    assert got.result.answers == {1: "!", 2: "", 3: "!"} and got.result.flags == [("Q2", "unclear mark")]
-    s.set_double_marks(exam, wrong=False, strict=False)  # off again: the reading and its flag come back
-    assert s.page(page.id).result.answers[1] == "B" and s.page(page.id).result.flags == flags[:2]
 
 
 def test_typing_the_whole_roll_number_settles_its_unclear_digits(tmp_path):
@@ -297,7 +312,7 @@ def test_an_exam_in_a_test_series_starts_with_its_student_list(tmp_path):
     s.set_series(other, " NEET 2027 ")
     assert s.series_names() == ["JEE 2027", "NEET 2027"] and s.series_exams("JEE 2027") == [first, second]
     s.set_series(other, "")
-    assert s.series_names() == ["JEE 2027"] and s.series_exams("") == [] and s.exam(other).details == {"series": ""}
+    assert s.series_names() == ["JEE 2027"] and s.series_exams("") == [] and s.exam(other).details == {"multiple": "invalid", "series": ""}
 
 
 def test_templates_are_saved_renamed_and_deleted(tmp_path):
@@ -498,7 +513,7 @@ def test_a_duplicated_exam_keeps_its_sheet_and_marks_but_nothing_read(tmp_path):
         s.duplicate_exam(exam, " ")
     copy = s.exam(s.duplicate_exam(exam, " Mock 2 "))
     assert copy.name == "Mock 2" and copy.answer_key == "" and (copy.correct, copy.wrong) == (4, -1)
-    assert copy.written_out_of == 20 and copy.details == {"class": "12", "series": "Weekly"}
+    assert copy.written_out_of == 20 and copy.details == {"multiple": "invalid", "class": "12", "series": "Weekly"}
     assert s.pages(copy.id) == [] and s.students(copy.id) == {}
     assert s.exam(exam).answer_key == "A: ABCD" and len(s.pages(exam)) == 1
 
